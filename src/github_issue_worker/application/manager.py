@@ -20,6 +20,7 @@ from github_issue_worker.application.issue_run import Verdict
 from github_issue_worker.application.poller import PollResult, PollState
 from github_issue_worker.domain.claim import ClaimState, Holder
 from github_issue_worker.domain.issue import Actor, Comment, Issue
+from github_issue_worker.domain.model_name import display_model
 from github_issue_worker.domain.trust import is_trusted
 from github_issue_worker.domain.work import RunKind, WorkContext, new_input, pending_run
 from github_issue_worker.ports.claims import ClaimStore
@@ -272,7 +273,9 @@ class Manager:
             issue.number,
             kind,
             slot.name,
-            slot.observed_model or slot.model or "its default model",
+            display_model(slot.observed_model or slot.model)
+            if (slot.observed_model or slot.model)
+            else "its default model",
         )
 
         def job() -> None:
@@ -300,7 +303,9 @@ class Manager:
                     issue.number,
                     verdict.kind,
                     slot.name,
-                    slot.observed_model or slot.model or "its default model",
+                    display_model(slot.observed_model or slot.model)
+                    if (slot.observed_model or slot.model)
+                    else "its default model",
                     verdict.detail,
                 )
 

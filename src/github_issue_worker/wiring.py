@@ -31,6 +31,7 @@ from github_issue_worker.configuration import Configuration, RepositorySettings,
 from github_issue_worker.domain.claim import ClaimPolicy
 from github_issue_worker.domain.commit_message import DEFAULT_FORBIDDEN_WORDS, CommitGate
 from github_issue_worker.domain.issue import Comment, Issue
+from github_issue_worker.domain.model_name import display_model
 from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import AgentAdapter, AgentRun, Invocation, RunReport
 
@@ -212,7 +213,7 @@ class Runtime:
         if report.model and report.model != slot.observed_model:
             slot.observed_model = report.model
             self.state.set_model(slot.name, report.model)
-            log.info("worker %s runs on %s", slot.name, report.model)
+            log.info("worker %s runs on %s", slot.name, display_model(report.model))
         return report
 
     def manager(self) -> Manager:

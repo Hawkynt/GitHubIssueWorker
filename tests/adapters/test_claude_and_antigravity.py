@@ -172,7 +172,7 @@ def test_claudelocal_names_the_local_model_from_its_launcher(tmp_path: Path) -> 
         ]
     )
     report = adapter.report(run(tmp_path), 0, stdout, "")
-    assert report.model == "Qwen3.8-Flash-Next IQ3_S (strata-iq3_s)"
+    assert report.model == "Qwen3.8-Flash-Next IQ3_S"
 
 
 def test_claudelocal_keeps_an_unknown_model_id(tmp_path: Path) -> None:
@@ -208,6 +208,4 @@ def test_claudelocal_matches_the_id_claude_code_reports_through_the_gateway(tmp_
     # "strata-iq3_s".
     adapter = ClaudeLocalAdapter(Path("claude.sh"), list_models=lambda: LIST_OUTPUT)
     stdout = json.dumps({"type": "system", "subtype": "init", "model": "local-claude-strata-iq3_s"})
-    assert adapter.report(run(tmp_path), 0, stdout, "").model == (
-        "Qwen3.8-Flash-Next IQ3_S (strata-iq3_s)"
-    )
+    assert adapter.report(run(tmp_path), 0, stdout, "").model == "Qwen3.8-Flash-Next IQ3_S"

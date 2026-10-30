@@ -216,7 +216,7 @@ class ClaudeLocalAdapter:
             (key for key in sorted(self._names, key=len, reverse=True) if model.endswith(key)),
             None,
         )
-        return f"{self._names[known]} ({known})" if known else model
+        return self._names[known] if known else model
 
     def invocation(self, run: AgentRun) -> Invocation:
         prepare(run)
