@@ -891,7 +891,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F12.2** One manager runs all its workers concurrently, each in its own worktree and
   process, with a crash or hang of one worker never affecting another (tested with four fake agents,
   one of which hangs and one of which crashes).
-- [ ] 🟥 **F12.3** `claude` adapter: `claude -p --output-format stream-json --verbose
+- [x] 🟥 **F12.3** `claude` adapter: `claude -p --output-format stream-json --verbose
   --dangerously-skip-permissions`, `--session-id`/`--resume`, `--json-schema`, `--max-budget-usd`,
   `--model`, attribution off, deny rules for `git push` and `gh`.
 - [x] 🟥 **F12.4** `codex` adapter: `codex exec --json --dangerously-bypass-approvals-and-sandbox`,
