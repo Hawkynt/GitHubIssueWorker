@@ -435,3 +435,14 @@ def test_no_remote_row_without_issues_held_elsewhere(backend: DemoBackend) -> No
     snapshot = backend.snapshot()
     alone = replace(snapshot, claims=tuple(c for c in snapshot.claims if c.mine))
     assert 'aria-label="Remote"' not in pages.cockpit_fragment(alone, [])
+
+
+def test_live_fragments_carry_the_managers_clock_and_ticking_times(client: TestClient) -> None:
+    for path in ("/workers?fragment=1", "/?fragment=1", "/fleet?fragment=1"):
+        html = client.get(path).text
+        assert 'data-now="2026-10-30T14:20:00+00:00"' in html, path
+        assert "data-since=" in html, path
+    cockpit = client.get("/workers").text
+    assert 'data-since="2026-10-30T13:57:00+00:00">23m<' in cockpit  # claude on #214 for 23m
+    assert "data-until=" in cockpit  # antigravity's usage limit counts down
+    assert "<time data-clock>" in cockpit

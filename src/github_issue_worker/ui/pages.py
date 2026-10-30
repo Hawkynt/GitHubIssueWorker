@@ -181,6 +181,11 @@ body.deck nav a[aria-current="page"] { background: linear-gradient(90deg, #1d4f8
 body.deck h1 { font-size: clamp(1.8rem, 2.6vw, 2.6rem); font-weight: 250; letter-spacing: .02em;
   background: linear-gradient(90deg, #ffffff, #8cc6ff 60%, #b39bff); -webkit-background-clip: text;
   background-clip: text; color: transparent; }
+.status { display: flex; align-items: center; gap: .5rem; margin: -.4rem 0 .9rem; color: var(--muted);
+  font-size: 13px; font-variant-numeric: tabular-nums; }
+.status .dot { width: .55rem; height: .55rem; border-radius: 50%; background: #3ddc97;
+  box-shadow: 0 0 10px #3ddc97; }
+.status time { color: var(--ink); }
 .readouts { display: grid; gap: .9rem;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
 .readout, .panel { position: relative; min-width: 0; border-radius: 14px;
@@ -361,6 +366,7 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
   .square:not(.free) { animation: glow 2.6s ease-in-out infinite; }
   @keyframes glow { 50% { box-shadow: 0 0 22px currentColor, 0 0 4px currentColor; } }
   .panel h2::before { animation: blink 3s ease-in-out infinite; }
+  .status .dot { animation: blink 1.6s ease-in-out infinite; }
   @keyframes blink { 50% { opacity: .35; } }
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -392,15 +398,62 @@ LIVE = """
 <script>
 (() => {
   const live = document.getElementById("live");
-  if (!live || !window.EventSource) return;
-  const events = new EventSource("/events");
-  events.onmessage = async () => {
-    if (live.contains(document.activeElement)) return;
-    const query = new URLSearchParams(location.search);
-    query.set("fragment", "1");
-    const response = await fetch(location.pathname + "?" + query);
-    if (response.ok) live.innerHTML = await response.text();
+  if (!live) return;
+  // Times tick against the manager's clock, carried by data-now in every fragment.
+  let offset = 0;
+  const sync = () => {
+    const marks = live.querySelectorAll("[data-now]");
+    if (marks.length) offset = Date.parse(marks[marks.length - 1].dataset.now) - Date.now();
   };
+  const pad = (value) => String(value).padStart(2, "0");
+  const format = (ms) => {
+    const total = Math.max(Math.floor(ms / 1000), 0);
+    const d = Math.floor(total / 86400), h = Math.floor(total / 3600) % 24;
+    const m = Math.floor(total / 60) % 60, s = total % 60;
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${pad(m)}m`;
+    if (m) return `${m}m ${pad(s)}s`;
+    return `${s}s`;
+  };
+  const tick = () => {
+    const now = Date.now() + offset;
+    for (const node of live.querySelectorAll("[data-since]"))
+      node.textContent = format(now - Date.parse(node.dataset.since));
+    for (const node of live.querySelectorAll("[data-until]")) {
+      const left = Date.parse(node.dataset.until) - now;
+      node.textContent = left > 0 ? format(left) : "a moment";
+    }
+    for (const node of live.querySelectorAll("[data-clock]"))
+      node.textContent = new Date(now).toISOString().slice(11, 19);
+  };
+  sync();
+  tick();
+  setInterval(tick, 1000);
+  // Refresh in the background: at once when the manager reports a change, and every 15 s anyway.
+  let busy = false;
+  const refresh = async () => {
+    if (busy || document.hidden || live.contains(document.activeElement)) return;
+    busy = true;
+    try {
+      const open = [...live.querySelectorAll("details")].map((node) => node.open);
+      const query = new URLSearchParams(location.search);
+      query.set("fragment", "1");
+      const response = await fetch(location.pathname + "?" + query);
+      if (!response.ok) return;
+      live.innerHTML = await response.text();
+      const details = live.querySelectorAll("details");
+      if (details.length === open.length) details.forEach((node, i) => (node.open = open[i]));
+      sync();
+      tick();
+    } catch (error) {
+      // the manager is restarting; the next attempt picks it up again
+    } finally {
+      busy = false;
+    }
+  };
+  if (window.EventSource) new EventSource("/events").onmessage = refresh;
+  setInterval(refresh, 15000);
+  document.addEventListener("visibilitychange", () => document.hidden || refresh());
 })();
 </script>
 """
@@ -487,6 +540,25 @@ def span(delta: timedelta) -> str:
     if hours:
         return f"{hours}h {minutes}m"
     return f"{minutes}m"
+
+
+def ticking(moment: datetime, now: datetime) -> str:
+    """A time since or until ``moment`` that the page's script keeps counting, second by second."""
+    stamp = moment.isoformat()
+    if moment > now:
+        return f'<time datetime="{stamp}" data-until="{stamp}">{span(moment - now)}</time>'
+    return f'<time datetime="{stamp}" data-since="{stamp}">{span(now - moment)}</time>'
+
+
+def when_live(moment: datetime, now: datetime) -> str:
+    future = moment > now
+    relative = f"in {ticking(moment, now)}" if future else f"{ticking(moment, now)} ago"
+    return f"{moment:%Y-%m-%d %H:%M} UTC ({relative})"
+
+
+def _clock(now: datetime) -> str:
+    """The manager's time when the fragment was made, for the ticking times in it."""
+    return f'<i hidden data-now="{now.isoformat()}"></i>'
 
 
 def when(moment: datetime, now: datetime) -> str:
@@ -580,7 +652,7 @@ def _instance(
                 f"{e(worker.branch)}</button></form>"
             )
         if worker.since:
-            facts.append(f"for {span(now - worker.since)}")
+            facts.append(f"for {ticking(worker.since, now)}")
         known = issues.get((worker.repository, worker.issue))
         issue = f"<span class=repo>{e(worker.repository)}</span> " + _issue_link(
             worker.repository, worker.issue, worker.issue_title, known.body if known else ""
@@ -596,7 +668,7 @@ def _instance(
     if worker.state == "limited" and worker.limited_until:
         return _free(
             f'<span class="flag limited">Usage limit</span> '
-            f"<span class=quiet>resets {when(worker.limited_until, now)}</span>",
+            f"<span class=quiet>resets {when_live(worker.limited_until, now)}</span>",
             label,
         )
     if worker.state == "unavailable":
@@ -661,11 +733,12 @@ def _remote_row(
             + (f", {e(known.model)}" if known and known.model else ""),
             f'<a href="https://github.com/{e(claim.repository)}/tree/{e(claim.branch)}">'
             f"{e(claim.branch)}</a>",
-            f"renewed {span(now - claim.renewed)} ago",
+            f"renewed {ticking(claim.renewed, now)} ago",
         ]
         if claim.paused_until:
             facts.insert(
-                0, f'<span class="flag paused">Paused</span> until {when(claim.paused_until, now)}'
+                0,
+                f'<span class="flag paused">Paused</span> until {when_live(claim.paused_until, now)}',
             )
         rows.append(_run(slots.get(claim.repository, 0), issue, _track(claim.step), facts, manager))
     managers = len({claim.holder.partition("/")[0] for claim in claims})
@@ -997,7 +1070,12 @@ def cockpit_fragment(
     snapshot: Snapshot, history: list[RunRecord], view: CockpitView = DEFAULT_VIEW
 ) -> str:
     return (
-        _readouts(history, snapshot.now)
+        _clock(snapshot.now)
+        + "<p class=status><i class=dot aria-hidden=true></i>Live: updated "
+        + ticking(snapshot.now, snapshot.now)
+        + " ago, manager clock <time data-clock>"
+        + f"{snapshot.now:%H:%M:%S}</time> UTC</p>"
+        + _readouts(history, snapshot.now)
         + "<div class=deck-grid>"
         + _crew(snapshot)
         + _flight_log(snapshot, history)
@@ -1091,7 +1169,7 @@ def _override_form(repository: RepositorySettings, defaults: DefaultsSettings) -
 
 def _claim_row(claim: ClaimView, now: datetime) -> str:
     state = (
-        f'<span title="{e(when(claim.paused_until, now))}">paused, resumes in {span(claim.paused_until - now)}</span>'
+        f'<span title="{e(when(claim.paused_until, now))}">paused, resumes in {ticking(claim.paused_until, now)}</span>'
         if claim.paused_until
         else e(claim.state)
     )
@@ -1117,14 +1195,18 @@ def _claim_row(claim: ClaimView, now: datetime) -> str:
         f'<tr><td><a href="https://github.com/{e(claim.repository)}/issues/{claim.issue}">'
         f"#{claim.issue}</a></td><td>{holder}</td><td>{state}</td>"
         f'<td>{e(claim.step)}</td><td class=nowrap title="{claim.renewed:%Y-%m-%d %H:%M} UTC">'
-        f"{span(now - claim.renewed)} ago</td>"
-        f'<td class=nowrap title="{claim.expires:%Y-%m-%d %H:%M} UTC">in {span(claim.expires - now)}</td>'
+        f"{ticking(claim.renewed, now)} ago</td>"
+        f'<td class=nowrap title="{claim.expires:%Y-%m-%d %H:%M} UTC">in {ticking(claim.expires, now)}</td>'
         f"<td class=mono>{e(claim.branch)}</td>"
         f"<td>{release}</td></tr>"
     )
 
 
 def fleet_fragment(snapshot: Snapshot) -> str:
+    return _clock(snapshot.now) + _fleet_fragment(snapshot)
+
+
+def _fleet_fragment(snapshot: Snapshot) -> str:
     if not snapshot.claims:
         return "<p class=empty>No issue is claimed right now, by this or any other manager.</p>"
     parts = []
@@ -1430,7 +1512,7 @@ def _issue_row(issue: IssueView, workers: Mapping[str, WorkerView], now: datetim
         )
     else:
         who = "<span class=quiet>nobody</span>"
-    since = f" for {span(now - issue.since)}" if issue.since else ""
+    since = f" for {ticking(issue.since, now)}" if issue.since else ""
     step = f"{e(issue.step)}{since}" if issue.step else ""
     worker = workers.get(issue.worker or "") if issue.local else None
     if worker is not None:
@@ -1446,6 +1528,10 @@ def _issue_row(issue: IssueView, workers: Mapping[str, WorkerView], now: datetim
 
 
 def issues_fragment(snapshot: Snapshot) -> str:
+    return _clock(snapshot.now) + _issues_fragment(snapshot)
+
+
+def _issues_fragment(snapshot: Snapshot) -> str:
     if not snapshot.issues:
         return (
             "<p class=empty>No open issue in the watched repositories. "
