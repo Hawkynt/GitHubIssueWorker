@@ -72,6 +72,29 @@ Write `.ghiw/outcome.json`, following the JSON schema in `.ghiw/outcome.schema.j
 """
 
 
+UNDERSTAND = """\
+## This run: understand the issue, change nothing
+
+Do not change any file and do not commit in this run. Read the issue, its comments, and as much of
+the repository as you need (its specification first), then restate the request so that it can be
+built and checked. Issues are often short and not measurable; your restatement is what the work
+will be measured against, and it is posted to the issue for the maintainer to correct.
+
+Write `.ghiw/outcome.json` following `.ghiw/outcome.schema.json`:
+
+- `outcome`: `done` when you can restate the request; `needs-input` with questions when it admits
+  readings that lead to different code, or needs a large design decision; `impossible` when it
+  cannot be done;
+- `restatement`: the issue in your own words, in Markdown: the goal in one or two sentences, what
+  is in scope and what is not, the acceptance criteria as Given / When / Then scenarios that a test
+  can check, and the assumptions you made;
+- `scenarios`: the same acceptance scenarios, one string each;
+- `summary`: one sentence;
+- `labels`: see below, otherwise an empty list;
+- `questions`: for `needs-input`, otherwise an empty list.
+"""
+
+
 def build_prompt(
     repository: str,
     branch: str,
@@ -80,6 +103,8 @@ def build_prompt(
     kind: RunKind,
     label_choices: Iterable[str] | None = None,
     feedback: str | None = None,
+    understanding: str | None = None,
+    phase: str = "implement",
 ) -> str:
     parts = [
         f"# Issue #{issue.number} of {repository}: {issue.title}",
@@ -98,7 +123,17 @@ def build_prompt(
             parts += [f"**{comment.author.login}** wrote:", "", comment.body.strip(), ""]
 
     choices = sorted(label_choices) if label_choices is not None else None
-    parts += ["", CONTRACT]
+    if understanding:
+        parts += [
+            "",
+            "## Agreed understanding",
+            "",
+            "This restatement of the issue was posted to it and is what the work is measured "
+            "against. Comments above that came later take precedence over it.",
+            "",
+            understanding.strip(),
+        ]
+    parts += ["", UNDERSTAND if phase == "understand" else CONTRACT]
     if choices:
         parts += [
             "## Labels",

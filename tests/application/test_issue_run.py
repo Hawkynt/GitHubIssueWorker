@@ -86,7 +86,8 @@ class Harness:
             sessions=self.sessions,
             clock=self.clock,
             sleep=lambda seconds: self.clock.advance(timedelta(seconds=seconds)),
-            settings=RunSettings(**settings),  # type: ignore[arg-type]
+            # The understanding run has its own tests; here it is off unless a test asks for it.
+            settings=RunSettings(**{"understand_first": False, **settings}),  # type: ignore[arg-type]
         ).run(self.handle, ISSUE, comments, kind)
 
 

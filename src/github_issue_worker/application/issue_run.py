@@ -23,9 +23,28 @@ from github_issue_worker.ports.agents import AgentRun, RunReport
 from github_issue_worker.ports.clock import Clock
 from github_issue_worker.ports.repository import Check, PullRequest, RepositoryHost
 from github_issue_worker.ports.workspace import WorkspacePort
+from github_issue_worker.product import MARKER_PREFIX
 
 VerdictKind = Literal["merged", "needs-input", "awaiting-review", "paused", "failed", "lost"]
 _MERGEABLE = frozenset({"clean", "unstable", "has_hooks"})
+UNDERSTANDING_MARKER = f"{MARKER_PREFIX}understanding -->"
+_UNDERSTANDING_HEADER = "**How I understand this issue**"
+_UNDERSTANDING_FOOTER = (
+    "This is what the work will be measured against. If it is not what you meant, say so in a "
+    "comment and the work adapts."
+)
+
+
+def understanding_in(comments: list[Comment]) -> str | None:
+    """The latest restatement a manager posted to the issue, without its frame."""
+    for comment in reversed(comments):
+        if UNDERSTANDING_MARKER in comment.body:
+            text = comment.body.replace(UNDERSTANDING_MARKER, "")
+            text = text.replace(_UNDERSTANDING_HEADER, "").replace(_UNDERSTANDING_FOOTER, "")
+            return text.strip() or None
+    return None
+
+
 _REBASE = frozenset({"dirty", "behind"})
 _FAILED = frozenset({"failure", "timed_out", "cancelled", "action_required", "startup_failure"})
 _NOT_STARTED = ("job was not started", "spending limit", "billing")
@@ -56,6 +75,8 @@ class RunSettings:
     checks_timeout: timedelta = timedelta(hours=2)
     check_interval: timedelta = timedelta(seconds=30)
     limit_probe: timedelta = timedelta(minutes=5)
+    understand_first: bool = True
+    """First and reopen runs start with a run that restates the issue and posts it (F4.5)."""
     gate: CommitGate = field(default_factory=CommitGate)
 
 
@@ -81,6 +102,7 @@ class IssueRun:
     ) -> Verdict:
         self._handle = handle
         self._consumed = max((comment.id for comment in comments), default=None)
+        self._understanding: str | None = None
         try:
             return self._run(issue, comments, kind)
         except ClaimLost as lost:
@@ -101,6 +123,17 @@ class IssueRun:
             label_choices = self.host.label_names() - {
                 n for n in self.host.label_names() if n.startswith("worker")
             }
+
+        self._understanding = understanding_in(self.host.comments(issue.number))
+        if (
+            self._understanding is None
+            and self.settings.understand_first
+            and kind in (RunKind.FIRST, RunKind.REOPEN)
+        ):
+            verdict = self._understand(tree, issue, comments, kind, branch, label_choices)
+            if verdict is not None:
+                return verdict
+            label_choices = None
 
         pushed = self.workspace.remote_head(repo, branch)
         feedback: str | None = None
@@ -168,6 +201,45 @@ class IssueRun:
 
     # --- steps -----------------------------------------------------------------------------------
 
+    def _understand(
+        self,
+        tree: Path,
+        issue: Issue,
+        comments: tuple[Comment, ...],
+        kind: RunKind,
+        branch: str,
+        label_choices: set[str] | None,
+    ) -> Verdict | None:
+        """Restate the issue before any work, apply the labels, post the restatement (F4.5)."""
+        feedback: str | None = None
+        for _ in range(2):
+            report = self._agent(
+                tree, issue, comments, kind, branch, label_choices, feedback, phase="understand"
+            )
+            if report.limit is not None:
+                return self._pause(issue, report)
+            outcome = report.outcome
+            if outcome is not None and outcome.kind != "done":
+                return self._ask(issue, outcome)
+            if outcome is not None and outcome.restatement:
+                if label_choices and outcome.labels:
+                    chosen = [label for label in outcome.labels if label in label_choices]
+                    if chosen:
+                        self._fenced(partial(self.host.add_labels, issue.number, chosen))
+                body = (
+                    f"{_UNDERSTANDING_HEADER}\n\n{outcome.restatement}\n\n"
+                    f"{_UNDERSTANDING_FOOTER}\n\n{UNDERSTANDING_MARKER}"
+                )
+                self._fenced(partial(self.host.comment, issue.number, body))
+                self._understanding = outcome.restatement
+                return None
+            reason = report.error if outcome is None else "the outcome has no restatement"
+            feedback = (
+                f"The understanding run is not usable: {reason}. Write `.ghiw/outcome.json` with "
+                "a `restatement` of the issue as described below."
+            )
+        return self._fail(issue, f"the issue could not be restated: {feedback}")
+
     def _agent(
         self,
         tree: Path,
@@ -177,10 +249,19 @@ class IssueRun:
         branch: str,
         label_choices: set[str] | None,
         feedback: str | None,
+        phase: str = "implement",
     ) -> RunReport:
         key = (issue.number, self.settings.worker)
         prompt = build_prompt(
-            self.host.repository, branch, issue, comments, kind, label_choices, feedback
+            self.host.repository,
+            branch,
+            issue,
+            comments,
+            kind,
+            label_choices,
+            feedback,
+            understanding=self._understanding,
+            phase=phase,
         )
         report = self.agent(
             AgentRun(
