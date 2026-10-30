@@ -22,6 +22,8 @@
 > (Claude, Codex, Antigravity, OpenCode, local or cloud) share the work without doing anything twice
 > or leaving an issue stranded.
 
+![The Workers page: each worker's issue, model and step at a glance](docs/screenshots/workers.png)
+
 ## 🧭 Vision
 
 The issue tracker becomes the only interface a maintainer needs. Writing an issue is the same as
@@ -148,6 +150,32 @@ Each claim shows its worker, state, step, branch, how long ago it was renewed an
 paused claims show when they resume and claims nobody renewed for validity plus grace show as
 `abandoned`. Finished claims (done or released) are only counted. Times are UTC with the distance
 from now, `2026-11-06 10:00 UTC (in 6d 23h)`.
+
+## 🖼️ Screenshots
+
+Generated from the UI's demo scenario (`github-issue-worker ui --demo`) on every branch push, so they
+always show the current UI with the same believable sample fleet.
+
+**Workers.** Each worker is a lane: the agent, the account it bills against and the model it runs
+on; the issue it works, linked; a track through the six steps of a run; branch, worktree and time.
+Limited and unavailable workers say why.
+
+![Workers page with five workers in different states](docs/screenshots/workers.png)
+
+**Repositories.** The watch list with per-repository overrides; a repository is added only when
+your account can push to it.
+
+![Repositories page with three watched repositories](docs/screenshots/repositories.png)
+
+**Fleet.** Every claim in the watched repositories, this manager's and other managers', with step,
+renewal and expiry. Releasing another manager's claim needs the issue typed out.
+
+![Fleet page with claims from this and two other managers](docs/screenshots/fleet.png)
+
+**Settings.** Every other key of the configuration, generated from its schema, with its default
+and whether it is set; saving validates, writes the file and applies the change live.
+
+![Settings page with every configuration section](docs/screenshots/settings.png)
 
 ## 🔄 Issue lifecycle
 
@@ -974,7 +1002,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 ### F14 — Local UI
 
-- [ ] 🟥 **F14.1** The manager serves the UI on `127.0.0.1:<ui.port>`. A non-loopback bind is refused
+- [x] 🟥 **F14.1** The manager serves the UI on `127.0.0.1:<ui.port>`. A non-loopback bind is refused
   without `ui.token`, and with one every request must carry it. `--no-ui` disables it.
 - [ ] 🟥 **F14.2** Workers page: per worker the agent, the model it runs on, installation and
   version, account and usage state with reset time, current issue (link), step, local branch,
@@ -984,15 +1012,15 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F14.4** Worker actions: add from detected installations or by hand, edit every worker
   setting (agent, installation, account, priority, tags, model, budget, command and limit patterns),
   remove (releases the claim), pause, resume, release claim.
-- [ ] 🟥 **F14.8** Settings page: every remaining configuration key, with its default and its source
+- [x] 🟥 **F14.8** Settings page: every remaining configuration key, with its default and its source
   (file or default), inline validation through the F0.3 validator, atomic save and live apply (F0.7).
   Tested: for every key in the schema there is a UI field, so a new key cannot ship without one.
-- [ ] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
+- [x] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
   without one.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
 - [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
-- [ ] 🟥 **F14.7** Demo mode `ui --demo <scenario>` renders every page through the real UI code with
+- [x] 🟥 **F14.7** Demo mode `ui --demo <scenario>` renders every page through the real UI code with
   deterministic sample data (several workers of every agent kind, limited and paused accounts,
   claims from other managers). `generate.yml` captures each page and commits changed screenshots.
   The same pull request adds the hero image and `## 🖼️ Screenshots` and sets `gui: true`.

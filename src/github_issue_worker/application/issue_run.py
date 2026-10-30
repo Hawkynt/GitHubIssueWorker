@@ -96,6 +96,8 @@ class IssueRun:
     clock: Clock
     sleep: Callable[[float], None]
     settings: RunSettings
+    progress: Callable[[str], None] = lambda step: None
+    """Told each step the run enters: understand, implement, verify, push, checks, merge."""
 
     def run(
         self, handle: ClaimHandle, issue: Issue, comments: tuple[Comment, ...], kind: RunKind
@@ -130,6 +132,7 @@ class IssueRun:
             and self.settings.understand_first
             and kind in (RunKind.FIRST, RunKind.REOPEN)
         ):
+            self.progress("understand")
             verdict = self._understand(tree, issue, comments, kind, branch, label_choices)
             if verdict is not None:
                 return verdict
@@ -143,6 +146,7 @@ class IssueRun:
 
         while True:
             if pull is None or feedback is not None:
+                self.progress("implement")
                 report = self._agent(tree, issue, comments, kind, branch, label_choices, feedback)
                 if report.limit is not None:
                     return self._pause(issue, report)
@@ -161,6 +165,7 @@ class IssueRun:
                 if outcome.kind != "done":
                     return self._ask(issue, outcome)
 
+                self.progress("verify")
                 problem = self._check(tree, base)
                 if problem:
                     corrections += 1
@@ -169,6 +174,7 @@ class IssueRun:
                     feedback = problem
                     continue
 
+                self.progress("push")
                 pushed = self._push(tree, branch, pushed)
                 if pull is None:
                     pull = self.host.find_pull_request(branch) or self._open(
@@ -176,8 +182,10 @@ class IssueRun:
                     )
                 feedback = None
 
+            self.progress("checks")
             state, detail = self._await(pull, issue)
             if state == "merge":
+                self.progress("merge")
                 return self._merge(issue, pull, branch, outcome)
             if state == "rebase":
                 if self.workspace.rebase(tree, base):

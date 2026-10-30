@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import re
@@ -188,7 +189,11 @@ def _workers(config: Configuration, path: Path, args: argparse.Namespace, home: 
 
 
 def _watch(
-    config: Configuration, args: argparse.Namespace, home: Path, runtime_factory: RuntimeFactory
+    config: Configuration,
+    args: argparse.Namespace,
+    home: Path,
+    runtime_factory: RuntimeFactory,
+    path: Path | None = None,
 ) -> int:
     from github_issue_worker.adapters.process import terminate_all
 
@@ -222,13 +227,79 @@ def _watch(
     print(f"{NAME} {version()} as {runtime.manager_id}, watching {count} repositories")
     for row in manager.snapshot():
         print(f"  worker {row['worker']}: {'ok' if row['available'] else row['reason']}")
+    server = None
+    if path is not None and not args.once and not getattr(args, "no_ui", False):
+        server = _start_ui(runtime, manager, path)
+    seen = _mtime(path)
     while not stop.is_set():
         manager.tick()
         if args.once:
             break
-        stop.wait(config.poll_interval.total_seconds())
+        stop.wait(runtime.config.poll_interval.total_seconds())
+        seen = _reload_if_changed(runtime, manager, path, seen)
     while any(slot.busy for slot in manager.workers):
         stop.wait(5)
+    if server is not None:
+        server.stop()
+    return 0
+
+
+def _mtime(path: Path | None) -> float | None:
+    try:
+        return path.stat().st_mtime if path is not None else None
+    except OSError:
+        return None
+
+
+def _reload_if_changed(
+    runtime: Any, manager: Any, path: Path | None, seen: float | None
+) -> float | None:
+    """A change made in the file while the manager runs is applied like one from the UI (F0.7)."""
+    current = _mtime(path)
+    if path is None or current == seen:
+        return seen
+    try:
+        runtime.apply(load(path), manager)
+        logging.getLogger(__name__).info("configuration reloaded from %s", path)
+    except ConfigurationError as error:
+        logging.getLogger(__name__).error(
+            "%s is invalid, keeping the running configuration: %s", path, error
+        )
+    return current
+
+
+def _start_ui(runtime: Any, manager: Any, path: Path) -> Any:
+    from github_issue_worker.ui.live import RuntimeBackend
+    from github_issue_worker.ui.server import UiServer
+
+    ui = runtime.config.ui
+    server = UiServer(RuntimeBackend(runtime, manager, path, detect_workers), ui.bind, ui.port)
+    if server.start():
+        print(f"  ui: {server.url}")
+        return server
+    print(f"  ui: could not listen on {ui.bind}:{ui.port}; running without it", file=sys.stderr)
+    return None
+
+
+def _ui(args: argparse.Namespace) -> int:
+    from github_issue_worker.ui.demo import DemoBackend
+    from github_issue_worker.ui.server import UiServer, capture_screenshots
+
+    if not args.demo:
+        print("the UI is part of `watch`; `ui --demo` serves the demo fleet", file=sys.stderr)
+        return 2
+    if args.screenshots:
+        for written in capture_screenshots(DemoBackend(), args.screenshots):
+            print(written)
+        return 0
+    server = UiServer(DemoBackend(), "127.0.0.1", args.port)
+    if not server.start():
+        print(f"could not listen on port {args.port}", file=sys.stderr)
+        return 2
+    print(f"demo fleet at {server.url}; Ctrl+C to stop")
+    with contextlib.suppress(KeyboardInterrupt):
+        threading.Event().wait()
+    server.stop()
     return 0
 
 
@@ -350,6 +421,12 @@ def _parser() -> argparse.ArgumentParser:
 
     watch = commands.add_parser("watch", help="run the manager until stopped")
     watch.add_argument("--once", action="store_true", help="one poll-and-work pass, then exit")
+    watch.add_argument("--no-ui", action="store_true", help="do not serve the local UI")
+
+    ui = commands.add_parser("ui", help="serve the demo fleet, or capture its screenshots")
+    ui.add_argument("--demo", action="store_true", help="serve fixed, believable sample data")
+    ui.add_argument("--port", type=int, default=8765)
+    ui.add_argument("--screenshots", type=Path, help="write a PNG of every page to this directory")
 
     work = commands.add_parser("work", help="work one issue now")
     work.add_argument("issue", help="owner/repo#n or an issue URL")
@@ -402,7 +479,9 @@ def main(
         if args.command == "workers":
             return _workers(config, path, args, home)
         if args.command == "watch":
-            return _watch(config, args, home, runtime_factory or _build_runtime())
+            return _watch(config, args, home, runtime_factory or _build_runtime(), path)
+        if args.command == "ui":
+            return _ui(args)
         if args.command == "status":
             return _status(config, args, home, runtime_factory or _build_runtime())
         if args.command == "release":

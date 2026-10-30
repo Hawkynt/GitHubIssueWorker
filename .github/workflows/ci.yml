@@ -63,9 +63,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      # Flip `gui: true` on in the pull request that lands the first local-UI page — it makes the
-      # hero image and the screenshot tour required (README, F14.7).
+      # The local UI ships, so the hero image and the screenshot tour are required (F14.7).
       - uses: Hawkynt/RepositoryTemplate/repo-readme@v1
+        with:
+          gui: true
 
   # Aggregate context: the branch protection requires this one check by name, so required-check
   # upkeep does not follow every matrix leg.

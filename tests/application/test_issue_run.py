@@ -283,3 +283,22 @@ def test_ci_that_never_started_goes_to_the_maintainer_not_the_agent(tmp_path: Pa
     assert len(h.agent.runs) == 1
     assert reason in h.host.posted[-1][1]
     assert h.host.worker_label[42] == "worker:awaiting-review"
+
+
+def test_the_run_reports_each_step_it_enters(tmp_path: Path) -> None:
+    steps: list[str] = []
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
+    verdict = IssueRun(
+        host=h.host,
+        workspace=h.workspace,
+        coordinator=h.coordinator,
+        agent=h.agent,
+        verify=h.verify,
+        sessions=h.sessions,
+        clock=h.clock,
+        sleep=lambda seconds: None,
+        settings=RunSettings(understand_first=False),
+        progress=steps.append,
+    ).run(h.handle, ISSUE, (), RunKind.FIRST)
+    assert verdict.kind == "merged"
+    assert steps == ["implement", "verify", "push", "checks", "merge"]
