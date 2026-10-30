@@ -85,7 +85,7 @@ def make_adapter(worker: WorkerSettings, home: Path) -> AgentAdapter:
     if resolved.local:
         return ClaudeLocalAdapter(resolved.executable, env=resolved.env)
     if worker.agent == "claude":
-        return ClaudeAdapter(executable, env=resolved.env)
+        return ClaudeAdapter(executable, env=resolved.env, budget_usd=worker.max_budget_usd_per_run)
     if worker.agent == "codex":
         return CodexAdapter(executable, env=resolved.env)
     if worker.agent == "antigravity":

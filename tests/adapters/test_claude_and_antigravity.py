@@ -45,6 +45,15 @@ def test_claude_resumes_a_session(tmp_path: Path) -> None:
     assert "--session-id" not in argv
 
 
+def test_claude_runs_within_a_budget_when_one_is_set(tmp_path: Path) -> None:
+    argv = ClaudeAdapter("claude", budget_usd=2.5).invocation(run(tmp_path)).argv
+    assert argv[argv.index("--max-budget-usd") + 1] == "2.5"
+
+
+def test_claude_runs_without_a_budget_flag_when_none_is_set(tmp_path: Path) -> None:
+    assert "--max-budget-usd" not in ClaudeAdapter("claude").invocation(run(tmp_path)).argv
+
+
 def test_claude_structured_output_becomes_the_outcome(tmp_path: Path) -> None:
     adapter = ClaudeAdapter("claude")
     adapter.invocation(run(tmp_path))

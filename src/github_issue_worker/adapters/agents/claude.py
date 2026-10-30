@@ -110,9 +110,12 @@ def _interpret(
 class ClaudeAdapter:
     kind = "claude"
 
-    def __init__(self, executable: str, env: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, executable: str, env: dict[str, str] | None = None, budget_usd: float | None = None
+    ) -> None:
         self._executable = executable
         self._env = env or {}
+        self._budget_usd = budget_usd
 
     def invocation(self, run: AgentRun) -> Invocation:
         prepare(run)
@@ -131,6 +134,8 @@ class ClaudeAdapter:
         argv += ["--resume", run.session] if run.session else ["--session-id", str(uuid.uuid4())]
         if run.model:
             argv += ["--model", run.model]
+        if self._budget_usd is not None:
+            argv += ["--max-budget-usd", str(self._budget_usd)]
         return Invocation(argv=argv, cwd=run.worktree, stdin=run.prompt, env=self._env)
 
     def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
