@@ -31,11 +31,12 @@ contributor would: the specification is written down before the code, the expect
 executable scenarios, the code speaks the domain's language, and every behaviour starts as a failing
 test.
 
-A **worker** is one coding agent (a Claude Code, a Codex, an Antigravity, an OpenCode on a local
-model) that works one issue at a time. A **manager** is the `github-issue-worker` process on a
-machine. It steers all of that machine's workers at once, does everything outward-facing (push, pull
-request, merge, close, comment) on their behalf, and only after it has checked the result: build and
-tests green, every commit conforming to the house rules, no trace of who or what wrote it. A change
+A **worker** is one coding agent (a Claude Code, a Codex, an Antigravity, a Claude Code on a local
+model, an OpenCode) that works one issue at a time. A **manager** is the `github-issue-worker`
+process on a machine. It steers all of that machine's workers at once, does everything outward-facing
+(push, pull request, merge, close, comment) on their behalf, and only after it has checked the
+result: build and tests green, every commit conforming to the house rules, no trace of who or what
+wrote it. A change
 that cannot pass those checks is never shipped. It comes back to the issue as a question.
 
 Managers form a fleet without a server. Any number of them, on desktops, laptops, containers or in
@@ -47,8 +48,9 @@ never blocks anything. A worker claims only when it is idle and able to start, s
 reserved by someone who cannot work on it. Usage limits are treated as weather, not failure: the
 limited worker pauses its issue, takes nothing new, and resumes on its own when the limit resets.
 
-A local web UI on each manager shows which worker is on which issue, on which local branch, and lets
-you add and remove watched repositories and workers.
+A local web UI on each manager shows which worker is on which issue, on which local branch, and
+gives access to every setting: watched repositories, workers, accounts, fleet behaviour and defaults.
+The configuration file and the UI are two views of the same settings.
 
 It is built for one maintainer running many repositories under their own account, and it never acts
 on a repository that account cannot push to.
@@ -63,8 +65,9 @@ on a repository that account cannot push to.
   set.
 - **Spec → scenarios → domain → tests → code** — every issue is worked SDD, BDD, DDD and TDD, in that
   order. See [How an issue is worked](#-how-an-issue-is-worked).
-- **One manager, many workers** — a single manager steers a local Claude Code, Codex, Antigravity and
-  an OpenCode on a local model side by side, each on its own issue. See [Workers](#-workers).
+- **One manager, many workers** — a single manager steers a Claude Code, a Codex, an Antigravity and
+  a second Claude Code on a local model side by side, each on its own issue. OpenCode and any other
+  CLI agent can join the same way. See [Workers](#-workers).
 - **Any installation** — agents installed the normal way are found on `PATH`. Portable setups
   (ClaudeCodePortable profiles, ClaudeLocal) are supported through installation presets.
 - **A fleet without a server** — managers on different machines coordinate through atomic claims
@@ -72,8 +75,8 @@ on a repository that account cannot push to.
   [Fleet coordination](#-fleet-coordination).
 - **Usage-limit aware** — a worker whose agent hits its limit is detected, pauses its issue, takes
   nothing new and resumes when the limit resets. See [Usage limits](#-usage-limits).
-- **Local UI** — workers, their issues, steps, branches and worktrees at a glance, and the watch list
-  to edit. See [Local UI](#-local-ui).
+- **Local UI** — workers, their issues, steps, branches and worktrees at a glance, and every setting
+  editable, with the same validation as the configuration file. See [Local UI](#-local-ui).
 - **House-rule commits** — prefixed subjects (`+ - * # !`), one concern per commit, signed with your
   key, authored as you, no AI attribution. A commit gate checks all of it before anything is pushed.
 - **Pull request linked to the issue** — the branch appears in the issue's *Development* panel and
@@ -245,8 +248,8 @@ have:
 manager "office-pc"
   ├─ worker claude      Claude Code (ClaudeCodePortable profile "default")   → Hawkynt/ShiftDiff#12
   ├─ worker codex       Codex       (ClaudeCodePortable profile "codex")     → Hawkynt/PNGCrushCS#88
-  ├─ worker antigravity Antigravity (on PATH)                                → paused until 15:00
-  └─ worker local       OpenCode on a ClaudeLocal model                      → idle
+  ├─ worker antigravity Antigravity (ClaudeCodePortable profile "agy")      → paused until 15:00
+  └─ worker local       Claude Code on a local model (ClaudeLocal)           → idle
 ```
 
 Every agent is driven through the same contract, so agents are interchangeable mid-issue:
@@ -284,7 +287,7 @@ and the presets exist for setups that keep agents out of the system:
 | `path` (default) | The executable of the agent kind on `PATH` (`claude`, `codex`, `agy`, `opencode`). | The agent's standard config and login locations. This is every normal installation: npm, the vendors' installers, package managers. |
 | `executable` | An explicit `path`. | Plus any `env` entries you give. |
 | `claudecodeportable` | A `root` (default `~/ClaudeCodePortable`) and a `profile`. Runs the matching launcher (`claude.sh`, `codex.sh`, `antigravity.sh`, or the `.bat` on Windows) non-interactively: `--profile <p> --skip-menu`, agent flags passed through. | Owned by the launcher: `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or the redirected `HOME` of that profile, and on Windows Antigravity's per-profile keyring swap. |
-| `claudelocal` | A `root` (default `~/ClaudeLocal`). Runs `claude.sh --dir <worktree> --prompt - --output-format json` (or `Claude.bat`) with an optional `--model`. | ClaudeLocal's own Claude Code against its local gateway. Availability is `claude.sh --status`. Never `--stop` or `--tune`. |
+| `claudelocal` | A `root` (default `~/ClaudeLocal`), for a `claude` worker. Runs ClaudeLocal's separate Claude Code: `claude.sh --dir <worktree> --prompt - --output-format json` (or `Claude.bat`) with an optional `--model`. | ClaudeLocal's own Claude Code against its local gateway, with its own config and sessions, independent of any other Claude installation. Availability is `claude.sh --status`. Never `--stop` or `--tune`. |
 
 `github-issue-worker workers --detect` looks in all of these places and proposes one worker per agent
 it finds, with the installation that found it. A worker whose installation is missing or not logged
@@ -296,7 +299,8 @@ Every worker has an **account**: an opaque name for what its agent bills against
 to accounts, not to workers or machines. Two workers on one account, on one machine or on two, share
 its limit (see [Usage limits](#-usage-limits)). An account can also cap concurrency:
 `maxConcurrentRuns: 1` fits a local model that serves one request at a time, as ClaudeLocal's
-gateway does, so a second worker on it waits instead of queuing inside the engine.
+gateway does, so a second worker on it waits instead of queuing inside the engine. A local model has
+no vendor usage limit; its worker is *unavailable* instead while the gateway is not running.
 
 **Choosing who takes an issue.** When several idle workers of one manager are eligible for an issue,
 the one with the lowest `priority` value takes it, and among equals the one whose account has the
@@ -467,13 +471,16 @@ not a second program: what the UI changes, the manager does, with the same check
 
 | Page | Shows | Lets you |
 | --- | --- | --- |
-| **Workers** | Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations), remove one (releases its claim), pause or resume it, release its claim. |
-| **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved) and remove one. |
+| **Workers** | Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
+| **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), edit its per-repository overrides, remove one. |
+| **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get. |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
 | **Issue** | One issue's runs, the journal, the outcome, the log tail, and the claim's history. | Skip it, release it, open the PR. |
 
 It updates live (server-sent events), needs no build step, and binds to loopback only. Binding to
-another address requires `ui.token`, which every request must then carry. `--no-ui` turns it off.
+another address requires `ui.token`, which every request must then carry, and the UI refuses to save
+a non-loopback `ui.bind` without one. The token is never shown again once saved. `--no-ui` turns the
+UI off; the settings remain editable through the file and the CLI.
 
 The UI is generated documentation like every house GUI: the manager has a demo mode
 (`github-issue-worker ui --demo <scenario>`) that serves each page with deterministic sample data
@@ -484,8 +491,14 @@ working-branch push. The pull request that lands the first page also adds the he
 ## ⚙️ Configuration
 
 One JSON file per manager: `~/.config/GitHubIssueWorker/config.json` on Linux (`$XDG_CONFIG_HOME`
-respected), `%APPDATA%\GitHubIssueWorker\config.json` on Windows, or `--config <path>`. The CLI and
-the UI edit it, and everything else is optional. Managers share nothing but the repositories.
+respected), `%APPDATA%\GitHubIssueWorker\config.json` on Windows, or `--config <path>`. Everything
+is optional. Managers share nothing but the repositories.
+
+**Every key below is editable in the UI's Settings page**, and the file, the CLI and the UI are three
+ways to change the same settings. All three go through one validation, writes are atomic, and an
+edit made in the file while the manager runs is picked up as if it had been made in the UI. Changes
+apply without restarting the manager: a worker whose settings change finishes its current step
+first, and a moved UI listener reopens on its new address.
 
 ```json
 {
@@ -504,9 +517,10 @@ the UI edit it, and everything else is optional. Managers share nothing but the 
       "installation": { "type": "claudecodeportable", "profile": "default" } },
     { "name": "codex", "agent": "codex", "account": "openai-plus", "priority": 2,
       "installation": { "type": "claudecodeportable", "profile": "codex" } },
-    { "name": "antigravity", "agent": "antigravity", "account": "google-pro", "priority": 3 },
-    { "name": "local", "agent": "opencode", "account": "local-gpu", "priority": 9, "tags": ["local"],
-      "model": "local/qwen3-coder" }
+    { "name": "antigravity", "agent": "antigravity", "account": "google-pro", "priority": 3,
+      "installation": { "type": "claudecodeportable", "profile": "agy" } },
+    { "name": "local", "agent": "claude", "account": "local-gpu", "priority": 9, "tags": ["local"],
+      "installation": { "type": "claudelocal" } }
   ],
   "fleet": {
     "claimValidity": "7.00:00:00",
@@ -619,7 +633,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F0.2** Package skeleton (`pyproject.toml`, `src/github_issue_worker`, `tests/`) that is
   `ruff`/`mypy --strict` clean and tests green, with a `github-issue-worker --version` entry point.
 - [ ] 🟥 **F0.3** Configuration loads from the platform path or `--config`, validates every key, and
-  reports an invalid key by its JSON path. Unknown keys are an error, not ignored.
+  reports an invalid key by its JSON path. Unknown keys are an error, not ignored. One validator serves
+  the file, the CLI and the UI, and every write is atomic.
+- [ ] 🟥 **F0.7** Live reconfiguration: a valid change to the file, from the CLI or from the UI
+  applies without a restart. A worker whose settings change finishes its current step first. An
+  invalid change to the file is reported and the running configuration kept.
 - [ ] 🟥 **F0.4** Structured log to console plus one log file per repository and per issue run.
   Secrets are redacted.
 - [ ] 🟥 **F0.5** Authentication resolves `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token`
@@ -853,9 +871,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F12.5** `antigravity` adapter: `agy -p --output-format stream-json`, `--conversation`,
   `--mode accept-edits`, run under a pseudo-terminal because `agy -p` can lose its output without a
   TTY.
-- [ ] 🟥 **F12.6** `opencode` adapter: `opencode run --format json`, `--session`, `--model
-  provider/model`, for local models behind any OpenAI-compatible endpoint (llama.cpp server, Ollama,
-  LM Studio, vLLM).
+- [ ] 🟧 **F12.6** `opencode` adapter: `opencode run --format json`, `--session`, `--model
+  provider/model`, for models behind any provider OpenCode supports, local ones included. Tested
+  against a fake replaying captured OpenCode output; verified against a real installation in F15.8.
 - [ ] 🟥 **F12.7** `command` adapter: argument template with `{prompt}`, `{worktree}`, `{outcome}`,
   `{session}` placeholders, configured limit patterns and exit codes, for any further CLI agent.
 - [ ] 🟥 **F12.8** `workers` command: list workers with agent, installation, version, account,
@@ -865,7 +883,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   account headroom. Triage uses the cheapest structured-output worker.
 - [ ] 🟥 **F12.10** Continuation across agents: a run started by one agent kind is finished by another
   from the journal and checkpoint, with no repeated commits (tested claude → codex → antigravity →
-  opencode with fakes).
+  local claude with fakes).
 - [ ] 🟥 **F12.11** `maxConcurrentRuns` per account is enforced on the manager.
 - [ ] 🟦 **F12.12** `remote` adapter for vendor cloud agents: submit the task with the checkpoint,
   poll, collect the diff into the worktree, then the same verification and commit gate as a local
@@ -898,9 +916,15 @@ operational items, demonstrated on a real repository. Commits that implement an 
   state with reset time, current issue (link), step, local branch, worktree path, time on the issue,
   last checkpoint and run cost, updated live.
 - [ ] 🟥 **F14.3** Repositories page: watch list with last poll, push-access result and per-state
-  counts; add (verified before saving) and remove.
-- [ ] 🟥 **F14.4** Worker actions: add from detected installations, remove (releases the claim),
-  pause, resume, release claim.
+  counts; add (verified before saving), edit per-repository overrides, remove.
+- [ ] 🟥 **F14.4** Worker actions: add from detected installations or by hand, edit every worker
+  setting (agent, installation, account, priority, tags, model, budget, command and limit patterns),
+  remove (releases the claim), pause, resume, release claim.
+- [ ] 🟥 **F14.8** Settings page: every remaining configuration key, with its default and its source
+  (file or default), inline validation through the F0.3 validator, atomic save and live apply (F0.7).
+  Tested: for every key in the schema there is a UI field, so a new key cannot ship without one.
+- [ ] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
+  without one.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
 - [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
@@ -920,15 +944,17 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F15.4** `claudelocal` installation: `claude.sh --dir <worktree> --prompt - --output-format
   json` with optional `--model`; availability from `--status`; never `--stop` or `--tune`.
 - [ ] 🟥 **F15.5** Reference setup on the maintainer's hardware: one manager with four workers (Claude
-  Code and Codex from ClaudeCodePortable profiles, Antigravity installed through
-  ClaudeCodePortable, OpenCode against a ClaudeLocal model) works a scratch repository's issues
-  concurrently to merged PRs, including one forced usage-limit pause and its automatic resume. The
-  run is written up in `docs/reference-setup.md`.
+  Code, Codex and Antigravity from ClaudeCodePortable profiles, and ClaudeLocal's separate Claude
+  Code on a local model) works a scratch repository's issues concurrently to merged PRs, including
+  one forced usage-limit pause and its automatic resume, configured entirely through the UI. The run
+  is written up in `docs/reference-setup.md`.
 - [ ] 🟥 **F15.6** The same scenario with normal installations only (no ClaudeCodePortable, no
-  ClaudeLocal; agents installed the vendors' way, a local model behind Ollama or llama.cpp server).
+  ClaudeLocal; agents installed the vendors' way and found on `PATH`).
 - [ ] 🟧 **F15.7** Two managers on two machines share one scratch repository without double work,
   and a removed worker's claim returns to the fleet after the configured validity plus grace
   (shortened in the test configuration).
+- [ ] 🟦 **F15.8** An OpenCode worker from a normal OpenCode installation works an issue to a merged
+  PR, and its captured output replaces the fixtures of F12.6.
 
 ## 🏗️ Architecture
 

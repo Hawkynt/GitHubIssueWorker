@@ -13,7 +13,9 @@ close. A **manager** (one process per machine) steers several **workers**, each 
 and does everything outward-facing itself through `git` and the GitHub REST/GraphQL API. Managers on
 different machines coordinate through compare-and-swap claims on hidden `refs/ghiw/*` refs in the
 watched repositories (valid 7 days after the last renewal, free after 8); there is no server. The UI
-is FastAPI + uvicorn on the manager's own event loop, loopback-only by default. Package `github-issue-worker`, import name `github_issue_worker`, source under
+is FastAPI + uvicorn on the manager's own event loop, loopback-only by default.
+**Every configuration key is editable in the UI**: the file, the CLI and the UI share one validator
+and apply changes live, and a key added to the schema without a UI field fails the tests. Package `github-issue-worker`, import name `github_issue_worker`, source under
 `src/github_issue_worker/` (`domain · application · ports · adapters · cli`), tests under `tests/`.
 
 **The README is a forward-looking specification and the product requirements document** — it is
