@@ -185,7 +185,8 @@ renewal and expiry. Releasing another manager's claim needs the issue typed out.
 ![Fleet page with claims from this and two other managers](docs/screenshots/fleet.png)
 
 **Settings.** Every other key of the configuration, generated from its schema, with its default
-and whether it is set; saving validates, writes the file and applies the change live.
+and whether it is set; values not yet saved stand out, and saving validates, writes the file and
+applies the change live.
 
 ![Settings page with every configuration section](docs/screenshots/settings.png)
 
@@ -548,7 +549,7 @@ not a second program: what the UI changes, the manager does, with the same check
 | --- | --- | --- |
 | **Workers** | Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
 | **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), edit its per-repository overrides, remove one. |
-| **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get. |
+| **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
 | **Issue** | One issue's runs, the journal, the outcome, the log tail, and the claim's history. | Skip it, release it, open the PR. |
 
@@ -1034,6 +1035,10 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F14.8** Settings page: every remaining configuration key, with its default and its source
   (file or default), inline validation through the F0.3 validator, atomic save and live apply (F0.7).
   Tested: for every key in the schema there is a UI field, so a new key cannot ship without one.
+- [ ] 🟧 **F14.12** Settings page change hints: a field or account value that differs from what the
+  page loaded has a background of its own, distinct from errors and notices, in light and dark; it
+  clears when the value is edited back, and a save refused by validation keeps the typed values
+  marked. Tested in a real browser.
 - [x] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
   without one.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
