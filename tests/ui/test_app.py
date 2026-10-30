@@ -156,6 +156,58 @@ def test_adding_a_repository_checks_push_access(client: TestClient, backend: Dem
     assert "someone-else/thing" not in {r.repository for r in backend.config().repositories}
 
 
+def test_the_add_box_suggests_owners_then_their_unwatched_repositories(
+    client: TestClient,
+) -> None:
+    # F14.16: the demo can push to acme/*, acme-labs/* and hana-ito/*; acme/design-tokens and two
+    # more acme repositories are watched already.
+    owners = client.get("/repositories/suggest", params={"q": "ac"})
+    assert owners.status_code == 200
+    assert owners.json() == {"kind": "owner", "items": ["acme", "acme-labs"]}
+    repositories = client.get("/repositories/suggest", params={"q": "acme/"}).json()
+    assert repositories["kind"] == "repository"
+    assert "acme/ingest-worker" in repositories["items"]
+    assert "acme/design-tokens" not in repositories["items"]
+    assert client.get("/repositories/suggest", params={"q": "ACME/ing"}).json()["items"] == [
+        "acme/ingest-worker"
+    ]
+    assert client.get("/repositories/suggest", params={"q": "someone-else/"}).json()["items"] == []
+    assert client.get("/repositories/suggest").json() == {"kind": "owner", "items": []}
+
+
+def test_the_add_box_is_a_combobox_that_free_text_still_works_in(client: TestClient) -> None:
+    html = client.get("/repositories").text
+    box = re.search(r"<input id=repository[^>]*>", html)
+    assert box is not None
+    for attribute in ("role=combobox", "aria-autocomplete=list", "aria-controls=repository-list"):
+        assert attribute in box.group(0)
+    assert "autocomplete=off" in box.group(0) and "required" in box.group(0)
+    assert "<ul id=repository-list role=listbox" in html
+    assert "/repositories/suggest" in html
+
+
+def test_a_suggested_repository_is_added_through_the_verified_add(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    picked = client.get("/repositories/suggest", params={"q": "hana-ito/"}).json()["items"][0]
+    response = client.post("/repositories/add", data={"repository": picked}, follow_redirects=False)
+    assert response.status_code == 303
+    assert picked in {r.repository for r in backend.config().repositories}
+    assert (
+        picked not in client.get("/repositories/suggest", params={"q": "hana-ito/"}).json()["items"]
+    )
+
+
+def test_with_a_token_the_suggestions_need_it_too(client: TestClient, backend: DemoBackend) -> None:
+    form = _settings_form(client)
+    form["ui.token"] = "s3cret-value"
+    client.post("/settings", data=form)
+    fresh = TestClient(create_app(backend))
+    assert fresh.get("/repositories/suggest", params={"q": "ac"}).status_code == 401
+    allowed = fresh.get("/repositories/suggest", params={"q": "ac", "token": "s3cret-value"})
+    assert allowed.status_code == 200 and allowed.json()["items"] == ["acme", "acme-labs"]
+
+
 def test_repository_overrides_and_removal(client: TestClient, backend: DemoBackend) -> None:
     client.post("/repositories/save", data={"repository": "acme/design-tokens", "test": "npm test"})
     saved = next(r for r in backend.config().repositories if r.repository == "acme/design-tokens")

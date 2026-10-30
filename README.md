@@ -597,7 +597,7 @@ not a second program: what the UI changes, the manager does, with the same check
 | Page | Shows | Lets you |
 | --- | --- | --- |
 | **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
-| **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), edit its per-repository overrides, remove one. |
+| **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), with the box completing the owner and then, after the `/`, that owner's repositories your account can push to and does not watch yet; the list is read in the background and kept in memory for 10 minutes. Edit its per-repository overrides, remove one. |
 | **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
 | **Issue** | One issue's runs, the journal, the outcome, the log tail, and the claim's history. | Skip it, release it, open the PR. |
@@ -1125,6 +1125,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
   Issues, Repositories and Fleet open with readouts that agree with their rows, change hints stay
   distinct on the deck, nothing animates under reduced motion, a live refresh does not replay the
   boot, and every page fits a 390 px wide screen.
+- [x] 🟧 **F14.16** The Repositories page's add box completes as you type: owners first, after the
+  `/` that owner's repositories the account can push to and does not watch yet (case-insensitive
+  prefix, alphabetical), by keyboard and mouse. The list comes from `GET /user/repos`, read in the
+  background when the UI starts and kept in memory for 10 minutes; a stale, empty or failed read
+  never blocks the page or the add, which stays verified as in F1.1/F1.2. The demo completes too.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
 - [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.

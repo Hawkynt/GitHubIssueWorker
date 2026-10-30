@@ -405,6 +405,21 @@ def demo_history() -> list[RunRecord]:
     return sorted(records, key=lambda record: record.finished)
 
 
+PUSHABLE = (
+    "acme/telemetry-gateway",
+    "acme/billing-cli",
+    "acme/design-tokens",
+    "acme/ingest-worker",
+    "acme/status-page",
+    "acme/infra-terraform",
+    "acme-labs/edge-cache",
+    "acme-labs/prototype-search",
+    "hana-ito/dotfiles",
+    "hana-ito/notes-sync",
+)
+"""What the demo account can push to, for the add box's suggestions."""
+
+
 class DemoBackend:
     """The demo fleet. Changes are kept in memory for the session, so the UI can be tried out."""
 
@@ -443,6 +458,9 @@ class DemoBackend:
             raise ActionError(
                 f"{repository}: your account cannot push there, so it cannot be watched"
             )
+
+    def pushable_repositories(self) -> tuple[str, ...]:
+        return PUSHABLE
 
     def detect_workers(self) -> list[dict[str, object]]:
         return [
