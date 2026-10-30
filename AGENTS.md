@@ -6,10 +6,16 @@ house standard.
 
 ## What this is
 
-A Python (3.13+) CLI/daemon that watches GitHub repositories the maintainer can push to and works
-their issues end to end: label, branch, implement, commit, pull request, merge, close. It drives the
-`claude` CLI for the reasoning, and `git` plus the GitHub REST/GraphQL API for everything
-outward-facing. Package `github-issue-worker`, import name `github_issue_worker`, source under
+A Python (3.13+) CLI/daemon with a local web UI that watches GitHub repositories the maintainer can
+push to and works their issues end to end: label, branch, implement, commit, pull request, merge,
+close. A **manager** (one process per machine) steers several **workers**, each one coding agent
+(`claude`, `codex`, `agy`, `opencode`, any configured command) working at most one issue at a time,
+and does everything outward-facing itself through `git` and the GitHub REST/GraphQL API. Managers on
+different machines coordinate through compare-and-swap claims on hidden `refs/ghiw/*` refs in the
+watched repositories (valid 7 days after the last renewal, free after 8); there is no server. The UI
+is FastAPI + uvicorn on the manager's own event loop, loopback-only by default.
+**Every configuration key is editable in the UI**: the file, the CLI and the UI share one validator
+and apply changes live, and a key added to the schema without a UI field fails the tests. Package `github-issue-worker`, import name `github_issue_worker`, source under
 `src/github_issue_worker/` (`domain · application · ports · adapters · cli`), tests under `tests/`.
 
 **The README is a forward-looking specification and the product requirements document** — it is
@@ -56,13 +62,14 @@ asked.
 A test is in the **fast tier** unless it says otherwise — that direction, never the other, because
 the fast test somebody forgets to tag would drop out silently. A test opts out with `slow` (quick
 in kind, expensive in practice) or with one of the markers that are slow by nature: `e2e` (a real
-GitHub repository), `os_integration`, `external_interop` (a real `git` or `claude` executable).
+GitHub repository), `os_integration`, `external_interop` (a real `git` or agent executable).
 
 Opting out **defers** a test; it never skips one. The pull request runs everything.
 
 - A fast-tier test finishes in well under a second. If yours does not, make it so or mark it `slow`.
-- Fast-tier tests never touch the network, never spend money and never call the real `claude`:
-  GitHub is faked at the port or replayed from recorded fixtures, `claude` is a fake executable.
+- Fast-tier tests never touch the network, never spend money and never call a real agent: GitHub is
+  faked at the port or replayed from recorded fixtures, agents are fake executables replaying
+  captured vendor output, and claims run against a local bare git remote.
 - **Changing a test marker filter means checking every marker still has a step that runs it.** A
   marker excluded from the main filter with no step of its own executes nowhere, and nothing
   reports that.
@@ -126,8 +133,11 @@ cannot, commit the captured expected output with a note saying what produced it.
 - Ports and adapters: `domain` and `application` do no I/O. Every GitHub write goes through the one
   shipping service, which is where dry-run, the commit gate and the comment marker live — no other
   path may write to GitHub.
-- Every step of an issue run is idempotent and checkpointed, so a crash at any point resumes rather
-  than repeats.
+- Every step of an issue run is idempotent and checkpointed, so a crash or a takeover by another
+  instance at any point resumes rather than repeats.
+- The claim is the only lock. Claims change only by `git push --force-with-lease` compare-and-swap
+  (the REST ref-update endpoint does not enforce fast-forward and must not be used for them), and
+  lease times come from GitHub's `Date` header, never the local clock.
 - Versions come from files, never git tags: the package version lives in `pyproject.toml`. The
   repo-level marker is the date: releases tag `vYYYYMMDD`, nightlies `nightly-YYYYMMDD`. This repo
   carries no `scripts/` — the shared tooling lives in `Hawkynt/RepositoryTemplate` and is reached
@@ -142,5 +152,12 @@ cannot, commit the captured expected output with a note saying what produced it.
 - **The canonical section order and the emoji vocabulary live in
   [`repo-readme/README.md`](https://github.com/Hawkynt/RepositoryTemplate/blob/main/repo-readme/README.md),
   and the `repo-readme` action enforces them.** `## 📜 License` is the last heading in the file.
-- No user interface, so no screenshots: the repo does not set `gui: true`.
+- **The local UI is a GUI under the house rules.** Every page has a deterministic demo scenario
+  (`github-issue-worker ui --demo <scenario>`) that renders the real UI code with plausible, varied
+  sample data, and `generate.yml` captures every page as a screenshot on each working-branch push.
+  The pull request that lands the first page adds the hero image and the `## 🖼️ Screenshots` tour
+  and sets `gui: true` on the README check; a later page lands with its scenario and screenshot in
+  the same change.
+- Agents are reached through installations: `path` must always work on its own, and the
+  ClaudeCodePortable / ClaudeLocal presets are optional extras, never a requirement.
 - License is LGPL-3.0-or-later (full `LICENSE`); no per-file license headers in `.py` files.

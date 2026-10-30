@@ -13,6 +13,8 @@ license-files = ["LICENSE"]
 authors = [{ name = "Hawkynt" }]
 dependencies = [
   "httpx>=0.27",
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +24,7 @@ dev = [
   "ruff>=0.6",
   "mypy>=1.11",
   "build>=1.2",
+  "playwright>=1.46",
 ]
 
 [project.scripts]
@@ -41,7 +44,7 @@ markers = [
   "slow: quick in kind, expensive in practice — deferred to the pull request tier",
   "e2e: drives a real GitHub repository end to end — pull request tier",
   "os_integration: needs something of the host OS — pull request tier",
-  "external_interop: runs a real git or claude executable — pull request tier",
+  "external_interop: runs a real git or agent executable — pull request tier",
 ]
 
 [tool.ruff]
