@@ -9,14 +9,15 @@ clock that claims are judged by.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+from github_issue_worker.adapters.home import account_home, tool_environment
 from github_issue_worker.adapters.server_clock import ServerClock
 from github_issue_worker.ports.github import (
     GhUnavailable,
@@ -28,31 +29,30 @@ from github_issue_worker.ports.github import (
 
 __all__ = ["GhApi", "next_link", "run_gh"]
 
-GhRunner = Callable[[list[str], str | None], tuple[int, str, str]]
-"""Runs ``gh`` with argv and optional stdin; returns exit code, stdout and stderr."""
+GhRunner = Callable[[list[str], str | None, dict[str, str]], tuple[int, str, str]]
+"""Runs ``gh`` with argv, optional stdin and an environment; returns exit code, stdout, stderr."""
 
 _STATUS = re.compile(r"^HTTP/[\d.]+ (\d{3})")
 _DEFAULT_WAIT = timedelta(minutes=1)
 
 
-def run_gh(argv: list[str], stdin: str | None) -> tuple[int, str, str]:
-    result = subprocess.run(
-        argv,
-        input=stdin,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "LC_ALL": "C", "LANGUAGE": "C", "GH_PROMPT_DISABLED": "1"},
-        check=False,
-    )
+def run_gh(argv: list[str], stdin: str | None, env: dict[str, str]) -> tuple[int, str, str]:
+    result = subprocess.run(argv, input=stdin, capture_output=True, text=True, env=env, check=False)
     return result.returncode, result.stdout, result.stderr
 
 
 class GhApi:
     """A `GitHubApi` over the ``gh`` command line."""
 
-    def __init__(self, run: GhRunner = run_gh, clock: ServerClock | None = None) -> None:
+    def __init__(
+        self,
+        run: GhRunner = run_gh,
+        clock: ServerClock | None = None,
+        home: Path | None = None,
+    ) -> None:
         self._run = run
         self.clock = clock or ServerClock()
+        self._home = home or account_home()
 
     def request(
         self,
@@ -73,7 +73,13 @@ class GhApi:
             argv += ["--input", "-"]
             stdin = json.dumps(body)
 
-        _, stdout, stderr = self._run(argv, stdin)
+        env = {
+            **tool_environment(self._home),
+            "LC_ALL": "C",
+            "LANGUAGE": "C",
+            "GH_PROMPT_DISABLED": "1",
+        }
+        _, stdout, stderr = self._run(argv, stdin, env)
         response = self._parse(stdout)
         if response is None:
             raise GhUnavailable(stderr.strip() or "gh produced no HTTP response")

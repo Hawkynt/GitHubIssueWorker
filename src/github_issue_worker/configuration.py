@@ -79,6 +79,9 @@ class _Settings(BaseModel):
 class ManagerSettings(_Settings):
     name: str | None = None
     tags: list[str] = Field(default_factory=list)
+    home: str | None = None
+    """Home directory for gh and networked git. Default: the account's home from the operating
+    system, so a HOME relocated by ClaudeCodePortable or ClaudeLocal does not hide gh's login."""
 
 
 class UiSettings(_Settings):

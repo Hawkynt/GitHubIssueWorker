@@ -114,9 +114,12 @@ The manager drives tools you already use, and must find each of them working:
 | at least one agent | the workers, run headless | see [Workers](#-workers) |
 
 The manager never handles a token itself: every REST and GraphQL call is a `gh api` call, so `gh`'s
-own login, hosts and environment apply. When `gh` is configured under a different home directory
-than the one the manager runs in, point it at that with `GH_CONFIG_DIR`. `GH_TOKEN` works as it does
-for `gh` itself.
+own login, hosts and environment apply. `gh` and every networked `git` call run with the account's
+real home directory, taken from the operating system's user database rather than from `HOME`:
+launchers such as ClaudeCodePortable and ClaudeLocal relocate `HOME` into a profile, and there `gh`
+reports "not logged into any GitHub hosts". `manager.home` overrides the directory, and an explicit
+`GH_CONFIG_DIR` or `GH_TOKEN` works as it does for `gh` itself. Agents do not get it: inside a run
+there is no GitHub access at all (see Security).
 
 ## 🚀 Quick start
 
@@ -560,6 +563,7 @@ first, and a moved UI listener reopens on its new address.
 | --- | --- | --- |
 | `manager.name` | host name | Human-readable name in presence, the UI and logs. A random suffix makes the manager id unique. |
 | `manager.tags` | `[]` | Capabilities of this machine, matched against `needs:<tag>` routing labels, inherited by every worker. |
+| `manager.home` | account home | Home directory `gh` and networked `git` run with. The default comes from the OS user database, so a relocated `HOME` does not hide `gh`'s login. |
 | `pollInterval` | 1 min | Time between polls of one repository, with a random jitter of ±10 %. |
 | `trustedUsers` | `[]` | Logins trusted in addition to everyone with write access. |
 | `ui.port`, `ui.bind`, `ui.token` | 8765, loopback, none | The local UI. A non-loopback `bind` requires a `token`. |
@@ -657,8 +661,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F0.5** All GitHub access goes through `gh api` (REST and GraphQL), with `gh`'s login,
   `GH_CONFIG_DIR` and `GH_TOKEN` applying unchanged; the manager never reads or stores a token. Status,
   headers (`ETag`, `Date`, rate limit, `Retry-After`) and body are parsed from `gh api -i`, including
-  `304` and error responses, which `gh` reports with a non-zero exit. `gh auth status` failing at start
-  stops the manager with the command that fixes it.
+  `304` and error responses, which `gh` reports with a non-zero exit. `gh` and networked `git` run
+  with the account's home from the OS user database (or `manager.home`), never a relocated `HOME`.
+  `gh auth status` failing at start stops the manager with the command that fixes it.
 - [ ] 🟥 **F0.6** Start-up preflight: `git` and `gh` are found and runnable, every worker's
   installation answers a version probe (a worker that does not is *unavailable* with the reason, and
   the manager runs with the rest), and commit signing is configured when a watched repository's

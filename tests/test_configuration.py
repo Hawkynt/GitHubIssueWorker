@@ -45,6 +45,7 @@ def test_an_empty_file_is_a_valid_configuration_of_defaults() -> None:
     assert config.ui.port == 8765
     assert config.ui.bind == "127.0.0.1"
     assert config.workers == []
+    assert config.manager.home is None
 
 
 def test_the_readme_example_is_valid() -> None:

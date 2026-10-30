@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -22,15 +23,19 @@ class FakeGh:
     def __init__(self, *replies: tuple[int, str, str]) -> None:
         self.replies = list(replies)
         self.calls: list[tuple[list[str], str | None]] = []
+        self.environments: list[dict[str, str]] = []
 
-    def __call__(self, argv: list[str], stdin: str | None) -> tuple[int, str, str]:
+    def __call__(
+        self, argv: list[str], stdin: str | None, env: dict[str, str]
+    ) -> tuple[int, str, str]:
         self.calls.append((argv, stdin))
+        self.environments.append(env)
         return self.replies.pop(0)
 
 
 def api(gh: FakeGh, local: FakeClock | None = None) -> tuple[GhApi, ServerClock]:
     clock = ServerClock(local=local or FakeClock(LOCAL))
-    return GhApi(run=gh, clock=clock), clock
+    return GhApi(run=gh, clock=clock, home=Path("/home/me")), clock
 
 
 def test_a_200_returns_status_lowercased_headers_and_json() -> None:
@@ -127,3 +132,11 @@ def test_next_link_follows_pagination() -> None:
     )
     assert next_link({"link": link}) == "repositories/1/issues?page=2"
     assert next_link({}) is None
+
+
+def test_gh_runs_with_the_account_home_not_a_relocated_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", "/home/me/ClaudeCodePortable/profiles/default")
+    gh = FakeGh((0, http("200 OK", {}, "{}"), ""))
+    api(gh)[0].request("GET", "user")
+    assert gh.environments[0]["HOME"] == "/home/me"
+    assert gh.environments[0]["LC_ALL"] == "C"

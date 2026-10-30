@@ -10,7 +10,7 @@ import pytest
 from github_issue_worker.adapters.git_claims import GitClaimStore
 from github_issue_worker.application.coordinator import Coordinator
 from github_issue_worker.domain.claim import Claim, ClaimPolicy, Holder
-from github_issue_worker.ports.claims import ClaimConflict
+from github_issue_worker.ports.claims import ClaimConflict, ClaimStoreError
 from tests.fakes import FakeClock
 
 pytestmark = pytest.mark.external_interop
@@ -150,3 +150,23 @@ def test_the_coordinator_works_over_git(remote: Path, tmp_path: Path) -> None:
     clock.advance(timedelta(days=8))
     taken = laptop.claim(42, CLAUDE, branch="issue/42-x")
     assert taken is not None and taken.claim.takeovers == 1
+
+
+def test_network_git_runs_with_the_account_home(remote: Path, tmp_path: Path) -> None:
+    # Only the account home's .gitconfig knows the "ghiw-test:" alias for the remote, so the claim
+    # can be written and read back only if that home is the one git runs with.
+    account = tmp_path / "account-home"
+    account.mkdir()
+    (account / ".gitconfig").write_text(
+        f'[url "{remote}"]\n\tinsteadOf = ghiw-test:\n', encoding="utf-8"
+    )
+    work = clone(remote, tmp_path / "w")
+    git("remote", "set-url", "origin", "ghiw-test:", cwd=work)
+
+    store = GitClaimStore(work, home=account)
+    version = store.create(claim())
+    stored = store.read(42)
+    assert stored is not None and stored.version == version
+
+    with pytest.raises(ClaimStoreError):
+        GitClaimStore(work, home=tmp_path / "elsewhere").read(42)

@@ -11,10 +11,10 @@ enforce this and is never used for claims.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
 
+from github_issue_worker.adapters.home import account_home, tool_environment
 from github_issue_worker.domain.claim import Claim
 from github_issue_worker.ports.claims import ClaimConflict, ClaimStoreError, StoredClaim
 
@@ -27,9 +27,10 @@ _REJECTED = ("[rejected]", "stale info", "already exists", "fetch first")
 class GitClaimStore:
     """A `ClaimStore` over a local clone of the watched repository and its remote."""
 
-    def __init__(self, clone: Path, remote: str = "origin") -> None:
+    def __init__(self, clone: Path, remote: str = "origin", home: Path | None = None) -> None:
         self._clone = clone
         self._remote = remote
+        self._home = home or account_home()
 
     def read(self, issue: int) -> StoredClaim | None:
         seen = f"{_SEEN}/{issue}"
@@ -112,7 +113,7 @@ class GitClaimStore:
             text=True,
             # Messages are parsed, so they must be git's English ones whatever the user's locale.
             env={
-                **os.environ,
+                **tool_environment(self._home),
                 "LC_ALL": "C",
                 "LANGUAGE": "C",
                 "GIT_TERMINAL_PROMPT": "0",
