@@ -1,0 +1,20 @@
+{
+  "branch": "issue/9-make-the-commit-gate-s-forbidden-words-c",
+  "claimedAt": "2026-10-30T14:58:14Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-06T14:58:14Z",
+  "generation": 1,
+  "holder": {
+    "manager": "trial-87aa",
+    "worker": "antigravity"
+  },
+  "issue": 9,
+  "pausedUntil": null,
+  "renewedAt": "2026-10-30T14:58:14Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
