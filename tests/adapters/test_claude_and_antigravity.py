@@ -140,3 +140,74 @@ def test_antigravity_quota_messages_are_usage_limits(tmp_path: Path) -> None:
     )
     report = AntigravityAdapter("agy").report(run(tmp_path), 1, stdout, "")
     assert report.limit is not None and report.limit.reset_at is None
+
+
+# --- which model ran (seen live: each agent reports it somewhere else) --------------------------
+
+LIST_OUTPUT = (
+    "\x1b[36mno supported GPU (CPU only) | 125 GB RAM\x1b[0m\n\n"
+    "  strata-q2_0            strata   66 GB  ctx 256k  \x1b[90mno fit   \x1b[0m  "
+    "Qwen3.8-Flash-Next Q2_0 - 2-bit, fastest  (needs an NVIDIA or AMD GPU)\n"
+    "  strata-iq3_s           strata   84 GB  ctx 256k  \x1b[32minstalled\x1b[0m  "
+    "Qwen3.8-Flash-Next IQ3_S - 3.5-bit, best quality  (needs an NVIDIA or AMD GPU)\n"
+    "  q38                    llama    18 GB  ctx 256k  \x1b[33mavailable\x1b[0m  "
+    "Qwen3.8-27B Q4 - vision + thinking, dense (needs the GPU at full clock)\n"
+)
+
+
+def test_claude_reports_the_model_it_ran_on(tmp_path: Path) -> None:
+    report = ClaudeAdapter("claude").report(
+        run(tmp_path), 0, fixture("claude/first-run.ndjson"), ""
+    )
+    assert report.model == "claude-haiku-5-5"
+
+
+def test_claudelocal_names_the_local_model_from_its_launcher(tmp_path: Path) -> None:
+    adapter = ClaudeLocalAdapter(Path("claude.sh"), list_models=lambda: LIST_OUTPUT)
+    adapter.invocation(run(tmp_path))
+    stdout = "\n".join(
+        [
+            json.dumps({"type": "system", "subtype": "init", "model": "strata-iq3_s"}),
+            json.dumps({"type": "result", "is_error": False, "session_id": "s1"}),
+        ]
+    )
+    report = adapter.report(run(tmp_path), 0, stdout, "")
+    assert report.model == "Qwen3.8-Flash-Next IQ3_S (strata-iq3_s)"
+
+
+def test_claudelocal_keeps_an_unknown_model_id(tmp_path: Path) -> None:
+    adapter = ClaudeLocalAdapter(Path("claude.sh"), list_models=lambda: "")
+    stdout = json.dumps({"type": "system", "subtype": "init", "model": "mystery-7b"})
+    assert adapter.report(run(tmp_path), 0, stdout, "").model == "mystery-7b"
+
+
+def test_antigravity_reads_the_model_from_its_newest_log(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    logs = profile / ".gemini" / "antigravity-cli" / "log"
+    logs.mkdir(parents=True)
+    (logs / "cli-20261030_100000.log").write_text('label="Old Model"\n', encoding="utf-8")
+    newest = logs / "cli-20261030_155825.log"
+    newest.write_text(
+        "I1030 15:58:28 model_config_manager.go:363] Propagating selected model override to "
+        'backend: label="Gemini 4 Argon (Medium)"\n',
+        encoding="utf-8",
+    )
+    import os
+
+    os.utime(logs / "cli-20261030_100000.log", (1, 1))
+    work = tmp_path / "work"
+    work.mkdir()
+    adapter = AntigravityAdapter("agy", env={"HOME": str(profile)})
+    adapter.invocation(run(work))
+    report = adapter.report(run(work), 0, fixture("antigravity/first-run.ndjson"), "")
+    assert report.model == "Gemini 4 Argon (Medium)"
+
+
+def test_claudelocal_matches_the_id_claude_code_reports_through_the_gateway(tmp_path: Path) -> None:
+    # Seen live: ClaudeLocal's Claude Code reports "local-claude-strata-iq3_s", --list says
+    # "strata-iq3_s".
+    adapter = ClaudeLocalAdapter(Path("claude.sh"), list_models=lambda: LIST_OUTPUT)
+    stdout = json.dumps({"type": "system", "subtype": "init", "model": "local-claude-strata-iq3_s"})
+    assert adapter.report(run(tmp_path), 0, stdout, "").model == (
+        "Qwen3.8-Flash-Next IQ3_S (strata-iq3_s)"
+    )

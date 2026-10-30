@@ -268,7 +268,7 @@ def test_status_prints_the_claims_of_each_watched_repository_by_holder(
     assert out.splitlines()[:2] == ["Manager", "  manager@host"]
     assert "  Claims held by this manager" in out
     row = " ".join(next(line for line in out.splitlines() if "#12" in line).split())
-    assert row == "#12 alpha working triage 5m ago 2026-11-06 09:55 UTC (in 6d 23h) issue/12-x"
+    assert row == "#12 alpha - working triage 5m ago 2026-11-06 09:55 UTC (in 6d 23h) issue/12-x"
     assert "  1 finished (done/released)" in out
 
 

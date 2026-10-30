@@ -10,7 +10,11 @@ with ``utilization`` and ``resetsAt`` in epoch seconds. The prompt is read from 
 from __future__ import annotations
 
 import json
+import re
+import subprocess
 import uuid
+from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -52,10 +56,11 @@ def _events(stdout: str) -> list[dict[str, Any]]:
 def _write_structured_outcome(run: AgentRun, structured: Any) -> None:
     path = run.worktree / OUTCOME_FILE
     if isinstance(structured, dict) and not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(structured), encoding="utf-8")
 
 
-def _interpret(
+def _interpret_events(
     run: AgentRun, events: list[dict[str, Any]], exit_code: int, stderr: str
 ) -> RunReport:
     session: str | None = None
@@ -107,6 +112,20 @@ def _interpret(
     return RunReport(session, outcome, usage=usage, error=problem, utilization=utilization)
 
 
+def _interpret(
+    run: AgentRun, events: list[dict[str, Any]], exit_code: int, stderr: str
+) -> RunReport:
+    model = next(
+        (
+            event["model"]
+            for event in events
+            if event.get("type") == "system" and isinstance(event.get("model"), str)
+        ),
+        None,
+    )
+    return replace(_interpret_events(run, events, exit_code, stderr), model=model)
+
+
 class ClaudeAdapter:
     kind = "claude"
 
@@ -142,6 +161,22 @@ class ClaudeAdapter:
         return _interpret(run, _events(stdout), exit_code, stderr)
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_LISTED = re.compile(
+    r"^\s*(?P<id>\S+)\s+\S+\s+[\d.]+ GB\s+ctx \S+\s+(?:no fit|\S+)\s+(?P<name>.+?)(?: - |\s{2,}|$)"
+)
+
+
+def model_names(listing: str) -> dict[str, str]:
+    """Model id to human name, from ClaudeLocal's ``--list`` output."""
+    names = {}
+    for line in _ANSI.sub("", listing).splitlines():
+        match = _LISTED.match(line)
+        if match:
+            names[match["id"]] = match["name"].strip()
+    return names
+
+
 class ClaudeLocalAdapter:
     """ClaudeLocal's own Claude Code on a local model, through its launcher.
 
@@ -152,9 +187,36 @@ class ClaudeLocalAdapter:
 
     kind = "claude"
 
-    def __init__(self, launcher: Path, env: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        launcher: Path,
+        env: dict[str, str] | None = None,
+        list_models: Callable[[], str] | None = None,
+    ) -> None:
         self._launcher = launcher
         self._env = env or {}
+        self._list_models = list_models or self._run_list
+        self._names: dict[str, str] | None = None
+
+    def _run_list(self) -> str:
+        """``claude.sh --list``: read-only, it prints the installed and available models."""
+        try:
+            listed = subprocess.run(
+                [str(self._launcher), "--list"], capture_output=True, text=True, timeout=60
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        return listed.stdout
+
+    def _describe(self, model: str) -> str:
+        """The gateway reports its model id; the launcher's list has the human name for it."""
+        if self._names is None:
+            self._names = model_names(self._list_models())
+        known = next(
+            (key for key in sorted(self._names, key=len, reverse=True) if model.endswith(key)),
+            None,
+        )
+        return f"{self._names[known]} ({known})" if known else model
 
     def invocation(self, run: AgentRun) -> Invocation:
         prepare(run)
@@ -165,4 +227,5 @@ class ClaudeLocalAdapter:
         return Invocation(argv=argv, cwd=run.worktree, stdin=run.prompt, env=self._env)
 
     def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
-        return _interpret(run, _events(stdout), exit_code, stderr)
+        report = _interpret(run, _events(stdout), exit_code, stderr)
+        return replace(report, model=self._describe(report.model)) if report.model else report

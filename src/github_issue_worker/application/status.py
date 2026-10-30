@@ -55,6 +55,15 @@ def table(rows: Sequence[Sequence[str]], indent: str) -> list[str]:
     ]
 
 
+def model_of(slot: WorkerSlot | None) -> str:
+    """What the worker runs on: the model its last run reported, else the configured one."""
+    if slot is None:
+        return "-"
+    if slot.observed_model:
+        return slot.observed_model
+    return f"{slot.model} (configured)" if slot.model else "-"
+
+
 def _worker_state(slot: WorkerSlot, limited_until: datetime | None, now: datetime) -> str:
     if not slot.available:
         return f"unavailable: {slot.reason}"
@@ -78,13 +87,26 @@ def _claims(
     show: Callable[[Claim], str],
     policy: ClaimPolicy,
     now: datetime,
+    model: Callable[[Claim], str] | None = None,
 ) -> list[str]:
-    rows = [["ISSUE", who, "STATE", "STEP", "RENEWED", "EXPIRES", "BRANCH"]]
+    rows = [
+        [
+            "ISSUE",
+            who,
+            *(["MODEL"] if model else []),
+            "STATE",
+            "STEP",
+            "RENEWED",
+            "EXPIRES",
+            "BRANCH",
+        ]
+    ]
     for claim in claims:
         rows.append(
             [
                 f"#{claim.issue}",
                 show(claim),
+                *([model(claim)] if model else []),
                 _claim_state(claim, policy, now),
                 claim.step,
                 ago(claim.renewed_at, now),
@@ -96,8 +118,13 @@ def _claims(
 
 
 def _repository(
-    repository: RepositoryClaims, manager_id: str, policy: ClaimPolicy, now: datetime
+    repository: RepositoryClaims,
+    manager_id: str,
+    policy: ClaimPolicy,
+    now: datetime,
+    slots: Sequence[WorkerSlot] = (),
 ) -> list[str]:
+    by_name = {slot.name: slot for slot in slots}
     claims = sorted(repository.claims, key=lambda claim: claim.issue)
     held = [claim for claim in claims if claim.state.holds]
     mine = [claim for claim in held if claim.holder.manager == manager_id]
@@ -112,6 +139,7 @@ def _repository(
             lambda claim: claim.holder.worker,
             policy,
             now,
+            model=lambda claim: model_of(by_name.get(claim.holder.worker)),
         )
     if others:
         lines += _claims(
@@ -141,16 +169,16 @@ def render_status(
     sections = [["Manager", f"  {manager_id}"]]
     workers = ["Workers"]
     if slots:
-        rows = [["NAME", "AGENT", "ACCOUNT", "STATE"]]
+        rows = [["NAME", "AGENT", "ACCOUNT", "MODEL", "STATE"]]
         for slot in slots:
             state = _worker_state(slot, limited_until(slot.account), now)
-            rows.append([slot.name, slot.agent, slot.account, state])
+            rows.append([slot.name, slot.agent, slot.account, model_of(slot), state])
         workers += table(rows, "  ")
     else:
         workers.append("  no workers configured")
     sections.append(workers)
     for repository in repositories:
-        sections.append(_repository(repository, manager_id, policy, now))
+        sections.append(_repository(repository, manager_id, policy, now, slots))
     if not repositories:
         sections.append(
             ["no repositories watched; add one with 'github-issue-worker add <owner/repo>'"]

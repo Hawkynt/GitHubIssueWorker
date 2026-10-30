@@ -284,8 +284,8 @@ Every agent is driven through the same contract, so agents are interchangeable m
   `summary`, `scenarios`, `questions[]` with options and a recommendation). Agents that can enforce a
   JSON schema natively are given one as well. The outcome file is the contract, so an agent without
   that feature still works.
-- **Signals:** an adapter turns the agent's own output into *progress*, *cost*, *session id* and
-  *usage limit* events. Usage-limit detection is the part that differs most between vendors. See
+- **Signals:** an adapter turns the agent's own output into *progress*, *cost*, *session id*,
+  *model* and *usage limit* events. Usage-limit detection is the part that differs most between vendors. See
   [Usage limits](#-usage-limits).
 - **No permission prompts.** A headless run has nobody to answer a prompt, so every adapter starts
   its agent with prompts switched off: `--dangerously-skip-permissions` for `claude` and `agy`,
@@ -301,6 +301,12 @@ Every agent is driven through the same contract, so agents are interchangeable m
 | `opencode` | `opencode run --format json`, model as `provider/model` | `--session <id>` | — | provider error events |
 | `command` | any CLI, from a configured argument template | template-defined | — | configured patterns + exit code |
 | `remote` | a vendor's cloud agent: submit, poll, collect the diff | vendor-defined | — | vendor API |
+
+**Which model ran** is read from where each agent reveals it: Claude's init event, Codex's own
+session file in its home, Antigravity's log in its profile, and for ClaudeLocal the gateway's model
+id matched against `claude.sh --list` for its human name (e.g. "Qwen3.8-Flash-Next IQ3_S"). The
+manager logs it with every run, remembers each worker's last one, and `status` and the UI show it
+next to the worker and on the issue it works.
 
 A conversation is continued natively only when the same worker resumes its own issue. Everywhere
 else (another worker, another machine, a cloud agent) the next run starts a fresh conversation primed
@@ -864,8 +870,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
   the cache is written, and each would-be write is logged.
 - [ ] 🟥 **F10.5** `release <owner/repo#n> [--force]`: release a claim with a checkpoint. Without
   `--force` only this manager's claims; with it any claim, recorded in the claim's history.
-- [ ] 🟧 **F10.6** `status`: this manager's workers and claims, and fleet-wide per repository: known
-  managers, claims with holder, step and expiry, paused issues with their reset, unserved issues.
+- [ ] 🟧 **F10.6** `status`: this manager's workers with the model each runs on, and its claims
+  with the worker's model, and fleet-wide per repository: known managers, claims with holder, step
+  and expiry, paused issues with their reset, unserved issues.
 - [ ] 🟧 **F10.7** Service recipes: a systemd user unit and a Windows scheduled task, documented and
   tested on both.
 - [ ] 🟦 **F10.8** Per-day and per-repository cost ceilings across runs.
@@ -969,9 +976,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 - [ ] 🟥 **F14.1** The manager serves the UI on `127.0.0.1:<ui.port>`. A non-loopback bind is refused
   without `ui.token`, and with one every request must carry it. `--no-ui` disables it.
-- [ ] 🟥 **F14.2** Workers page: per worker the agent, installation and version, account and usage
-  state with reset time, current issue (link), step, local branch, worktree path, time on the issue,
-  last checkpoint and run cost, updated live.
+- [ ] 🟥 **F14.2** Workers page: per worker the agent, the model it runs on, installation and
+  version, account and usage state with reset time, current issue (link), step, local branch,
+  worktree path, time on the issue, last checkpoint and run cost, updated live.
 - [ ] 🟥 **F14.3** Repositories page: watch list with last poll, push-access result and per-state
   counts; add (verified before saving), edit per-repository overrides, remove.
 - [ ] 🟥 **F14.4** Worker actions: add from detected installations or by hand, edit every worker

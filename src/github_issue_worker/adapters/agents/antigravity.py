@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from github_issue_worker.adapters.agents import prepare, read_outcome
@@ -22,6 +24,7 @@ from github_issue_worker.ports.agents import (
     UsageLimit,
 )
 
+_LABEL = re.compile(r'model override to backend: label="([^"]+)"')
 _LIMIT = re.compile(r"quota|rate.?limit|resource.?exhausted|usage limit|\b429\b", re.IGNORECASE)
 _POINTER = (
     f"Read the file {PROMPT_FILE.as_posix()} in the current directory and carry out every "
@@ -47,6 +50,21 @@ class AntigravityAdapter:
         return Invocation(argv=argv, cwd=run.worktree, env=self._env)
 
     def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
+        return replace(self._report(run, exit_code, stdout, stderr), model=self._model())
+
+    def _model(self) -> str | None:
+        """agy names its model only in its own log: the newest ``cli-*.log`` of the profile."""
+        home = Path(self._env.get("HOME") or Path.home())
+        logs = sorted(
+            (home / ".gemini" / "antigravity-cli" / "log").glob("cli-*.log"),
+            key=lambda path: path.stat().st_mtime,
+        )
+        if not logs:
+            return None
+        found = _LABEL.findall(logs[-1].read_text(encoding="utf-8", errors="replace"))
+        return found[-1] if found else None
+
+    def _report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
         session: str | None = None
         result: dict[str, Any] = {}
         for line in stdout.splitlines():

@@ -104,3 +104,23 @@ def test_unparsable_lines_are_skipped(tmp_path: Path) -> None:
     )
     report = adapter().report(run(tmp_path), exit_code=0, stdout=stdout, stderr="")
     assert report.session is not None
+
+
+def test_the_model_comes_from_codex_s_own_session_file(tmp_path: Path) -> None:
+    # codex exec --json does not say which model ran; its session file in CODEX_HOME does.
+    home = tmp_path / "codex-home"
+    sessions = home / "sessions" / "2026" / "10" / "30"
+    sessions.mkdir(parents=True)
+    thread = "01a18d18-826a-7971-9098-50818d41b1a6"
+    (sessions / f"rollout-2026-10-30T15-29-40-{thread}.jsonl").write_text(
+        json.dumps({"type": "session_meta", "payload": {"id": thread}})
+        + "\n"
+        + json.dumps({"type": "turn_context", "payload": {"model": "gpt-6.1-sol"}})
+        + "\n",
+        encoding="utf-8",
+    )
+    work = tmp_path / "work"
+    work.mkdir()
+    adapter = CodexAdapter(executable="codex", env={"CODEX_HOME": str(home)})
+    stdout = (FIXTURES / "first-run.ndjson").read_text(encoding="utf-8")
+    assert adapter.report(run(work), 0, stdout, "").model == "gpt-6.1-sol"

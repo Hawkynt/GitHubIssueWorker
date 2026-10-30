@@ -58,6 +58,8 @@ class RunReport:
     error: str | None = None
     utilization: float | None = None
     """The share of the account's current usage window that is used up, when the agent says."""
+    model: str | None = None
+    """The model the run actually used, as far as the agent reveals it."""
 
 
 class AgentAdapter(Protocol):

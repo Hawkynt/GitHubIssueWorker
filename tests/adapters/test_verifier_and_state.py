@@ -74,3 +74,10 @@ def test_the_state_store_round_trips_atomically(tmp_path: Path) -> None:
     assert again.limited_until("openai") == T0
     assert again.poll_state("x/y") == PollState()
     assert [p.name for p in path.parent.iterdir()] == ["state.json"]
+
+
+def test_the_last_model_each_worker_ran_on_is_remembered(tmp_path: Path) -> None:
+    store = JsonStateStore(tmp_path / "state.json")
+    assert store.model("codex") is None
+    store.set_model("codex", "gpt-6.1-sol")
+    assert JsonStateStore(tmp_path / "state.json").model("codex") == "gpt-6.1-sol"

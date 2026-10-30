@@ -113,6 +113,16 @@ class JsonStateStore:
             self._data.setdefault("accounts", {})[account] = _stamp(until)
             self._save()
 
+    def model(self, worker: str) -> str | None:
+        """The model the worker's last run reported."""
+        value = self._data.get("models", {}).get(worker)
+        return str(value) if value else None
+
+    def set_model(self, worker: str, model: str) -> None:
+        with self._lock:
+            self._data.setdefault("models", {})[worker] = model
+            self._save()
+
     def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         handle, temporary = tempfile.mkstemp(prefix=".state.", dir=self._path.parent)

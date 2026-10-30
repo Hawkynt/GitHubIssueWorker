@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 
 from github_issue_worker.application.manager import WorkerSlot
@@ -78,19 +79,46 @@ def test_every_worker_is_one_aligned_row_with_its_state() -> None:
     limits = {"work": NOW + timedelta(days=6, hours=23, minutes=5)}
     rows = section(render([RepositoryClaims("o/a", ())], workers, limits), "Workers")
     assert rows == [
-        "  NAME        AGENT        ACCOUNT   STATE",
-        "  alpha       claude       personal  ok",
-        "  beta        codex        work      limited until 2026-11-06 09:05 UTC (in 6d 23h)",
-        "  gamma-long  antigravity  x         unavailable: gone",
+        "  NAME        AGENT        ACCOUNT   MODEL  STATE",
+        "  alpha       claude       personal  -      ok",
+        "  beta        codex        work      -      limited until 2026-11-06 09:05 UTC"
+        " (in 6d 23h)",
+        "  gamma-long  antigravity  x         -      unavailable: gone",
     ]
+
+
+def test_workers_show_the_model_they_ran_on_or_are_configured_for() -> None:
+    workers = [
+        WorkerSlot("alpha", "claude", "personal", observed_model="claude-opus-5-5"),
+        WorkerSlot("beta", "codex", "work", model="gpt-6.1-sol"),
+        WorkerSlot(
+            "local", "claude", "gpu", observed_model="Qwen3.8-Flash-Next IQ3_S (strata-iq3_s)"
+        ),
+    ]
+    text = render([RepositoryClaims("o/a", ())], workers)
+    rows = [re.split(r"\s{2,}", row.strip()) for row in section(text, "Workers")]
+    models = [row[3] for row in rows[1:]]
+    assert models == [
+        "claude-opus-5-5",
+        "gpt-6.1-sol (configured)",
+        "Qwen3.8-Flash-Next IQ3_S (strata-iq3_s)",
+    ]
+
+
+def test_this_managers_claims_show_which_model_works_the_issue() -> None:
+    workers = [WorkerSlot("alpha", "claude", "personal", observed_model="claude-opus-5-5")]
+    lines = section(render([RepositoryClaims("o/a", (claim(12),))], workers), "o/a")
+    assert lines[1].split()[:3] == ["ISSUE", "WORKER", "MODEL"]
+    assert lines[2].split()[:3] == ["#12", "alpha", "claude-opus-5-5"]
 
 
 def test_claims_of_this_manager_show_worker_step_branch_renewal_and_expiry() -> None:
     text = render([RepositoryClaims("o/a", (claim(12),))])
     assert section(text, "o/a") == [
         "  Claims held by this manager",
-        "    ISSUE  WORKER  STATE    STEP       RENEWED  EXPIRES                           BRANCH",
-        "    #12    alpha   working  implement  12m ago  2026-11-06 09:48 UTC (in 6d 23h)"
+        "    ISSUE  WORKER  MODEL  STATE    STEP       RENEWED  EXPIRES"
+        "                           BRANCH",
+        "    #12    alpha   -      working  implement  12m ago  2026-11-06 09:48 UTC (in 6d 23h)"
         "  issue/12-x",
     ]
 
@@ -126,7 +154,7 @@ def test_paused_claims_say_until_when() -> None:
 def test_claims_nobody_renewed_for_validity_plus_grace_are_abandoned() -> None:
     stale = claim(12, renewed=timedelta(days=8, hours=1))
     row = section(render([RepositoryClaims("o/a", (stale,))]), "o/a")[2]
-    assert row.split()[:3] == ["#12", "alpha", "abandoned"]
+    assert row.split()[:4] == ["#12", "alpha", "-", "abandoned"]
     assert "8d 1h ago" in row
     assert "2026-10-29 09:00 UTC (1d 1h ago)" in row
 
