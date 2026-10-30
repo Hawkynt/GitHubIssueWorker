@@ -6,6 +6,8 @@ from pathlib import Path
 from github_issue_worker.application.history import (
     HistoryStore,
     RunRecord,
+    activity,
+    cumulative_merged,
     daily_merged,
     kpis,
     model_ledger,
@@ -149,3 +151,11 @@ def test_the_model_ledger_counts_runs_merges_and_time_per_model() -> None:
     assert opus.median_resolve == timedelta(minutes=30)
     assert opus.first_used == runs[0].started and opus.last_used == runs[1].finished
     assert [row.model for row in model_ledger(runs)] == ["Claude Opus 5.5", "GPT 6.1 Sol"]
+
+
+def test_the_running_total_of_merges_and_the_activity_grid() -> None:
+    runs = [record(1, 2), record(2, 1, verdict="failed"), record(3, 0)]
+    assert [count for _, count in cumulative_merged(runs)] == [1, 2]
+    grid = activity(runs)
+    assert len(grid) == 7 and all(len(row) == 24 for row in grid)
+    assert sum(map(sum, grid)) == 3 and grid[NOW.weekday()][NOW.hour] == 1

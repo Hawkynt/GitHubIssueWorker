@@ -67,6 +67,14 @@ def issue_state(labels: frozenset[str], claim_state: str | None, local: bool) ->
     return "not picked up"
 
 
+def worker_model(slot: WorkerSlot, history: list[RunRecord]) -> str:
+    """What this run reported, else what is configured, else the model of its last finished run."""
+    known = slot.observed_model or slot.model
+    if known:
+        return display_model(known)
+    return next((r.model for r in reversed(history) if r.worker == slot.name), "-")
+
+
 def open_folder(path: Path) -> None:
     """Hand a folder to the platform's file manager, without waiting for it."""
     opener = {"win32": "explorer", "darwin": "open"}.get(sys.platform, "xdg-open")
@@ -160,8 +168,7 @@ class RuntimeBackend:
         settings = next((w for w in self._runtime.config.workers if w.name == slot.name), None)
         local = settings is not None and isinstance(settings.installation, ClaudeLocalInstallation)
         agent = "ClaudeLocal" if local else AGENT_NAMES.get(slot.agent, slot.agent)
-        known = slot.observed_model or slot.model
-        model = display_model(known) if known else "-"
+        model = worker_model(slot, self.history())
         limited = self._runtime.state.limited_until(slot.account)
         state: WorkerState
         if not slot.available:

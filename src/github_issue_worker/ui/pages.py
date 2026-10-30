@@ -14,6 +14,8 @@ from github_issue_worker.adapters.transcript import Entry, transcript
 from github_issue_worker.application.history import (
     RunRecord,
     SplitBy,
+    activity,
+    cumulative_merged,
     daily_merged,
     kpis,
     model_ledger,
@@ -27,7 +29,18 @@ from github_issue_worker.configuration import (
     RepositorySettings,
     WorkerSettings,
 )
-from github_issue_worker.ui.charts import color_slots, horizontal_bars, sparkline, stacked_columns
+from github_issue_worker.ui.charts import (
+    Span,
+    area_line,
+    color_slots,
+    donut,
+    heatmap,
+    horizontal_bars,
+    ring_gauge,
+    sparkline,
+    stacked_columns,
+    timeline,
+)
 from github_issue_worker.ui.forms import HELP, FormField, display, fields_of, is_set, value_at
 from github_issue_worker.ui.model import STEPS, ClaimView, IssueView, Snapshot, WorkerView
 
@@ -144,85 +157,198 @@ summary { cursor: pointer; color: var(--steel); white-space: nowrap; }
   .field { grid-template-columns: 1fr; }
 }
 body.deck {
-  --paper: #0d141f; --sheet: #141d2b; --ink: #e7edf5; --muted: #93a3b8; --rule: #263449;
-  --steel: #6fb3e8; --steel-soft: #18324d; --amber: #e0a44a; --amber-soft: #3a2f1c;
-  --brick: #e07a6b; --brick-soft: #3b2420; --done: #8fb596; color-scheme: dark;
-  background: radial-gradient(ellipse 120% 60% at 60% -10%, #16283f 0%, transparent 70%),
-    repeating-linear-gradient(0deg, transparent 0 39px, #ffffff06 39px 40px), var(--paper);
-  background-attachment: fixed;
+  --paper: #060b14; --sheet: #101a2a; --ink: #e9f0f8; --muted: #8c9cb2; --rule: #20304a;
+  --steel: #6fb3e8; --steel-soft: #16304d; --amber: #e0a44a; --amber-soft: #3a2f1c;
+  --brick: #e07a6b; --brick-soft: #3b2420; --done: #8fb596; --glow: #4aa3ff;
+  color-scheme: dark; background: var(--paper); overflow-x: hidden;
 }
-body.deck main { max-width: 112rem; }
-body.deck nav { background: #0a1019cc; }
-.readouts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11.5rem), 1fr));
-  gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 10px;
-  overflow: hidden; }
-.readout { background: var(--sheet); padding: .9rem 1.2rem 1rem; min-width: 0; }
+body.deck::before { content: ""; position: fixed; inset: -20%; z-index: -2; pointer-events: none;
+  background:
+    radial-gradient(40% 35% at 25% 20%, #1d4f8a55, transparent 70%),
+    radial-gradient(35% 30% at 80% 10%, #6a3fa344, transparent 70%),
+    radial-gradient(45% 40% at 60% 90%, #0f6b5a33, transparent 70%);
+  filter: blur(30px); }
+body.deck::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(#ffffff07 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff07 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 85%); }
+body.deck main { max-width: 118rem; }
+body.deck nav { background: #050a12d0; backdrop-filter: blur(12px); border-right-color: #1a2840; }
+body.deck nav a[aria-current="page"] { background: linear-gradient(90deg, #1d4f8a, #16304d00);
+  color: #fff; box-shadow: inset 2px 0 0 var(--glow); }
+body.deck h1 { font-size: clamp(1.8rem, 2.6vw, 2.6rem); font-weight: 250; letter-spacing: .02em;
+  background: linear-gradient(90deg, #ffffff, #8cc6ff 60%, #b39bff); -webkit-background-clip: text;
+  background-clip: text; color: transparent; }
+.readouts { display: grid; gap: .9rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+.readout, .panel { position: relative; min-width: 0; border-radius: 14px;
+  background: linear-gradient(180deg, #13203599, #0c152499); backdrop-filter: blur(10px);
+  border: 1px solid var(--rule);
+  box-shadow: inset 0 1px 0 #ffffff0d, 0 24px 60px -30px #000c; }
+.readout::before, .panel::before { content: ""; position: absolute; top: -1px; left: -1px;
+  width: 18px; height: 18px; border-top: 2px solid var(--glow); border-left: 2px solid var(--glow);
+  border-top-left-radius: 14px; opacity: .8; pointer-events: none; }
+.readout::after, .panel::after { content: ""; position: absolute; bottom: -1px; right: -1px;
+  width: 18px; height: 18px; border-bottom: 2px solid #b39bff; border-right: 2px solid #b39bff;
+  border-bottom-right-radius: 14px; opacity: .6; pointer-events: none; }
+.readout { padding: 1rem 1.2rem 1.1rem; overflow: hidden; }
 .readout span { display: block; color: var(--muted); font-size: 13px; }
-.readout b { display: block; font-weight: 300; font-size: clamp(2rem, 3.2vw, 2.9rem);
-  line-height: 1.15; letter-spacing: -.03em; font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 22px #6fb3e855; }
+.readout b { display: block; font-weight: 200; font-size: clamp(2.2rem, 3.4vw, 3.3rem);
+  line-height: 1.1; letter-spacing: -.03em; font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff, #9fd0ff); -webkit-background-clip: text;
+  background-clip: text; color: transparent; filter: drop-shadow(0 0 18px #4aa3ff66); }
 .readout small { color: var(--muted); font-size: 12.5px; }
-.readout .spark { display: block; width: 100%; max-width: 12rem; height: 2rem; margin-top: .3rem; }
-.spark path { fill: none; stroke: var(--steel); stroke-width: 2; stroke-linejoin: round; }
-.deck-grid { display: grid; gap: 1rem; margin-top: 1rem;
+.readout .spark { display: block; width: 100%; max-width: 13rem; height: 2.1rem; margin-top: .2rem; }
+.spark path { fill: none; stroke: var(--glow); stroke-width: 2; stroke-linejoin: round;
+  filter: drop-shadow(0 0 4px #4aa3ff); }
+.gauged { position: relative; display: flex; align-items: center; gap: .8rem; }
+.gauge { width: 4.6rem; height: 4.6rem; flex: none; }
+.gauge-track { fill: none; stroke: #1c2a40; stroke-width: 9; }
+.gauge-fill { fill: none; stroke: var(--glow); stroke-width: 9;
+  stroke-linecap: round; filter: drop-shadow(0 0 6px #4aa3ffaa); }
+.deck-grid { display: grid; gap: .9rem; margin-top: .9rem;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); }
-.panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px;
-  padding: 1rem 1.25rem 1.1rem; min-width: 0; }
+.panel { padding: 1.05rem 1.3rem 1.15rem; }
 .panel.wide { grid-column: 1 / -1; }
-.panel header { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: baseline;
+.panel header { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center;
   justify-content: space-between; }
-.panel h2 { margin: 0; font-size: 1.02rem; font-weight: 600; }
-.panel .sub { color: var(--muted); font-size: 13px; margin: .1rem 0 .6rem; }
+.panel h2 { margin: 0; font-size: 1.05rem; font-weight: 550; letter-spacing: .01em;
+  display: flex; align-items: center; gap: .55rem; }
+.panel h2::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%;
+  background: var(--glow); box-shadow: 0 0 10px var(--glow); }
+.panel .sub { color: var(--muted); font-size: 13px; margin: .15rem 0 .7rem; }
 .panel h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 1rem 0 0; }
 .panel .lane:last-child { border-bottom: 0; }
+.panel .lane { border-top-color: #1a2840; }
 .stack { display: grid; gap: .6rem; }
 .run { display: grid; grid-template-columns: 1.1rem 1fr; gap: .7rem; align-items: start; }
-.square { display: block; width: 1.1rem; height: 1.1rem; border-radius: 3px; margin-top: .2rem;
-  box-shadow: 0 0 12px currentColor; color: transparent; }
-.square.free { border: 1.5px dashed var(--rule); box-shadow: none; }
-.square.s1 { color: #3987e566; } .square.s2 { color: #d9592666; } .square.s3 { color: #199e7066; }
-.square.s4 { color: #c9850066; } .square.s5 { color: #d5518166; } .square.s6 { color: #00830066; }
-.square.s7 { color: #9085e966; } .square.s8 { color: #e6676766; }
+.square { display: block; width: 1.1rem; height: 1.1rem; border-radius: 4px; margin-top: .2rem;
+  box-shadow: 0 0 14px currentColor; color: transparent; }
+.square.free { border: 1.5px dashed #2a3c58; box-shadow: none; }
+.square.s1 { color: #3987e599; } .square.s2 { color: #d9592699; } .square.s3 { color: #199e7099; }
+.square.s4 { color: #c9850099; } .square.s5 { color: #d5518199; } .square.s6 { color: #00830099; }
+.square.s7 { color: #9085e999; } .square.s8 { color: #e6676799; }
 form.open { display: inline; }
 button.link { background: none; border: 0; padding: 0; color: var(--steel); cursor: pointer;
   font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace; font-size: 13px;
   text-decoration: underline; }
 .switches { display: flex; flex-wrap: wrap; gap: .5rem; }
-.switch { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
-.switch a { padding: .2rem .7rem; font-size: 13px; color: var(--muted); text-decoration: none; }
+.switch { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden;
+  background: #0a1220; }
+.switch a { padding: .25rem .75rem; font-size: 13px; color: var(--muted); text-decoration: none;
+  transition: background .2s, color .2s; }
 .switch a + a { border-left: 1px solid var(--rule); }
-.switch a[aria-current] { background: var(--steel-soft); color: var(--ink); }
+.switch a:hover { color: var(--ink); }
+.switch a[aria-current] { background: linear-gradient(180deg, #2a64a8, #1d4f8a); color: #fff;
+  box-shadow: 0 0 16px #4aa3ff55; }
 svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
-.chart .grid { stroke: var(--rule); stroke-width: 1; }
+.chart .grid { stroke: #1b2a42; stroke-width: 1; }
 .chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .chart .row-name { fill: var(--ink); font-size: 12.5px; }
 .chart .row-value { fill: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
-.chart .bar { fill: #3987e5; }
+.chart .bar { fill: #3987e5; filter: drop-shadow(0 0 5px #3987e588); }
 .chart .hit { fill: transparent; cursor: crosshair; }
-.chart .hit:hover, .chart .hit:focus { fill: #ffffff0d; outline: none; }
-.s1 { fill: #3987e5; background: #3987e5; } .s2 { fill: #d95926; background: #d95926; }
-.s3 { fill: #199e70; background: #199e70; } .s4 { fill: #c98500; background: #c98500; }
-.s5 { fill: #d55181; background: #d55181; } .s6 { fill: #008300; background: #008300; }
-.s7 { fill: #9085e9; background: #9085e9; } .s8 { fill: #e66767; background: #e66767; }
-.s0 { fill: #66758a; background: #66758a; }
+.chart .hit:hover, .chart .hit:focus { fill: #ffffff0f; outline: none; }
+.chart .seg, .chart .bar, .chart .arc, .chart .run-bar, .chart .cell { transition: filter .2s; }
+.chart .arc:hover, .chart .arc:focus, .chart .run-bar:hover, .chart .run-bar:focus,
+.chart .cell:hover { filter: brightness(1.35) drop-shadow(0 0 8px currentColor); outline: none; }
+.s1 { fill: #3987e5; background: #3987e5; color: #3987e5; }
+.s2 { fill: #d95926; background: #d95926; color: #d95926; }
+.s3 { fill: #199e70; background: #199e70; color: #199e70; }
+.s4 { fill: #c98500; background: #c98500; color: #c98500; }
+.s5 { fill: #d55181; background: #d55181; color: #d55181; }
+.s6 { fill: #008300; background: #008300; color: #008300; }
+.s7 { fill: #9085e9; background: #9085e9; color: #9085e9; }
+.s8 { fill: #e66767; background: #e66767; color: #e66767; }
+.s0 { fill: #66758a; background: #66758a; color: #66758a; }
+.square.s1, .square.s2, .square.s3, .square.s4, .square.s5, .square.s6, .square.s7,
+.square.s8 { background: currentColor; }
+.donut { max-width: 15rem; margin: 0 auto; }
+.donut-track { fill: none; stroke: #121d2e; stroke-width: 32; }
+.donut-value { fill: var(--ink); font-size: 40px; font-weight: 200; font-variant-numeric: tabular-nums; }
+.donut-caption { fill: var(--muted); font-size: 12px; }
+.share { display: grid; grid-template-columns: minmax(10rem, 15rem) 1fr; gap: 1.2rem;
+  align-items: center; }
+.legend.tall { flex-direction: column; flex-wrap: nowrap; gap: .45rem; }
+.legend.tall li { display: flex; align-items: center; }
+.legend.tall b { margin-left: auto; padding-left: 1rem; color: var(--ink); font-weight: 500;
+  font-variant-numeric: tabular-nums; }
+.area-fill { fill: url(#glow); }
+.area-line { fill: none; stroke: #6fb8ff; stroke-width: 2.2; stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px #4aa3ff); }
+.chart .dot { fill: transparent; }
+.chart .dot:hover, .chart .dot:focus { fill: #6fb8ff; }
+.head { fill: #fff; filter: drop-shadow(0 0 6px #6fb8ff); }
+.head-pulse { fill: none; stroke: #6fb8ff; stroke-width: 2; transform-box: fill-box;
+  transform-origin: center; opacity: 0; }
+.timeline .lane-rule { stroke: #16233a; stroke-width: 16; stroke-linecap: round; }
+.timeline .now { stroke: #b39bff; stroke-width: 1.5; stroke-dasharray: 3 4; }
+.run-bar { filter: drop-shadow(0 0 5px currentColor); }
+.heat .cell { fill: #1a2638; }
+.heat .cell.on { fill: #4aa3ff; fill-opacity: var(--level); }
+.empty-plot .empty-text { fill: var(--muted); font-size: 14px; letter-spacing: .02em; }
 .legend { list-style: none; display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; padding: 0;
-  margin: 0 0 .5rem; font-size: 13px; color: var(--muted); }
-.key { display: inline-block; width: .7rem; height: .7rem; border-radius: 3px; margin-right: .4rem;
-  vertical-align: -1px; }
-.chart-empty { color: var(--muted); padding: 2.5rem 0; text-align: center; }
+  margin: 0 0 .6rem; font-size: 13px; color: var(--muted); }
+.key { display: inline-block; width: .7rem; height: .7rem; border-radius: 3px; margin-right: .45rem;
+  vertical-align: -1px; box-shadow: 0 0 8px currentColor; }
 .scroll { overflow-x: auto; }
 .panel table { font-size: 13px; font-variant-numeric: tabular-nums; }
+.panel th { border-bottom-color: #22324a; }
+.panel td { border-bottom-color: #172438; }
 .panel td.n, .panel th.n { text-align: right; }
-#tip { position: fixed; z-index: 10; pointer-events: none; max-width: 24rem; padding: .35rem .6rem;
-  background: #0a1019f2; color: var(--ink); border: 1px solid var(--rule); border-radius: 6px;
-  font-size: 12.5px; box-shadow: 0 6px 24px #0008; }
+.panel tr:hover td { background: #ffffff05; }
+#tip { position: fixed; z-index: 10; pointer-events: none; max-width: 24rem; padding: .4rem .7rem;
+  background: #07101cf2; color: var(--ink); border: 1px solid #2a4a74; border-radius: 8px;
+  font-size: 12.5px; box-shadow: 0 0 24px #4aa3ff33, 0 10px 30px #000a; backdrop-filter: blur(6px); }
+@media (max-width: 760px) { .share { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: no-preference) {
-  body.boot .chart .seg, body.boot .chart .bar { transform-box: fill-box; animation: rise .9s
-    cubic-bezier(.2, .7, .2, 1) both; }
-  body.boot .chart .seg { transform-origin: bottom; }
-  body.boot .chart .bar { transform-origin: left; animation-name: reach; }
+  body.deck::before { animation: aurora 38s ease-in-out infinite alternate; }
+  @keyframes aurora { 50% { transform: translate(4%, 3%) rotate(6deg) scale(1.08); }
+    100% { transform: translate(-3%, 2%) rotate(-4deg) scale(1.04); } }
+  body.boot .readout, body.boot .panel { animation: materialise .9s cubic-bezier(.2, .8, .2, 1) both;
+    animation-delay: calc(var(--i, 0) * 90ms); }
+  body.boot .deck-grid > :nth-child(1) { --i: 4; } body.boot .deck-grid > :nth-child(2) { --i: 5; }
+  body.boot .deck-grid > :nth-child(3) { --i: 6; } body.boot .deck-grid > :nth-child(4) { --i: 7; }
+  body.boot .deck-grid > :nth-child(5) { --i: 7.5; } body.boot .deck-grid > :nth-child(6) { --i: 8; }
+  body.boot .deck-grid > :nth-child(7) { --i: 8.5; } body.boot .deck-grid > :nth-child(n+8) { --i: 9; }
+  @keyframes materialise { from { opacity: 0; transform: translateY(18px) scale(.985);
+    filter: blur(6px); } }
+  body.boot .readouts::after { content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: linear-gradient(90deg, transparent, #6fb8ff22, transparent); width: 30%;
+    animation: sweep 1.6s .2s ease-out both; }
+  @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(400%);
+    opacity: 0; } }
+  body.boot .chart .seg { transform-box: fill-box; transform-origin: bottom;
+    animation: rise .8s cubic-bezier(.2, .8, .2, 1) both;
+    animation-delay: calc(.5s + var(--i, 0) * 16ms); }
+  body.boot .chart .bar, body.boot .chart .run-bar { transform-box: fill-box; transform-origin: left;
+    animation: reach .9s cubic-bezier(.2, .8, .2, 1) both;
+    animation-delay: calc(.6s + var(--i, 0) * 60ms); }
+  body.boot .chart .arc { transform-box: view-box; transform-origin: center;
+    animation: unfold 1s cubic-bezier(.2, .8, .2, 1) both;
+    animation-delay: calc(.6s + var(--i, 0) * 110ms); }
+  body.boot .chart .cell { animation: appear .5s ease-out both;
+    animation-delay: calc(.6s + var(--i, 0) * 4ms); }
+  body.boot .area-line { stroke-dasharray: 1; animation: draw 1.8s .6s ease-in-out both; }
+  body.boot .area-fill { animation: appear 1.2s 1.4s ease-out both; }
+  body.boot .gauge-fill { animation: fill 1.6s .5s cubic-bezier(.3, .7, .2, 1) both; }
+  body.boot .spark path { stroke-dasharray: 600; animation: spark 1.6s .4s ease-out both; }
   @keyframes rise { from { transform: scaleY(0); } }
   @keyframes reach { from { transform: scaleX(0); } }
+  @keyframes unfold { from { transform: rotate(-40deg) scale(.6); opacity: 0; } }
+  @keyframes appear { from { opacity: 0; } }
+  @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+  @keyframes fill { from { stroke-dasharray: 0 var(--length); } }
+  @keyframes spark { from { stroke-dashoffset: 600; } to { stroke-dashoffset: 0; } }
+  .head-pulse { animation: ping 2.4s ease-out infinite; }
+  @keyframes ping { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(4); } }
+  .run-bar.live { animation: breathe 1.8s ease-in-out infinite; }
+  @keyframes breathe { 50% { filter: brightness(1.5) drop-shadow(0 0 12px currentColor); } }
+  .square:not(.free) { animation: glow 2.6s ease-in-out infinite; }
+  @keyframes glow { 50% { box-shadow: 0 0 22px currentColor, 0 0 4px currentColor; } }
+  .panel h2::before { animation: blink 3s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
 }
 @media (prefers-reduced-motion: no-preference) {
   .track span.now { animation: beat 2.4s ease-in-out infinite; }
@@ -288,7 +414,20 @@ TIPS = """
     const box = target.getBoundingClientRect();
     show(target, box.left + box.width / 2, box.top);
   });
-  setTimeout(() => document.body.classList.remove("boot"), 1200);
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!still) {
+    for (const node of document.querySelectorAll("[data-count]")) {
+      const target = Number(node.dataset.count), suffix = node.dataset.suffix || "";
+      const began = performance.now() + 300;
+      const tick = (now) => {
+        const t = Math.min(Math.max((now - began) / 1400, 0), 1);
+        node.textContent = Math.round(target * (1 - Math.pow(1 - t, 3))) + suffix;
+        if (t < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+  }
+  setTimeout(() => document.body.classList.remove("boot"), 3200);
 })();
 </script>
 """
@@ -567,22 +706,111 @@ def _readouts(history: list[RunRecord], now: datetime) -> str:
     numbers = kpis(history, now)
     average = sum(numbers.last_30_days) / 30
     median = span(numbers.median_resolve) if numbers.median_resolve is not None else "-"
-    share = f"{numbers.merge_share:.0%}" if numbers.merge_share is not None else "-"
     since = f"since {history[0].started:%b %d, %Y}" if history else "no run finished yet"
+
+    def count(value: int) -> str:
+        return f"<b data-count={value}>{value}</b>"
+
+    share = (
+        f"<b data-count={round(numbers.merge_share * 100)} data-suffix=%>{numbers.merge_share:.0%}</b>"
+        if numbers.merge_share is not None
+        else "<b>-</b>"
+    )
     cells = (
-        ("Merged today", str(numbers.today), f"{average:.1f} a day over 30 days"),
-        ("Last 7 days", str(numbers.week), sparkline(numbers.last_30_days)),
-        ("All time", str(numbers.total), since),
-        ("Median time to merge", median, "first run to merge"),
-        ("Merge rate", share, "merged among merged and failed"),
+        ("Merged today", count(numbers.today), f"<small>{average:.1f} a day over 30 days</small>"),
+        ("Last 7 days", count(numbers.week), sparkline(numbers.last_30_days)),
+        ("All time", count(numbers.total), f"<small>{since}</small>"),
+        ("Median time to merge", f"<b>{e(median)}</b>", "<small>first run to merge</small>"),
+        (
+            "Merge rate",
+            f"<div class=gauged>{ring_gauge(numbers.merge_share)}{share}</div>",
+            "<small>merged among merged and failed</small>",
+        ),
     )
     return (
         '<section class=readouts aria-label="Readouts">'
         + "".join(
-            f"<div class=readout><span>{label}</span><b>{e(value)}</b><small>{note}</small></div>"
-            for label, value, note in cells
+            f"<div class=readout style=--i:{index}><span>{label}</span>{value}{note}</div>"
+            for index, (label, value, note) in enumerate(cells)
         )
         + "</section>"
+    )
+
+
+def _flight_log(snapshot: Snapshot, history: list[RunRecord]) -> str:
+    """The last day as a timeline: every run per worker, the running ones still growing."""
+    end = snapshot.now
+    start = end - timedelta(hours=24)
+    slots = _slots(history, "model")
+    spans = [
+        Span(
+            record.worker,
+            record.started,
+            record.finished,
+            slots.get(record.model, 0),
+            f"{record.repository}#{record.issue}: {record.kind} run, {record.verdict}, "
+            f"{record.model}, {span(record.finished - record.started)}",
+        )
+        for record in history
+        if record.finished >= start
+    ]
+    for worker in snapshot.workers:
+        if worker.state == "working" and worker.since and worker.issue is not None:
+            spans.append(
+                Span(
+                    worker.name,
+                    worker.since,
+                    end,
+                    slots.get(worker.model, 0),
+                    f"{worker.repository}#{worker.issue}: running, {worker.step}, {worker.model}, "
+                    f"{span(end - worker.since)} so far",
+                    live=True,
+                )
+            )
+    lanes = [w.name for w in snapshot.workers if any(s.lane == w.name for s in spans)]
+    lanes += sorted({s.lane for s in spans} - set(lanes))
+    return (
+        '<section class="panel wide" id="flight" aria-label="Flight log">'
+        "<header><h2>Flight log</h2></header>"
+        f"<p class=sub>Every run of the last 24 hours, per worker, coloured by model; "
+        f"{sum(1 for s in spans if s.live)} still running.</p>"
+        f"{timeline(spans, lanes, start, end)}</section>"
+    )
+
+
+def _share(history: list[RunRecord]) -> str:
+    rows = model_ledger(history)
+    slots = _slots(history, "model")
+    legend = "".join(
+        f'<li><i class="key s{slots.get(row.model, 0)}"></i>{e(row.model)}<b>{row.runs}</b></li>'
+        for row in rows
+    )
+    return (
+        '<section class=panel id="share" aria-label="Model share">'
+        "<header><h2>Model share</h2></header>"
+        "<p class=sub>All runs ever, per model.</p>"
+        f"<div class=share>{donut([(row.model, row.runs) for row in rows], slots, 'runs')}"
+        f'<ul class="legend tall">{legend}</ul></div></section>'
+    )
+
+
+def _total(history: list[RunRecord], now: datetime) -> str:
+    points = cumulative_merged(history)
+    start = min((r.started for r in history), default=now - timedelta(days=1))
+    return (
+        '<section class=panel id="total" aria-label="Merged over time">'
+        "<header><h2>Merged over time</h2></header>"
+        f"<p class=sub>The running total since the first run: {len(points)} issues.</p>"
+        f"{area_line(points, start, now, 'merged')}</section>"
+    )
+
+
+def _heat(history: list[RunRecord]) -> str:
+    return (
+        '<section class=panel id="heat" aria-label="When work gets done">'
+        "<header><h2>When work gets done</h2></header>"
+        "<p class=sub>Finished runs per weekday and hour (UTC); brighter is busier.</p>"
+        f"{heatmap(activity(history), ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'))}</section>"
     )
 
 
@@ -643,11 +871,11 @@ def _mix(history: list[RunRecord], now: datetime) -> str:
     axis, series = weekly_mix(history, now, weeks=26)
     slots = _slots(history, "model")
     return (
-        '<section class=panel id="mix" aria-label="Model mix per week">'
+        '<section class="panel wide" id="mix" aria-label="Model mix per week">'
         "<header><h2>Model mix per week</h2></header>"
         "<p class=sub>Runs per model per week over half a year, whatever their outcome.</p>"
         f"{_legend(series, slots)}"
-        f"{stacked_columns(axis, series, slots, unit='runs', width=600, height=280, prefix='week of ')}"
+        f"{stacked_columns(axis, series, slots, unit='runs', width=960, height=240, prefix='week of ')}"
         f"{_series_table(axis, series, 'Week of', '%Y-%m-%d')}</section>"
     )
 
@@ -708,9 +936,13 @@ def cockpit_fragment(
         _readouts(history, snapshot.now)
         + "<div class=deck-grid>"
         + _crew(snapshot)
+        + _flight_log(snapshot, history)
         + _throughput(history, snapshot.now, view)
-        + _mix(history, snapshot.now)
+        + _share(history)
+        + _total(history, snapshot.now)
         + _time(history, view)
+        + _heat(history)
+        + _mix(history, snapshot.now)
         + _ledger(history)
         + "</div>"
     )

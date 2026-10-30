@@ -222,3 +222,18 @@ def model_ledger(records: list[RunRecord]) -> list[LedgerRow]:
             )
         )
     return sorted(rows, key=lambda row: (-row.runs, row.model))
+
+
+def cumulative_merged(records: list[RunRecord]) -> list[tuple[datetime, int]]:
+    """Every merge in time order with the running total after it."""
+    merged = sorted(r.finished for r in records if r.verdict == "merged")
+    return [(moment, count) for count, moment in enumerate(merged, start=1)]
+
+
+def activity(records: list[RunRecord]) -> list[list[int]]:
+    """Runs finished per weekday (Monday first) and hour of the day, in UTC."""
+    matrix = [[0] * 24 for _ in range(7)]
+    for record in records:
+        moment = record.finished.astimezone(UTC)
+        matrix[moment.weekday()][moment.hour] += 1
+    return matrix
