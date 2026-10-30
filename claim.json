@@ -1,20 +1,20 @@
 {
   "branch": "issue/3-accept-v-as-a-short-alias-for-version",
-  "claimedAt": "2026-10-30T14:35:18Z",
+  "claimedAt": "2026-10-30T16:05:31Z",
   "consumedThrough": {
     "comment": 6525336957,
     "review": null
   },
-  "expiresAt": "2026-11-06T14:36:03Z",
-  "generation": 2,
+  "expiresAt": "2026-11-06T16:05:31Z",
+  "generation": 3,
   "holder": {
     "manager": "trial-87aa",
-    "worker": "codex"
+    "worker": "claude"
   },
   "issue": 3,
   "pausedUntil": null,
-  "renewedAt": "2026-10-30T14:36:24Z",
-  "state": "released",
+  "renewedAt": "2026-10-30T16:05:31Z",
+  "state": "working",
   "step": "awaiting-review",
   "takeovers": 0
 }
