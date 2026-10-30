@@ -165,6 +165,18 @@ failing somewhere inside the first poll.
 ## 🚀 Quick start
 
 ```bash
+./run.sh                                                      # or run.bat on Windows: sets up .venv and starts watch
+```
+
+When no configuration file exists yet, `watch` detects the local agents (`claude`, `codex`,
+`antigravity` / `agy`, `opencode`, plus local portable and ClaudeLocal installations), writes the
+initial configuration with one concurrent run per account (`maxConcurrentRuns` of `1`), serves the
+web UI with the default settings and opens it in your browser so you can add a repository and use
+it right away.
+
+From the command line:
+
+```bash
 github-issue-worker add https://github.com/Hawkynt/ShiftDiff  # verifies push access, creates worker:* labels
 github-issue-worker workers --detect                          # finds installed agents and proposes one worker each
 github-issue-worker watch                                     # runs until stopped; the UI is at http://127.0.0.1:8765
@@ -989,9 +1001,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 ### F10 — Operation
 
-- [ ] 🟥 **F10.1** `watch`: runs the manager, its workers and its UI until stopped. The first
-  `Ctrl+C`/`SIGTERM` finishes each worker's current step, checkpoints and keeps the claims
-  (`--release-on-exit` releases them). The second aborts.
+- [ ] 🟥 **F10.1** `watch` (and `./run.sh` / `run.bat` in the repository root): runs the manager,
+  its workers and its UI until stopped. When no configuration file exists yet, it detects installed
+  local agents with one concurrent run per account, writes the initial configuration and opens the
+  local UI in the default browser. The first `Ctrl+C`/`SIGTERM` finishes each worker's current
+  step, checkpoints and keeps the claims (`--release-on-exit` releases them). The second aborts.
 - [ ] 🟥 **F10.2** `once`: one poll-and-work pass, for cron or a scheduler.
 - [ ] 🟥 **F10.3** `work <owner/repo#n> [--worker <name>]`: claim and work exactly one issue now with
   an idle worker, ignoring the queue order but never another worker's valid claim.

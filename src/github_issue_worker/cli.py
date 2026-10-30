@@ -11,6 +11,7 @@ import shutil
 import signal
 import sys
 import threading
+import webbrowser
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
@@ -112,7 +113,7 @@ def detect_workers(home: Path) -> list[dict[str, Any]]:
 
     portable_kinds = {worker["agent"] for worker in found if worker["name"] != "local"}
     for kind, executable in EXECUTABLES.items():
-        if kind not in portable_kinds and shutil.which(executable):
+        if kind not in portable_kinds and (shutil.which(executable) or shutil.which(kind)):
             found.append(
                 {"name": kind, "agent": kind, "account": kind, "priority": _PRIORITY[kind]}
             )
@@ -124,6 +125,18 @@ def detect_workers(home: Path) -> list[dict[str, Any]]:
         if names[worker["name"]] > 1:
             worker["name"] = f"{worker['name']}-{names[worker['name']]}"
     return found
+
+
+def _add_detected_workers(config: Configuration, proposed: Sequence[dict[str, Any]]) -> None:
+    existing = {worker.name for worker in config.workers}
+    workers, accounts = list(config.workers), dict(config.accounts)
+    for raw in proposed:
+        if raw["name"] in existing:
+            continue
+        if raw["account"] not in accounts:
+            accounts[raw["account"]] = AccountSettings(max_concurrent_runs=1)
+        workers.append(WorkerSettings.model_validate(raw))
+    config.workers, config.accounts = workers, accounts
 
 
 # --- commands ------------------------------------------------------------------------------------
@@ -160,15 +173,7 @@ def _workers(config: Configuration, path: Path, args: argparse.Namespace, home: 
         proposed = detect_workers(home)
         print(json.dumps(proposed, indent=2))
         if args.save:
-            existing = {worker.name for worker in config.workers}
-            workers, accounts = list(config.workers), dict(config.accounts)
-            for raw in proposed:
-                if raw["name"] in existing:
-                    continue
-                if raw["account"] not in accounts:
-                    accounts[raw["account"]] = AccountSettings()
-                workers.append(WorkerSettings.model_validate(raw))
-            config.workers, config.accounts = workers, accounts
+            _add_detected_workers(config, proposed)
             save(config, path)
         return 0
 
@@ -192,6 +197,11 @@ def _watch(
     path: Path | None = None,
 ) -> int:
     from github_issue_worker.adapters.process import terminate_all
+
+    first_run = path is not None and not path.exists()
+    if first_run and path is not None:
+        _add_detected_workers(config, detect_workers(home))
+        save(config, path)
 
     runtime = runtime_factory(config, home, *_dirs(args))
     # The login is proven by the adapter the manager polls through, not by a second `gh` (F0.5).
@@ -221,27 +231,35 @@ def _watch(
         )
         stop.set()
 
-    signal.signal(signal.SIGINT, interrupt)
-    signal.signal(signal.SIGTERM, interrupt)
-    count = len(manager.repositories)
-    print(f"{NAME} {version()} as {runtime.manager_id}, watching {count} repositories")
-    for row in manager.snapshot():
-        print(f"  worker {row['worker']}: {'ok' if row['available'] else row['reason']}")
-    server = None
-    if path is not None and not args.once and not getattr(args, "no_ui", False):
-        server = _start_ui(runtime, manager, path)
-    seen = _mtime(path)
-    while not stop.is_set():
-        manager.tick()
-        if args.once:
-            break
-        stop.wait(runtime.config.poll_interval.total_seconds())
-        seen = _reload_if_changed(runtime, manager, path, seen)
-    while any(slot.busy for slot in manager.workers):
-        stop.wait(5)
-    if server is not None:
-        server.stop()
-    return 0
+    prev_int = signal.signal(signal.SIGINT, interrupt)
+    prev_term = signal.signal(signal.SIGTERM, interrupt)
+    try:
+        count = len(manager.repositories)
+        print(f"{NAME} {version()} as {runtime.manager_id}, watching {count} repositories")
+        for row in manager.snapshot():
+            print(f"  worker {row['worker']}: {'ok' if row['available'] else row['reason']}")
+        server = None
+        if path is not None and not args.once and not getattr(args, "no_ui", False):
+            server = _start_ui(runtime, manager, path, open_browser=first_run)
+        seen = _mtime(path)
+        while not stop.is_set():
+            try:
+                manager.tick()
+                if args.once or stop.is_set():
+                    break
+                stop.wait(runtime.config.poll_interval.total_seconds())
+                seen = _reload_if_changed(runtime, manager, path, seen)
+            except KeyboardInterrupt:
+                stop.set()
+                break
+        while any(slot.busy for slot in manager.workers):
+            stop.wait(5)
+        if server is not None:
+            server.stop()
+        return 0
+    finally:
+        signal.signal(signal.SIGINT, prev_int)
+        signal.signal(signal.SIGTERM, prev_term)
 
 
 def _mtime(path: Path | None) -> float | None:
@@ -268,7 +286,7 @@ def _reload_if_changed(
     return current
 
 
-def _start_ui(runtime: Any, manager: Any, path: Path) -> Any:
+def _start_ui(runtime: Any, manager: Any, path: Path, open_browser: bool = False) -> Any:
     from github_issue_worker.ui.live import RuntimeBackend
     from github_issue_worker.ui.server import UiServer
 
@@ -276,6 +294,9 @@ def _start_ui(runtime: Any, manager: Any, path: Path) -> Any:
     server = UiServer(RuntimeBackend(runtime, manager, path, detect_workers), ui.bind, ui.port)
     if server.start(wait_for_port=60):
         print(f"  ui: {server.url}")
+        if open_browser:
+            with contextlib.suppress(Exception):
+                webbrowser.open(server.url)
         return server
     print(f"  ui: could not listen on {ui.bind}:{ui.port}; running without it", file=sys.stderr)
     return None
@@ -422,6 +443,12 @@ def _parser() -> argparse.ArgumentParser:
     watch = commands.add_parser("watch", help="run the manager until stopped")
     watch.add_argument("--once", action="store_true", help="one poll-and-work pass, then exit")
     watch.add_argument("--no-ui", action="store_true", help="do not serve the local UI")
+    watch.add_argument("--config", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    watch.add_argument(
+        "-v", "--verbose", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS
+    )
+    watch.add_argument("--state-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    watch.add_argument("--cache-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
 
     ui = commands.add_parser("ui", help="serve the demo fleet, or capture its screenshots")
     ui.add_argument("--demo", action="store_true", help="serve fixed, believable sample data")

@@ -69,7 +69,7 @@ def resolve(worker: WorkerSettings, home: Path | None = None) -> Resolved:
         return Resolved(launcher, local=True)
 
     name = EXECUTABLES.get(worker.agent)
-    found = shutil.which(name) if name else None
+    found = (shutil.which(name) if name else None) or shutil.which(worker.agent)
     if not found:
         raise Unavailable(f"{worker.name}: `{name or worker.agent}` is not on PATH")
     return Resolved(Path(found))
