@@ -80,7 +80,7 @@ class FakeHost:
     def create_pull_request(self, branch: str, base: str, title: str, body: str) -> PullRequest:
         number = len(self.pulls) + 100
         self.pulls[number] = PullRequest(
-            number, self.head_of[branch], f"https://x/pull/{number}", "unknown"
+            number, self.head_of[branch], f"https://x/pull/{number}", "unknown", title=title
         )
         self.pull_bodies[number] = (branch, f"{title}\n{body}")
         return self.pulls[number]

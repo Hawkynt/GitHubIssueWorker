@@ -355,16 +355,20 @@ class IssueRun:
     def _open(
         self, issue: Issue, tree: Path, base: str, branch: str, outcome: Outcome
     ) -> PullRequest:
-        commits = self.workspace.commits(tree, base)
-        prefix = commits[0].message[:1] if commits else "*"
         scenarios = "\n".join(f"- {scenario}" for scenario in outcome.scenarios)
         body = "\n".join(self._changes(tree, base))
         if scenarios:
             body += f"\n\nScenarios:\n{scenarios}"
         body += f"\n\nCloses #{issue.number}"
-        self._title = f"{prefix} {issue.title}"
+        self._title = self._subject(issue, tree, base)
         self._handle = self.coordinator.fence(self._handle)
         return self.host.create_pull_request(branch, base, self._title, body)
+
+    def _subject(self, issue: Issue, tree: Path, base: str) -> str:
+        """The issue's title behind the prefix of the branch's first commit."""
+        commits = self.workspace.commits(tree, base)
+        prefix = commits[0].message[:1] if commits else "*"
+        return f"{prefix} {issue.title}"
 
     def _changes(self, tree: Path, base: str) -> list[str]:
         """The branch's change lines, oldest commit first: what the PR, the squash commit and the
@@ -400,7 +404,9 @@ class IssueRun:
     ) -> Verdict:
         current = self.host.pull_request(pull.number)
         changes = "\n".join(self._changes(tree, base))
-        title = f"{getattr(self, '_title', issue.title)} (#{pull.number})"
+        # The PR's own title carries the change-line prefix, also when another run opened it.
+        subject = current.title or getattr(self, "_title", "") or self._subject(issue, tree, base)
+        title = f"{subject} (#{pull.number})"
         self._handle = self.coordinator.fence(self._handle)
         merge_sha = (
             ""
