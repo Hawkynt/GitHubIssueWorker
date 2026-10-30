@@ -1,0 +1,158 @@
+"""`RepositoryHost` over the GitHub REST API."""
+
+from __future__ import annotations
+
+from typing import Any
+from urllib.parse import quote
+
+from github_issue_worker.application.poller import parse_issue
+from github_issue_worker.domain.issue import Issue
+from github_issue_worker.ports.github import GitHubApi, GitHubError, next_link
+from github_issue_worker.ports.repository import (
+    WORKER_LABELS,
+    Check,
+    PullRequest,
+    RepositoryInfo,
+)
+from github_issue_worker.product import MARKER_PREFIX
+
+MARKER = f"{MARKER_PREFIX}comment -->"
+
+
+def _pull(data: dict[str, Any]) -> PullRequest:
+    return PullRequest(
+        number=int(data["number"]),
+        head_sha=data["head"]["sha"],
+        url=data.get("html_url", ""),
+        mergeable_state=str(data.get("mergeable_state") or "unknown"),
+        merged=bool(data.get("merged")),
+    )
+
+
+class GitHubHost:
+    def __init__(self, api: GitHubApi, repository: str) -> None:
+        self.api = api
+        self.repository = repository
+        self._roles: dict[str, str | None] = {}
+
+    def _path(self, tail: str) -> str:
+        return f"repos/{self.repository}/{tail}" if tail else f"repos/{self.repository}"
+
+    def info(self) -> RepositoryInfo:
+        data = self.api.request("GET", self._path("")).body
+        methods = tuple(
+            method
+            for method, key in (
+                ("squash", "allow_squash_merge"),
+                ("merge", "allow_merge_commit"),
+                ("rebase", "allow_rebase_merge"),
+            )
+            if data.get(key, True)
+        )
+        return RepositoryInfo(
+            default_branch=data["default_branch"],
+            can_push=bool((data.get("permissions") or {}).get("push")),
+            merge_methods=methods,
+        )
+
+    def role(self, login: str) -> str | None:
+        if login not in self._roles:
+            try:
+                data = self.api.request(
+                    "GET", self._path(f"collaborators/{quote(login)}/permission")
+                ).body
+                self._roles[login] = data.get("role_name") or data.get("permission")
+            except GitHubError as error:
+                if error.status not in (403, 404):
+                    raise
+                self._roles[login] = None
+        return self._roles[login]
+
+    def issue(self, number: int) -> Issue:
+        return parse_issue(self.api.request("GET", self._path(f"issues/{number}")).body)
+
+    def label_names(self) -> set[str]:
+        names: set[str] = set()
+        response = self.api.request("GET", self._path("labels"), params={"per_page": "100"})
+        while True:
+            names |= {label["name"] for label in response.body or []}
+            page = next_link(response.headers)
+            if page is None:
+                return names
+            response = self.api.request("GET", page)
+
+    def ensure_worker_labels(self) -> None:
+        existing = self.label_names()
+        for name, (color, description) in WORKER_LABELS.items():
+            if name not in existing:
+                body = {"name": name, "color": color, "description": description}
+                self.api.request("POST", self._path("labels"), body=body)
+
+    def set_worker_label(self, issue: int, label: str | None) -> None:
+        current = self.api.request("GET", self._path(f"issues/{issue}/labels")).body or []
+        for existing in current:
+            name = existing["name"]
+            if name.startswith("worker:") and name != label and name != "worker:skip":
+                self.api.request("DELETE", self._path(f"issues/{issue}/labels/{quote(name)}"))
+        if label and label not in {existing["name"] for existing in current}:
+            self.api.request("POST", self._path(f"issues/{issue}/labels"), body={"labels": [label]})
+
+    def add_labels(self, issue: int, labels: list[str]) -> None:
+        if labels:
+            self.api.request("POST", self._path(f"issues/{issue}/labels"), body={"labels": labels})
+
+    def comment(self, issue: int, body: str) -> None:
+        text = body if MARKER_PREFIX in body else f"{body}\n\n{MARKER}"
+        self.api.request("POST", self._path(f"issues/{issue}/comments"), body={"body": text})
+
+    def find_pull_request(self, branch: str) -> PullRequest | None:
+        owner = self.repository.split("/", 1)[0]
+        pulls = self.api.request(
+            "GET", self._path("pulls"), params={"head": f"{owner}:{branch}", "state": "open"}
+        ).body
+        return self.pull_request(int(pulls[0]["number"])) if pulls else None
+
+    def create_pull_request(self, branch: str, base: str, title: str, body: str) -> PullRequest:
+        data = self.api.request(
+            "POST",
+            self._path("pulls"),
+            body={"title": title, "head": branch, "base": base, "body": body},
+        ).body
+        return _pull(data)
+
+    def pull_request(self, number: int) -> PullRequest:
+        return _pull(self.api.request("GET", self._path(f"pulls/{number}")).body)
+
+    def checks(self, sha: str) -> list[Check]:
+        data = self.api.request(
+            "GET", self._path(f"commits/{sha}/check-runs"), params={"per_page": "100"}
+        ).body
+        return [
+            Check(
+                name=run["name"],
+                status=run["status"],
+                conclusion=run.get("conclusion"),
+                summary=((run.get("output") or {}).get("summary") or "")[:2000],
+            )
+            for run in (data or {}).get("check_runs", [])
+        ]
+
+    def merge(self, number: int, method: str, sha: str) -> str:
+        data = self.api.request(
+            "PUT", self._path(f"pulls/{number}/merge"), body={"merge_method": method, "sha": sha}
+        ).body
+        return str(data.get("sha", ""))
+
+    def delete_branch(self, branch: str) -> None:
+        try:
+            self.api.request("DELETE", self._path(f"git/refs/heads/{branch}"))
+        except GitHubError as error:
+            if error.status != 422:  # already gone
+                raise
+
+    def close_issue(self, issue: int) -> None:
+        self.api.request(
+            "PATCH",
+            self._path(f"issues/{issue}"),
+            body={"state": "closed", "state_reason": "completed"},
+        )
