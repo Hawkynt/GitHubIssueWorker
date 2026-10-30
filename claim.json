@@ -13,8 +13,8 @@
   },
   "issue": 25,
   "pausedUntil": null,
-  "renewedAt": "2026-10-30T17:09:37Z",
-  "state": "working",
-  "step": "triage",
+  "renewedAt": "2026-10-30T17:09:44Z",
+  "state": "released",
+  "step": "needs-input",
   "takeovers": 0
 }
