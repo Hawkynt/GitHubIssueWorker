@@ -75,7 +75,8 @@ Two rules that make the difference real:
 
 ## Commit conventions
 
-- One concern per commit, with a descriptive body citing the roadmap id it serves (`F7.1`).
+- One concern per commit. The body is change lines, not prose: one short line per change, each
+  starting with a prefix and a space, citing the roadmap id it serves (`F7.1`).
 - Subject lines start with a prefix — `+` added · `-` removed · `*` changed · `#` bug fixed ·
   `!` critical todo. Never begin with "fix"/"changed"/"modified".
 - Write everything as if authored by hand: no AI attribution anywhere.

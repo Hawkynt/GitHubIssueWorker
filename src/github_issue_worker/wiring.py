@@ -67,10 +67,13 @@ class RepositoryRun:
     build: str | None
     test: str | None
     forbidden_words: tuple[str, ...] = DEFAULT_FORBIDDEN_WORDS
+    max_prose_lines: int = 2
 
     @property
     def gate(self) -> CommitGate:
-        return CommitGate(forbidden_words=self.forbidden_words)
+        return CommitGate(
+            forbidden_words=self.forbidden_words, max_prose_lines=self.max_prose_lines
+        )
 
 
 def repository_run(config: Configuration, repository: RepositorySettings) -> RepositoryRun:
@@ -89,6 +92,7 @@ def repository_run(config: Configuration, repository: RepositorySettings) -> Rep
         build=pick("build"),  # type: ignore[arg-type]
         test=pick("test"),  # type: ignore[arg-type]
         forbidden_words=tuple(pick("forbidden_words")),  # type: ignore[arg-type]
+        max_prose_lines=int(pick("max_prose_lines")),  # type: ignore[call-overload]
     )
 
 

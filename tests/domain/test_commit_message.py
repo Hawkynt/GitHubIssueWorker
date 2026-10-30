@@ -117,7 +117,64 @@ def test_always_forbidden_traces_cannot_be_switched_off(line: str) -> None:
 
 
 def test_violations_name_the_line_they_sit_on() -> None:
-    message = f"# retry on timeout{BODY}\nfirst\nGenerated with a tool"
+    message = f"# retry on timeout{BODY}\n+ first\nGenerated with a tool"
     (violation,) = GATE.check(message)
     assert violation.rule is Rule.AI_TRACE
     assert violation.line == 5
+
+
+# --- bodies are change lines, not prose ----------------------------------------------------------
+
+CHANGE_LINES = (
+    "+ the Settings page highlights unsaved values (F14.12)\n\n"
+    "+ every control carries the value it was loaded with\n"
+    "  and a small script compares on every input\n"
+    "* a refused save keeps the typed values marked\n"
+    "# checkboxes get an outline, their background cannot be styled\n"
+)
+
+PROSE = (
+    "+ the Settings page highlights unsaved values (F14.12)\n\n"
+    "Issue #22. Each control of the settings form carries the value it was\n"
+    "loaded with in data-saved; a small inline script compares on every\n"
+    "input and change and gives the control the class changed while the\n"
+    "two differ, so editing a value back clears the mark.\n"
+)
+
+
+def test_a_body_of_change_lines_passes() -> None:
+    assert rules(CHANGE_LINES) == set()
+
+
+def test_a_body_of_prose_is_refused() -> None:
+    (violation,) = [v for v in GATE.check(PROSE) if v.rule is Rule.PROSE]
+    assert violation.line == 3
+    assert "4 lines" in violation.detail
+
+
+def test_a_little_prose_is_tolerated_up_to_the_limit() -> None:
+    message = CHANGE_LINES + "Refs F14.12\n"
+    assert rules(message) == set()
+    assert Rule.PROSE in rules(message, CommitGate(max_prose_lines=0))
+    assert rules(PROSE, CommitGate(max_prose_lines=4)) == set()
+
+
+def test_continuation_lines_belong_to_the_change_line_above() -> None:
+    message = (
+        "+ subject here\n\n  an indented line without a change line above\n"
+        "  and another\n  and a third\n"
+    )
+    assert Rule.PROSE in rules(message)
+
+
+def test_change_lines_are_the_subject_and_the_bodys_change_lines() -> None:
+    from github_issue_worker.domain.commit_message import change_lines
+
+    assert change_lines(CHANGE_LINES) == [
+        "+ the Settings page highlights unsaved values (F14.12)",
+        "+ every control carries the value it was loaded with"
+        " and a small script compares on every input",
+        "* a refused save keeps the typed values marked",
+        "# checkboxes get an outline, their background cannot be styled",
+    ]
+    assert change_lines(PROSE) == ["+ the Settings page highlights unsaved values (F14.12)"]

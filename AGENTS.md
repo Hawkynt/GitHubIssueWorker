@@ -36,7 +36,10 @@ requests and the `e2e` tests to the manager and CI.
 
 ## Commits
 
-- **Group changes semantically** — one requirement/concern per commit, with a detailed body.
+- **Group changes semantically** — one requirement/concern per commit.
+- **The body is change lines, not prose**: after a blank line, one short line per change, each
+  starting with a prefix and a space; a longer change continues on indented lines. More than two
+  other lines and the commit gate sends it back (`maxProseLines`).
 - **Every subject line starts with a prefix**: `+` added · `-` removed · `*` changed · `#` bug fixed
   · `!` critical todo.
 - Never start a subject with "fix"/"bugfix"/"changed"/"modified"/"updated".

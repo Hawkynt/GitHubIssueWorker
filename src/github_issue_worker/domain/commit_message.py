@@ -39,6 +39,7 @@ class Rule(StrEnum):
     PREFIX = "prefix"
     BANNED_VERB = "banned-verb"
     BODY = "body"
+    PROSE = "prose"
     AI_TRACE = "ai-trace"
 
 
@@ -56,6 +57,8 @@ class CommitGate:
     """Checks commit messages against the house rules."""
 
     forbidden_words: tuple[str, ...] = DEFAULT_FORBIDDEN_WORDS
+    max_prose_lines: int = 2
+    """Body lines allowed that are neither change lines nor their indented continuations."""
 
     def check(self, message: str) -> list[Violation]:
         """Return every violation in ``message``; an empty list means the commit may be pushed."""
@@ -63,6 +66,7 @@ class CommitGate:
         subject = lines[0]
         violations = self._check_subject(subject)
         violations += self._check_body(lines)
+        violations += self._check_prose(lines)
         violations += self._check_traces(lines)
         return violations
 
@@ -93,6 +97,31 @@ class CommitGate:
 
         return []
 
+    def _check_prose(self, lines: list[str]) -> list[Violation]:
+        """The body is change lines (``+ - * # !`` and a space), not paragraphs of prose."""
+        prose: list[int] = []
+        follows_change = False
+        for number, line in enumerate(lines[2:], start=3):
+            if not line.strip():
+                follows_change = False
+                continue
+            if is_change_line(line):
+                follows_change = True
+            elif follows_change and line[:1] in (" ", "\t"):
+                continue
+            else:
+                prose.append(number)
+        if len(prose) <= self.max_prose_lines:
+            return []
+        return [
+            Violation(
+                Rule.PROSE,
+                prose[0],
+                f"{len(prose)} lines of the body are prose; write it as change lines, each "
+                f"starting with one of {' '.join(PREFIXES)} and a space",
+            )
+        ]
+
     def _check_traces(self, lines: list[str]) -> list[Violation]:
         patterns = [*_ALWAYS_FORBIDDEN]
         if self.forbidden_words:
@@ -112,3 +141,19 @@ class CommitGate:
                     break
 
         return violations
+
+
+def is_change_line(line: str) -> bool:
+    return len(line) > 2 and line[0] in PREFIXES and line[1] == " " and bool(line[2:].strip())
+
+
+def change_lines(message: str) -> list[str]:
+    """The subject and every change line of the body, continuations joined, in order."""
+    lines = message.strip().split("\n")
+    found: list[str] = [lines[0].strip()] if is_change_line(lines[0].strip()) else []
+    for line in lines[1:]:
+        if is_change_line(line):
+            found.append(line.strip())
+        elif found and line[:1] in (" ", "\t") and line.strip() and len(found) > 1:
+            found[-1] = f"{found[-1]} {line.strip()}"
+    return found
