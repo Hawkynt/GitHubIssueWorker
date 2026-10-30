@@ -10,9 +10,16 @@ from typing import Annotated, Any
 from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 
 from github_issue_worker.application.history import SplitBy
+from github_issue_worker.application.repository_suggestions import suggest
 from github_issue_worker.cli import normalize_repository
 from github_issue_worker.configuration import (
     Configuration,
@@ -158,6 +165,12 @@ def create_app(backend: Backend) -> FastAPI:
         return back("/settings", "Settings saved and applied.")
 
     # --- repositories ----------------------------------------------------------------------------
+
+    @app.get("/repositories/suggest")
+    def suggest_repositories(q: str = "") -> JSONResponse:
+        watched = [r.repository for r in backend.config().repositories]
+        found = suggest(backend.pushable_repositories(), watched, q.strip())
+        return JSONResponse({"kind": found.kind, "items": list(found.items)})
 
     @app.post("/repositories/add", response_class=HTMLResponse, response_model=None)
     async def add_repository(request: Request) -> Any:
