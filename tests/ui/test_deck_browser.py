@@ -98,7 +98,8 @@ def test_a_live_refresh_does_not_replay_the_boot(
     page.goto(server.url + path)
     page.evaluate("window.first = document.querySelector('#live .panel, #live .readout')")
     page.wait_for_function("!document.body.classList.contains('boot')", timeout=10_000)
-    # The stream's first event arrives during the boot; its refresh swaps the live part after it.
+    # A background refresh swaps the live part once the boot is over.
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
     page.wait_for_function("!window.first.isConnected", timeout=10_000)
     assert page.evaluate("document.querySelectorAll('#live .panel').length") > 0
     assert page.evaluate(
