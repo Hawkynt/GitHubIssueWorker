@@ -27,6 +27,10 @@ class StoredClaim:
 class ClaimStore(Protocol):
     """Every write is conditional on the version last seen, and fails with `ClaimConflict`."""
 
+    def issues(self) -> list[int]:
+        """Every issue that has a claim ref, whatever its state."""
+        ...
+
     def read(self, issue: int) -> StoredClaim | None:
         """The current claim of ``issue``, or None when there is none."""
         ...

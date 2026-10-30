@@ -36,6 +36,9 @@ class InMemoryClaimStore:
     def force_create(self, claim: Claim) -> None:
         self._claims[claim.issue] = StoredClaim(f"v{next(self._versions)}", claim)
 
+    def issues(self) -> list[int]:
+        return sorted(self._claims)
+
     def read(self, issue: int) -> StoredClaim | None:
         return self._claims.get(issue)
 

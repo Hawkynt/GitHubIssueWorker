@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from github_issue_worker.adapters.workspace import CommitInfo, PushRejected
-from github_issue_worker.domain.issue import Issue
+from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.ports.agents import AgentRun, RunReport
 from github_issue_worker.ports.repository import Check, PullRequest, RepositoryInfo
 
@@ -17,10 +17,11 @@ from github_issue_worker.ports.repository import Check, PullRequest, RepositoryI
 class FakeHost:
     repository: str = "Hawkynt/ShiftDiff"
     issues: dict[int, Issue] = field(default_factory=dict)
+    issue_comments: list[Comment] = field(default_factory=list)
     repo_labels: set[str] = field(default_factory=lambda: {"bug", "enhancement"})
     worker_label: dict[int, str | None] = field(default_factory=dict)
     added_labels: dict[int, list[str]] = field(default_factory=dict)
-    comments: list[tuple[int, str]] = field(default_factory=list)
+    posted: list[tuple[int, str]] = field(default_factory=list)
     pulls: dict[int, PullRequest] = field(default_factory=dict)
     pull_bodies: dict[int, tuple[str, str]] = field(default_factory=dict)
     states: list[str] = field(default_factory=lambda: ["clean"])
@@ -41,6 +42,9 @@ class FakeHost:
         issue = self.issues[number]
         return replace(issue, state="closed") if number in self.closed else issue
 
+    def comments(self, number: int) -> list[Comment]:
+        return [comment for comment in self.issue_comments if comment.issue == number]
+
     def label_names(self) -> set[str]:
         return set(self.repo_labels)
 
@@ -54,7 +58,7 @@ class FakeHost:
         self.added_labels.setdefault(issue, []).extend(labels)
 
     def comment(self, issue: int, body: str) -> None:
-        self.comments.append((issue, body))
+        self.posted.append((issue, body))
 
     def find_pull_request(self, branch: str) -> PullRequest | None:
         for pull in self.pulls.values():

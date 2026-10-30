@@ -1,0 +1,286 @@
+"""The manager loop: poll, decide, claim, hand issues to idle workers (F3, F11.8, F11.11, F13).
+
+Each worker holds at most one claim, and claims only when it is idle, eligible for the issue, and
+its account is not limited, so nothing is reserved by a worker that cannot start it. A worker
+whose run was paused by a usage limit keeps its issue and continues it once the reset has passed.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+import threading
+from collections.abc import Callable, MutableMapping
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Literal, Protocol
+
+from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
+from github_issue_worker.application.issue_run import Verdict
+from github_issue_worker.application.poller import PollResult, PollState
+from github_issue_worker.domain.claim import ClaimState, Holder
+from github_issue_worker.domain.issue import Actor, Comment, Issue
+from github_issue_worker.domain.trust import is_trusted
+from github_issue_worker.domain.work import RunKind, WorkContext, new_input, pending_run
+from github_issue_worker.ports.claims import ClaimStore
+from github_issue_worker.ports.clock import Clock
+from github_issue_worker.ports.repository import RepositoryHost
+
+log = logging.getLogger(__name__)
+
+
+class Limits(Protocol):
+    def limited_until(self, account: str) -> datetime | None: ...
+    def set_limited(self, account: str, until: datetime | None) -> None: ...
+
+
+@dataclass
+class WorkerSlot:
+    name: str
+    agent: str
+    account: str
+    priority: int = 100
+    tags: frozenset[str] = frozenset()
+    model: str | None = None
+    available: bool = True
+    reason: str = ""
+    busy: bool = False
+    current: tuple[str, int] | None = None
+
+
+@dataclass
+class RepositoryWatch:
+    name: str
+    host: RepositoryHost
+    coordinator: Coordinator
+    store: ClaimStore
+    mode: Literal["all", "labeled"] = "all"
+    process_backlog: bool = False
+    settings: object = None
+    """Whatever the run factory needs for this repository (merge method, commands, ...)."""
+
+
+RunIssue = Callable[
+    [RepositoryWatch, WorkerSlot, ClaimHandle, Issue, tuple[Comment, ...], RunKind], Verdict
+]
+Poll = Callable[[str, PollState, bool], tuple[PollResult, PollState]]
+
+
+def branch_name(issue: Issue) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", issue.title.lower()).strip("-")[:40].rstrip("-")
+    return f"issue/{issue.number}-{slug or 'work'}"
+
+
+@dataclass
+class Manager:
+    manager_id: str
+    manager_tags: frozenset[str]
+    repositories: list[RepositoryWatch]
+    workers: list[WorkerSlot]
+    poll: Poll
+    poll_states: MutableMapping[str, PollState]
+    limits: Limits
+    clock: Clock
+    trusted_users: tuple[str, ...]
+    run_issue: RunIssue
+    spawn: Callable[[Callable[[], None]], None]
+    _lock: threading.RLock = field(default_factory=threading.RLock)
+    _known: dict[tuple[str, int], Issue] = field(default_factory=dict)
+    _pending: dict[str, set[int]] = field(default_factory=dict)
+    _own: dict[tuple[str, int], str] = field(default_factory=dict)
+    _labelled: dict[tuple[str, int], str] = field(default_factory=dict)
+    _adopted: set[str] = field(default_factory=set)
+
+    # --- the loop ------------------------------------------------------------------------------
+
+    def tick(self) -> None:
+        for watch in self.repositories:
+            try:
+                self._tick(watch)
+            except Exception:
+                log.exception("%s: poll cycle failed", watch.name)
+
+    def _tick(self, watch: RepositoryWatch) -> None:
+        if watch.name not in self._adopted:
+            self._adopt(watch)
+        state = self.poll_states.get(watch.name, PollState())
+        result, state = self.poll(watch.name, state, watch.process_backlog)
+        self.poll_states[watch.name] = state
+        for issue in result.issues:
+            self._known[(watch.name, issue.number)] = issue
+
+        touched = {issue.number for issue in result.issues} | {c.issue for c in result.comments}
+        with self._lock:
+            own = {number for (repo, number) in self._own if repo == watch.name}
+        candidates = touched | self._pending.setdefault(watch.name, set()) | own
+        since = state.watched_since or self.clock.now()
+        for number in sorted(candidates, key=lambda n: self._updated(watch, n)):
+            try:
+                self._consider(watch, number, since)
+            except Exception:
+                log.exception("%s#%d: could not be considered", watch.name, number)
+
+    def _adopt(self, watch: RepositoryWatch) -> None:
+        """Claims this manager still holds from before a restart are continued (F3.4)."""
+        for number in watch.store.issues():
+            stored = watch.store.read(number)
+            if (
+                stored
+                and stored.claim.state.holds
+                and stored.claim.holder.manager == self.manager_id
+            ):
+                with self._lock:
+                    self._own[(watch.name, number)] = stored.claim.holder.worker
+        self._adopted.add(watch.name)
+
+    def _updated(self, watch: RepositoryWatch, number: int) -> datetime:
+        known = self._known.get((watch.name, number))
+        return known.updated_at if known else self.clock.now()
+
+    def _issue(self, watch: RepositoryWatch, number: int) -> Issue:
+        key = (watch.name, number)
+        if key not in self._known:
+            self._known[key] = watch.host.issue(number)
+        return self._known[key]
+
+    # --- one issue -----------------------------------------------------------------------------
+
+    def _consider(self, watch: RepositoryWatch, number: int, since: datetime) -> None:
+        now = self.clock.now()
+        issue = self._issue(watch, number)
+        stored = watch.store.read(number)
+        claim = stored.claim if stored else None
+
+        def trusted(actor: Actor) -> bool:
+            return is_trusted(actor, watch.host.role(actor.login), self.trusted_users)
+
+        comments = tuple(watch.host.comments(number))
+        context = WorkContext(
+            issue, claim, comments, trusted, watch.mode, since, watch.coordinator.policy, now
+        )
+
+        if stored and claim and claim.state.holds and claim.holder.manager == self.manager_id:
+            self._continue_own(watch, issue, ClaimHandle(stored.version, claim), context)
+            return
+
+        kind = pending_run(context)
+        if kind is None:
+            self._pending[watch.name].discard(number)
+            return
+
+        eligible = [slot for slot in self.workers if self._serves(slot, issue)]
+        if not eligible:
+            self._pending[watch.name].discard(number)
+            self._label(watch, number, "worker:unserved")
+            return
+
+        with self._lock:
+            free = [slot for slot in eligible if self._idle(slot) and not self._limited(slot, now)]
+            if not free:
+                self._pending[watch.name].add(number)
+                self._label(watch, number, "worker:queued")
+                return
+            slot = min(free, key=lambda candidate: candidate.priority)
+            branch = claim.branch if claim else branch_name(issue)
+            handle = watch.coordinator.claim(number, Holder(self.manager_id, slot.name), branch)
+            self._pending[watch.name].discard(number)
+            if handle is None:
+                return
+            self._start(watch, slot, handle, issue, new_input(context), kind)
+
+    def _continue_own(
+        self, watch: RepositoryWatch, issue: Issue, handle: ClaimHandle, context: WorkContext
+    ) -> None:
+        claim = handle.claim
+        with self._lock:
+            slot = next((s for s in self.workers if s.name == claim.holder.worker), None)
+            self._own[(watch.name, issue.number)] = claim.holder.worker
+            if slot is None or not slot.available or slot.busy:
+                return
+            if claim.state is ClaimState.PAUSED:
+                if claim.paused_until and claim.paused_until > self.clock.now():
+                    return
+                handle = watch.coordinator.resume(handle)
+            self._start(watch, slot, handle, issue, new_input(context), RunKind.CONTINUATION)
+
+    # --- workers -------------------------------------------------------------------------------
+
+    def _serves(self, slot: WorkerSlot, issue: Issue) -> bool:
+        if not slot.available:
+            return False
+        for label in issue.labels:
+            if label.startswith("agent:") and label.removeprefix("agent:") != slot.agent:
+                return False
+            if label.startswith("needs:") and label.removeprefix("needs:") not in (
+                slot.tags | self.manager_tags
+            ):
+                return False
+        return True
+
+    def _idle(self, slot: WorkerSlot) -> bool:
+        return not slot.busy and slot.name not in self._own.values()
+
+    def _limited(self, slot: WorkerSlot, now: datetime) -> bool:
+        until = self.limits.limited_until(slot.account)
+        return until is not None and until > now
+
+    def _start(
+        self,
+        watch: RepositoryWatch,
+        slot: WorkerSlot,
+        handle: ClaimHandle,
+        issue: Issue,
+        comments: tuple[Comment, ...],
+        kind: RunKind,
+    ) -> None:
+        slot.busy = True
+        slot.current = (watch.name, issue.number)
+        self._own[(watch.name, issue.number)] = slot.name
+        self._labelled.pop((watch.name, issue.number), None)
+        log.info("%s#%d: %s run by %s", watch.name, issue.number, kind, slot.name)
+
+        def job() -> None:
+            verdict = Verdict("failed", detail="the run crashed")
+            crashed = False
+            try:
+                verdict = self.run_issue(watch, slot, handle, issue, comments, kind)
+            except Exception:
+                # The claim stays held by this worker and is continued on the next tick.
+                log.exception("%s#%d: run crashed; the claim is kept", watch.name, issue.number)
+                crashed = True
+            finally:
+                with self._lock:
+                    if crashed:
+                        pass
+                    elif verdict.kind == "paused":
+                        self.limits.set_limited(slot.account, verdict.until)
+                    else:
+                        self._own.pop((watch.name, issue.number), None)
+                    slot.busy = False
+                    slot.current = None
+                log.info("%s#%d: %s %s", watch.name, issue.number, verdict.kind, verdict.detail)
+
+        self.spawn(job)
+
+    def _label(self, watch: RepositoryWatch, number: int, label: str) -> None:
+        if self._labelled.get((watch.name, number)) != label:
+            watch.host.set_worker_label(number, label)
+            self._labelled[(watch.name, number)] = label
+
+    # --- reporting -----------------------------------------------------------------------------
+
+    def snapshot(self) -> list[dict[str, object]]:
+        with self._lock:
+            return [
+                {
+                    "worker": slot.name,
+                    "agent": slot.agent,
+                    "account": slot.account,
+                    "available": slot.available,
+                    "reason": slot.reason,
+                    "busy": slot.busy,
+                    "current": f"{slot.current[0]}#{slot.current[1]}" if slot.current else None,
+                    "limitedUntil": self.limits.limited_until(slot.account),
+                }
+                for slot in self.workers
+            ]

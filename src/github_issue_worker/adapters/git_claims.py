@@ -32,6 +32,15 @@ class GitClaimStore:
         self._remote = remote
         self._home = home or account_home()
 
+    def issues(self) -> list[int]:
+        listed = self._run("ls-remote", self._remote, f"{_CLAIMS}/*").stdout
+        numbers = []
+        for line in listed.splitlines():
+            tail = line.rsplit("/", 1)[-1].strip()
+            if tail.isdigit():
+                numbers.append(int(tail))
+        return sorted(numbers)
+
     def read(self, issue: int) -> StoredClaim | None:
         seen = f"{_SEEN}/{issue}"
         fetched = self._run(

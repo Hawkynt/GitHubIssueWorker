@@ -54,6 +54,13 @@ def test_reading_an_absent_claim_gives_none(store: GitClaimStore) -> None:
     assert store.read(42) is None
 
 
+def test_issues_lists_every_claimed_issue(store: GitClaimStore) -> None:
+    assert store.issues() == []
+    store.create(claim(42))
+    store.create(claim(7))
+    assert store.issues() == [7, 42]
+
+
 def test_a_created_claim_reads_back(store: GitClaimStore, remote: Path) -> None:
     version = store.create(claim())
     stored = store.read(42)

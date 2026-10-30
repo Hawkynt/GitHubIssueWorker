@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import quote
 
-from github_issue_worker.application.poller import parse_issue
-from github_issue_worker.domain.issue import Issue
+from github_issue_worker.application.poller import parse_comment, parse_issue
+from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.ports.github import GitHubApi, GitHubError, next_link
 from github_issue_worker.ports.repository import (
     WORKER_LABELS,
@@ -70,6 +70,18 @@ class GitHubHost:
 
     def issue(self, number: int) -> Issue:
         return parse_issue(self.api.request("GET", self._path(f"issues/{number}")).body)
+
+    def comments(self, number: int) -> list[Comment]:
+        found: list[Comment] = []
+        response = self.api.request(
+            "GET", self._path(f"issues/{number}/comments"), params={"per_page": "100"}
+        )
+        while True:
+            found += [parse_comment(item) for item in response.body or []]
+            page = next_link(response.headers)
+            if page is None:
+                return found
+            response = self.api.request("GET", page)
 
     def label_names(self) -> set[str]:
         names: set[str] = set()

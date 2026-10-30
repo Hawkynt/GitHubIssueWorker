@@ -105,7 +105,7 @@ def test_the_happy_path_ends_merged_closed_and_clean(tmp_path: Path) -> None:
     assert h.host.merged == [(number, "squash", "c1")]
     assert h.host.deleted_branches == ["issue/42-retry-on-timeout"]
     assert h.host.closed == [42]
-    assert any("merged" in body.lower() for _, body in h.host.comments)
+    assert any("merged" in body.lower() for _, body in h.host.posted)
     assert h.host.worker_label[42] is None
     current = h.store.current(42)
     assert current is not None and current.state is ClaimState.DONE
@@ -128,7 +128,7 @@ def test_a_question_parks_the_issue_and_keeps_the_worktree(tmp_path: Path) -> No
     verdict = h.run(comments=(comment,))
 
     assert verdict.kind == "needs-input"
-    ((_, body),) = h.host.comments
+    ((_, body),) = h.host.posted
     assert "Retry on 5xx too?" in body and "yes" in body and "Recommendation" in body
     assert h.host.worker_label[42] == "worker:needs-input"
     current = h.store.current(42)
@@ -241,7 +241,7 @@ def test_agent_errors_twice_fail_the_issue_with_a_comment(tmp_path: Path) -> Non
     verdict = h.run()
     assert verdict.kind == "failed"
     assert h.host.worker_label[42] == "worker:failed"
-    assert "no outcome" in h.host.comments[-1][1]
+    assert "no outcome" in h.host.posted[-1][1]
     current = h.store.current(42)
     assert current is not None and current.step == "failed" and current.state is ClaimState.RELEASED
 
