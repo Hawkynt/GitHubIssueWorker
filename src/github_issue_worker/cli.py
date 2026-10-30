@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from github_issue_worker.adapters.home import account_home
-from github_issue_worker.adapters.installations import EXECUTABLES
+from github_issue_worker.adapters.installations import EXECUTABLES, portable_tool
 from github_issue_worker.adapters.workspace import WorkspaceError
 from github_issue_worker.configuration import (
     AccountSettings,
@@ -77,17 +77,13 @@ def detect_workers(home: Path) -> list[dict[str, Any]]:
     and the agents on PATH that no portable profile already provides."""
     found: list[dict[str, Any]] = []
     portable = home / "ClaudeCodePortable"
-    tools = {
-        "claude": Path("npm-global/bin/claude"),
-        "codex": Path("npm-global/bin/codex"),
-        "antigravity": Path(".local/bin/agy"),
-    }
+    tools = ("claude", "codex", "antigravity")
     for profile in sorted((portable / "profiles").glob("*")):
         if not profile.is_dir():
             continue
         marker = profile / ".tool"
         kind = marker.read_text(encoding="utf-8").strip() if marker.exists() else "claude"
-        if kind in tools and (profile / tools[kind]).exists():
+        if kind in tools and portable_tool(profile, kind).exists():
             found.append(
                 {
                     "name": kind,
