@@ -2,7 +2,7 @@
   "branch": "issue/25-readme-images",
   "claimedAt": "2026-10-30T17:10:47Z",
   "consumedThrough": {
-    "comment": null,
+    "comment": 6528717359,
     "review": null
   },
   "expiresAt": "2026-11-06T17:13:32Z",
@@ -13,8 +13,8 @@
   },
   "issue": 25,
   "pausedUntil": null,
-  "renewedAt": "2026-10-30T17:13:32Z",
-  "state": "working",
-  "step": "needs-input",
+  "renewedAt": "2026-10-30T17:14:45Z",
+  "state": "done",
+  "step": "done",
   "takeovers": 0
 }
