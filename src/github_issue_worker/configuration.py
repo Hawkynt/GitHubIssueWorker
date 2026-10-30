@@ -100,6 +100,23 @@ class AccountSettings(_Settings):
     max_concurrent_runs: int = Field(default=1, ge=1, le=MAX_CONCURRENT_RUNS)
 
 
+class HueSegment(_Settings):
+    """A maker's part of the colour wheel: its centre degree and its width, both in OKLCH hues."""
+
+    hue: int = Field(default=0, ge=0, le=359)
+    width: int = Field(default=40, ge=0, le=360)
+
+
+class ModelColorsSettings(_Settings):
+    """The hue segment every model of one maker is drawn in (F14.19)."""
+
+    anthropic: HueSegment = Field(default_factory=lambda: HueSegment(hue=70, width=90))
+    openai: HueSegment = Field(default_factory=lambda: HueSegment(hue=250, width=55))
+    google: HueSegment = Field(default_factory=lambda: HueSegment(hue=155, width=55))
+    other: HueSegment = Field(default_factory=lambda: HueSegment(hue=320, width=120))
+    """Makers not named above share this segment, each keeping a fixed part of it."""
+
+
 class PathInstallation(_Settings):
     type: Literal["path"] = "path"
 
@@ -200,6 +217,7 @@ class Configuration(_Settings):
     poll_interval: Duration = timedelta(minutes=1)
     trusted_users: list[str] = Field(default_factory=list)
     ui: UiSettings = Field(default_factory=UiSettings)
+    model_colors: ModelColorsSettings = Field(default_factory=ModelColorsSettings)
     accounts: dict[str, AccountSettings] = Field(default_factory=dict)
     workers: list[WorkerSettings] = Field(default_factory=list)
     fleet: FleetSettings = Field(default_factory=FleetSettings)

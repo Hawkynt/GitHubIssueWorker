@@ -673,6 +673,12 @@ first, and a moved UI listener reopens on its new address.
   "pollInterval": "00:01:00",
   "trustedUsers": [],
   "ui": { "port": 8765 },
+  "modelColors": {
+    "anthropic": { "hue": 70, "width": 90 },
+    "openai": { "hue": 250, "width": 55 },
+    "google": { "hue": 155, "width": 55 },
+    "other": { "hue": 320, "width": 120 }
+  },
   "accounts": {
     "anthropic-max": {},
     "openai-plus": {},
@@ -727,6 +733,7 @@ first, and a moved UI listener reopens on its new address.
 | `trustedUsers` | `[]` | Logins trusted in addition to everyone with write access. |
 | `ui.port`, `ui.bind`, `ui.token` | 8765, loopback, none | The local UI. A non-loopback `bind` requires a `token`. |
 | `accounts.<name>.maxConcurrentRuns` | 1 | Issues this account's workers run at once on this manager, 1 to 20; each worker runs that many instances. |
+| `modelColors.anthropic` `.openai` `.google` `.other` | `70/90`, `250/55`, `155/55`, `320/120` | A model maker's hue segment: its centre on the OKLCH colour wheel and its width in degrees. A model's hue is picked inside its maker's segment by the model's name (`opus`, `sonnet`, `haiku`, `fable`) and does not move when only the version changes. Makers not named share `other`, each keeping a fixed part of it. |
 | `workers[].name` | — | Unique on this manager. Together with the manager id it is the claim holder. |
 | `workers[].agent` | — | `claude`, `codex`, `antigravity`, `opencode`, `command` or `remote`. |
 | `workers[].account` | — | Key into `accounts`. Limits are tracked per account. |

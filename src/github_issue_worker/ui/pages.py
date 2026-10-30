@@ -1596,6 +1596,7 @@ SECTIONS = (
     ("manager", "This machine"),
     ("pollInterval", "Polling and trust"),
     ("ui", "This page"),
+    ("modelColors", "Model colours"),
     ("fleet", "Fleet"),
     ("defaults", "Defaults for every repository"),
 )
