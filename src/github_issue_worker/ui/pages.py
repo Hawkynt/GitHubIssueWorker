@@ -608,6 +608,11 @@ def when(moment: datetime, now: datetime) -> str:
     return f"{moment:%Y-%m-%d %H:%M} UTC ({relative})"
 
 
+def _out(href: str, text: str, attributes: str = "") -> str:
+    """A link that leaves the UI: it opens in a new tab and leaves the UI where it was (F14.17)."""
+    return f'<a href="{e(href)}" target="_blank" rel="noopener noreferrer"{attributes}>{text}</a>'
+
+
 def page(title: str, path: str, snapshot_id: str, body: str, live: bool = False) -> str:
     links = "".join(
         f'<a href="{href}"{" aria-current=page" if href == path else ""}>{name}</a>'
@@ -639,10 +644,7 @@ def _track(step: str | None) -> str:
 
 def _issue_link(repository: str, number: int, title: str | None, body: str) -> str:
     tip = f' data-tip="{e(body[:400])}"' if body else ""
-    return (
-        f'<a href="https://github.com/{e(repository)}/issues/{number}"{tip}>'
-        f"#{number} {e(title)}</a>"
-    )
+    return _out(f"https://github.com/{repository}/issues/{number}", f"#{number} {e(title)}", tip)
 
 
 def _run(slot: int, issue: str, track: str, facts: Iterable[str]) -> str:
@@ -741,8 +743,7 @@ def _remote_lane(
             claim.repository, claim.issue, known.title if known else "", known.body if known else ""
         )
         facts = [
-            f'<a href="https://github.com/{e(claim.repository)}/tree/{e(claim.branch)}">'
-            f"{e(claim.branch)}</a>",
+            _out(f"https://github.com/{claim.repository}/tree/{claim.branch}", e(claim.branch)),
             f"renewed {span(now - claim.renewed)} ago",
         ]
         if claim.paused_until:
@@ -1173,7 +1174,7 @@ def repositories_page(
         )
         panels.append(
             _panel(
-                f'<a href="https://github.com/{e(repository.name)}">{e(repository.name)}</a>',
+                _out(f"https://github.com/{repository.name}", e(repository.name)),
                 f"{'Watching since ' + e(when(since, snapshot.now)) if since else 'Not polled yet'}"
                 f"; {e(counts) or 'no active issues'}.",
                 _override_form(overrides, config.defaults),
@@ -1242,9 +1243,9 @@ def _claim_row(claim: ClaimView, now: datetime) -> str:
         )
         + "<button class=danger>Release</button></form></details>"
     )
+    issue = _out(f"https://github.com/{claim.repository}/issues/{claim.issue}", f"#{claim.issue}")
     return (
-        f'<tr><td><a href="https://github.com/{e(claim.repository)}/issues/{claim.issue}">'
-        f"#{claim.issue}</a></td><td>{holder}</td><td>{state}</td>"
+        f"<tr><td>{issue}</td><td>{holder}</td><td>{state}</td>"
         f'<td>{e(claim.step)}</td><td class=nowrap title="{claim.renewed:%Y-%m-%d %H:%M} UTC">'
         f"{span(now - claim.renewed)} ago</td>"
         f'<td class=nowrap title="{claim.expires:%Y-%m-%d %H:%M} UTC">in {span(claim.expires - now)}</td>'
@@ -1574,10 +1575,9 @@ def _problems(problems: Iterable[str]) -> str:
 
 
 def _issue_row(issue: IssueView, workers: Mapping[str, WorkerView], now: datetime) -> str:
-    link = (
-        f"<span class=quiet>{e(issue.repository)}</span><br>"
-        f'<a href="https://github.com/{e(issue.repository)}/issues/{issue.number}">'
-        f"#{issue.number} {e(issue.title)}</a>"
+    link = f"<span class=quiet>{e(issue.repository)}</span><br>" + _out(
+        f"https://github.com/{issue.repository}/issues/{issue.number}",
+        f"#{issue.number} {e(issue.title)}",
     )
     if issue.worker:
         where = "this machine" if issue.local else f"{issue.manager}, remote"
