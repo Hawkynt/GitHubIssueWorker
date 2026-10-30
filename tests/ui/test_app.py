@@ -463,3 +463,77 @@ def test_opening_a_worktree_hands_it_to_the_file_manager(
     response = client.post("/workers/claude/open", headers={"referer": "http://testserver/workers"})
     assert response.status_code == 200 and backend.opened == ["claude"]
     assert "is not working on an issue" in client.post("/workers/local/open").text
+
+
+def _flight_lanes(html: str) -> list[str]:
+    flight = html.split('id="flight"', 1)[1].split("</section>", 1)[0]
+    return re.findall(r'<text class="row-name"[^>]*>([^<]+)</text>', flight)
+
+
+def test_the_flight_log_orders_rows_by_priority_regardless_of_activity(
+    client: TestClient,
+) -> None:
+    # opencode (priority 10) has no runs in the 24h window and still appears in priority order.
+    assert _flight_lanes(client.get("/workers").text) == [
+        "claude",
+        "codex",
+        "antigravity",
+        "local",
+        "opencode",
+    ]
+
+
+def test_changing_worker_priority_at_runtime_reorders_the_flight_log(
+    client: TestClient,
+) -> None:
+    client.post(
+        "/workers/opencode",
+        data={
+            "name": "opencode",
+            "agent": "opencode",
+            "account": "local-gpu",
+            "priority": "0",
+            "installation.type": "path",
+        },
+    )
+    client.post(
+        "/workers/local",
+        data={
+            "name": "local",
+            "agent": "claude",
+            "account": "local-gpu",
+            "priority": "2",
+            "installation.type": "claudelocal",
+        },
+    )
+    client.post(
+        "/workers/codex",
+        data={
+            "name": "codex",
+            "agent": "codex",
+            "account": "openai-plus",
+            "priority": "5",
+            "installation.type": "claudecodeportable",
+            "installation.profile": "ChatGPTCodex",
+        },
+    )
+    assert _flight_lanes(client.get("/workers").text) == [
+        "opencode",
+        "claude",
+        "local",
+        "antigravity",
+        "codex",
+    ]
+
+
+def test_removed_workers_with_recent_runs_follow_configured_workers_in_the_flight_log(
+    client: TestClient,
+) -> None:
+    client.post("/workers/claude/remove")
+    assert _flight_lanes(client.get("/workers").text) == [
+        "codex",
+        "antigravity",
+        "local",
+        "opencode",
+        "claude",
+    ]

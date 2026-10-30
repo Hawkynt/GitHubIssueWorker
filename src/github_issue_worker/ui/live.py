@@ -199,6 +199,7 @@ class RuntimeBackend:
             account=slot.account,
             model=model,
             state=state,
+            priority=slot.priority,
             reason=slot.reason,
             limited_until=limited,
             repository=repository,

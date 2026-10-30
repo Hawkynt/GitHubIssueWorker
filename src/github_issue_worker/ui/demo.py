@@ -84,6 +84,7 @@ WORKERS = (
         "anthropic-max",
         "Claude Opus 5.5",
         "working",
+        priority=1,
         repository="acme/telemetry-gateway",
         issue=214,
         issue_title="Retry uploads after a gateway timeout",
@@ -98,6 +99,7 @@ WORKERS = (
         "openai-plus",
         "GPT 6.1 Sol",
         "working",
+        priority=2,
         repository="acme/billing-cli",
         issue=88,
         issue_title="Invoices round VAT per line instead of per total",
@@ -112,15 +114,17 @@ WORKERS = (
         "google-pro",
         "Gemini 4 Argon (Medium)",
         "limited",
+        priority=3,
         limited_until=NOW + timedelta(hours=2, minutes=40),
     ),
-    WorkerView("local", "ClaudeLocal", "local-gpu", "Qwen3.8 Flash Next IQ3_S", "idle"),
+    WorkerView("local", "ClaudeLocal", "local-gpu", "Qwen3.8 Flash Next IQ3_S", "idle", priority=9),
     WorkerView(
         "opencode",
         "OpenCode",
         "local-gpu",
         "-",
         "unavailable",
+        priority=10,
         reason="opencode is not on PATH",
     ),
 )
@@ -379,8 +383,13 @@ class DemoBackend:
         self._history = demo_history()
 
     def snapshot(self) -> Snapshot:
-        names = {worker.name for worker in self._config.workers}
-        workers = tuple(w for w in self._workers if w.name in names)
+        by_name = {w.name: w for w in self._workers}
+        workers = tuple(
+            replace(by_name[w.name], priority=w.priority)
+            if w.name in by_name
+            else WorkerView(w.name, w.agent, w.account, w.model or "-", "idle", priority=w.priority)
+            for w in self._config.workers
+        )
         repos = {r.repository for r in self._config.repositories}
         return Snapshot(
             manager_id=MANAGER,

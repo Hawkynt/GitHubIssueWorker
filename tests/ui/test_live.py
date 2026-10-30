@@ -81,3 +81,39 @@ def test_the_live_backend_reads_the_pushable_repositories_in_the_background() ->
     while not backend.pushable_repositories() and time.monotonic() < deadline:
         time.sleep(0.005)
     assert backend.pushable_repositories() == ("Hawkynt/ShiftDiff",)
+
+
+def test_the_live_backend_carries_runtime_worker_priority_into_the_flight_log() -> None:
+    now = datetime(2026, 10, 30, 15, tzinfo=UTC)
+    slots = [
+        WorkerSlot(
+            "fallback",
+            "codex",
+            "plus",
+            priority=9,
+            busy=True,
+            current=("o/a", 1),
+            started_at=now,
+        ),
+        WorkerSlot("preferred", "claude", "max", priority=1),
+    ]
+    runtime = SimpleNamespace(
+        api=SimpleNamespace(clock=SimpleNamespace(now=lambda: now), request=lambda *a, **k: None),
+        config=SimpleNamespace(workers=[], repositories=[]),
+        state=SimpleNamespace(limited_until=lambda _: None),
+        workspace=SimpleNamespace(worktree_path=lambda r, i: Path("/tmp/w")),
+        watches={},
+        manager_id="m-1",
+        history=SimpleNamespace(load=lambda: []),
+    )
+    backend = RuntimeBackend(
+        runtime,  # type: ignore[arg-type]
+        SimpleNamespace(workers=slots),  # type: ignore[arg-type]
+        Path("config.json"),
+        lambda _: [],
+    )
+    snap = backend.snapshot()
+    assert [w.priority for w in snap.workers] == [9, 1]
+    slots[0].priority = 1
+    slots[1].priority = 5
+    assert [w.priority for w in backend.snapshot().workers] == [1, 5]

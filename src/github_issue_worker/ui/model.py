@@ -27,6 +27,7 @@ class WorkerView:
     model: str
     """Shown as is: already normalised."""
     state: WorkerState
+    priority: int = 100
     reason: str = ""
     limited_until: datetime | None = None
     repository: str | None = None

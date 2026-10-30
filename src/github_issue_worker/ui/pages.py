@@ -926,7 +926,7 @@ def _flight_log(snapshot: Snapshot, history: list[RunRecord]) -> str:
                     live=True,
                 )
             )
-    lanes = [w.name for w in snapshot.workers if any(s.lane == w.name for s in spans)]
+    lanes = [w.name for w in sorted(snapshot.workers, key=lambda w: w.priority)]
     lanes += sorted({s.lane for s in spans} - set(lanes))
     return (
         '<section class="panel wide" id="flight" aria-label="Flight log">'
