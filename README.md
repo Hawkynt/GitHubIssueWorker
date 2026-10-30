@@ -1035,7 +1035,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F14.8** Settings page: every remaining configuration key, with its default and its source
   (file or default), inline validation through the F0.3 validator, atomic save and live apply (F0.7).
   Tested: for every key in the schema there is a UI field, so a new key cannot ship without one.
-- [ ] 🟧 **F14.12** Settings page change hints: a field or account value that differs from what the
+- [x] 🟧 **F14.12** Settings page change hints: a field or account value that differs from what the
   page loaded has a background of its own, distinct from errors and notices, in light and dark; it
   clears when the value is edited back, and a save refused by validation keeps the typed values
   marked. Tested in a real browser.
