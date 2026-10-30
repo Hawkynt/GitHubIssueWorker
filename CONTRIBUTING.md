@@ -6,8 +6,8 @@ conventions every change is expected to follow. Coding agents must also read [`A
 ## Prerequisites
 
 - **Python 3.13+** (the CI matrix pins 3.13 on ubuntu and windows).
-- `git`, and for the `external_interop`/`e2e` markers also `gh` and `claude` — see the README's
-  Installation section.
+- `git`, and for the `external_interop`/`e2e` markers also `gh` and an agent CLI (`claude`, `codex` or
+  `agy`) — see the README's Installation section.
 - `node` is only needed to run the shared README-checker script locally; CI provides it.
 
 ## Build
@@ -47,7 +47,7 @@ A test opts out by carrying one of these markers:
 | `slow` | Quick in kind, expensive in practice — a long deadline, a wall-clock wait. The general escape hatch. |
 | `e2e` | Drives a real scratch GitHub repository end to end: issue in, merged PR out. |
 | `os_integration` | Needs something of the host: signals, a service manager, file locks across processes. |
-| `external_interop` | Runs a real `git` or `claude` executable instead of the fake. |
+| `external_interop` | Runs a real `git` or agent executable instead of the fake. |
 
 **Opting out defers a test, it never skips one.** Everything runs on the pull request. The tiers
 decide *when*, not *whether*.
@@ -56,7 +56,7 @@ Two rules that make the difference real:
 
 - **A test in the fast tier finishes in well under a second.** If it does not, either make it so or
   mark it `slow`.
-- **The fast tier is offline and free.** No network, no real `claude`, no tokens. A test that needs
+- **The fast tier is offline and free.** No network, no real agent, no tokens. A test that needs
   any of them carries the marker that says so.
 
 ## Branches, pull requests, merges

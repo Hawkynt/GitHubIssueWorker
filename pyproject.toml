@@ -41,7 +41,7 @@ markers = [
   "slow: quick in kind, expensive in practice — deferred to the pull request tier",
   "e2e: drives a real GitHub repository end to end — pull request tier",
   "os_integration: needs something of the host OS — pull request tier",
-  "external_interop: runs a real git or claude executable — pull request tier",
+  "external_interop: runs a real git or agent executable — pull request tier",
 ]
 
 [tool.ruff]
