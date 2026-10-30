@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
 from github_issue_worker.adapters.home import tool_environment
+from github_issue_worker.ports.workspace import CommitInfo
+
+__all__ = ["CommitInfo", "PushRejected", "Workspace", "WorkspaceError"]
 
 _IDENTITY = (
     "user.name",
@@ -36,12 +38,6 @@ class WorkspaceError(Exception):
 
 class PushRejected(WorkspaceError):
     """The remote branch is not where this worker last left it."""
-
-
-@dataclass(frozen=True, slots=True)
-class CommitInfo:
-    sha: str
-    message: str
 
 
 class Workspace:

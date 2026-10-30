@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState, Holder
+from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState, ConsumedThrough, Holder
 from github_issue_worker.ports.claims import ClaimConflict, ClaimStore
 from github_issue_worker.ports.clock import Clock
 
@@ -78,15 +78,30 @@ class Coordinator:
         """Hand the claim to another worker in one compare-and-swap (local hand-off)."""
         return self._write(handle, self.policy.taken_over(handle.claim, holder, self.clock.now()))
 
-    def release(self, handle: ClaimHandle) -> ClaimHandle:
-        return self._finish(handle, ClaimState.RELEASED)
+    def release(
+        self, handle: ClaimHandle, step: str | None = None, consumed: int | None = None
+    ) -> ClaimHandle:
+        """Free the issue at once. ``step`` says what it waits for (e.g. ``needs-input``)."""
+        return self._finish(handle, ClaimState.RELEASED, step, consumed)
 
-    def complete(self, handle: ClaimHandle) -> ClaimHandle:
-        return self._finish(handle, ClaimState.DONE)
+    def complete(self, handle: ClaimHandle, consumed: int | None = None) -> ClaimHandle:
+        return self._finish(handle, ClaimState.DONE, "done", consumed)
 
-    def _finish(self, handle: ClaimHandle, state: ClaimState) -> ClaimHandle:
-        now = self.clock.now()
-        finished = handle.claim.replace(state=state, renewed_at=now, paused_until=None)
+    def _finish(
+        self, handle: ClaimHandle, state: ClaimState, step: str | None, consumed: int | None
+    ) -> ClaimHandle:
+        """``consumed`` advances consumedThrough in the same write that ends the run (F11.7)."""
+        claim = handle.claim
+        through = claim.consumed_through
+        if consumed is not None and (through.comment is None or consumed > through.comment):
+            through = ConsumedThrough(comment=consumed, review=through.review)
+        finished = claim.replace(
+            state=state,
+            step=step or claim.step,
+            renewed_at=self.clock.now(),
+            paused_until=None,
+            consumed_through=through,
+        )
         return self._write(handle, finished)
 
     def _write(self, handle: ClaimHandle, claim: Claim) -> ClaimHandle:
