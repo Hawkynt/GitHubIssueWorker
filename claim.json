@@ -1,0 +1,20 @@
+{
+  "branch": "issue/10-watch-stops-at-start-when-gh-is-not-logg",
+  "claimedAt": "2026-10-30T14:58:19Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-06T14:58:19Z",
+  "generation": 1,
+  "holder": {
+    "manager": "trial-87aa",
+    "worker": "local"
+  },
+  "issue": 10,
+  "pausedUntil": null,
+  "renewedAt": "2026-10-30T14:58:19Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
