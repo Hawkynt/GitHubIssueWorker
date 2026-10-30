@@ -232,27 +232,31 @@ def _watch(
     return 0
 
 
-def _status(config: Configuration, args: argparse.Namespace, home: Path) -> int:
-    from github_issue_worker.wiring import build_runtime
+def _status(
+    config: Configuration, args: argparse.Namespace, home: Path, runtime_factory: RuntimeFactory
+) -> int:
+    from github_issue_worker.application.status import RepositoryClaims, render_status
+    from github_issue_worker.domain.claim import ClaimPolicy
 
-    runtime = build_runtime(config, home, *_dirs(args))
-    print(f"manager {runtime.manager_id}")
-    for slot in runtime.slots:
-        state = "ok" if slot.available else slot.reason
-        until = runtime.state.limited_until(slot.account)
-        limited = f", limited until {until:%Y-%m-%d %H:%M} UTC" if until else ""
-        print(f"  worker {slot.name} ({slot.agent}, {slot.account}): {state}{limited}")
+    runtime = runtime_factory(config, home, *_dirs(args))
+    repositories = []
     for settings in config.repositories:
-        watch = runtime.watch(settings)
-        print(settings.repository)
-        for number in watch.store.issues():
-            stored = watch.store.read(number)
-            if stored:
-                claim = stored.claim
-                print(
-                    f"  #{number}: {claim.state} {claim.step} by {claim.holder}, "
-                    f"renewed {claim.renewed_at:%Y-%m-%d %H:%M} UTC, branch {claim.branch}"
-                )
+        store = runtime.watch(settings).store
+        stored = (store.read(number) for number in store.issues())
+        claims = tuple(entry.claim for entry in stored if entry)
+        repositories.append(RepositoryClaims(settings.repository, claims))
+    fleet = config.fleet
+    print(
+        render_status(
+            runtime.manager_id,
+            runtime.slots,
+            runtime.state.limited_until,
+            repositories,
+            ClaimPolicy(fleet.claim_validity, fleet.claim_grace),
+            runtime.api.clock.now(),
+        ),
+        end="",
+    )
     return 0
 
 
@@ -400,7 +404,7 @@ def main(
         if args.command == "watch":
             return _watch(config, args, home, runtime_factory or _build_runtime())
         if args.command == "status":
-            return _status(config, args, home)
+            return _status(config, args, home, runtime_factory or _build_runtime())
         if args.command == "release":
             return _release(config, args, home)
         if args.command == "work":
