@@ -22,7 +22,7 @@
 > (Claude, Codex, Antigravity, OpenCode, local or cloud) share the work without doing anything twice
 > or leaving an issue stranded.
 
-![The Issues page: every open issue, who works it on which model, here or remote](docs/screenshots/issues.png)
+![The Workers page: each worker's agent, model, issue and step at a glance](docs/screenshots/workers.png)
 
 ## 🧭 Vision
 
@@ -561,8 +561,10 @@ UI off; the settings remain editable through the file and the CLI.
 The UI is generated documentation like every house GUI: the manager has a demo mode
 (`github-issue-worker ui --demo <scenario>`) that serves each page with deterministic sample data
 through the real UI code, and `generate.yml` captures every page as a screenshot on each
-working-branch push. The pull request that lands the first page also adds the hero image and the
-`## 🖼️ Screenshots` tour to this README and switches the README check to `gui: true`.
+working-branch push, commits the changed images back onto the branch and, when that branch has an
+open pull request, runs CI again so the checks belong to the commit that carries them. The hero
+image is the Workers page. The pull request that lands the first page also adds the hero image and
+the `## 🖼️ Screenshots` tour to this README and switches the README check to `gui: true`.
 
 ## ⚙️ Configuration
 
@@ -1051,8 +1053,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
 - [x] 🟥 **F14.7** Demo mode `ui --demo <scenario>` renders every page through the real UI code with
   deterministic sample data (several workers of every agent kind, limited and paused accounts,
-  claims from other managers). `generate.yml` captures each page and commits changed screenshots.
-  The same pull request adds the hero image and `## 🖼️ Screenshots` and sets `gui: true`.
+  claims from other managers). `generate.yml` captures each page, commits changed screenshots and
+  reruns CI on that commit for an open pull request; the hero image is the Workers page. The same
+  pull request adds the hero image and `## 🖼️ Screenshots` and sets `gui: true`.
 
 ### F15 — Installations and the reference setup
 
