@@ -58,6 +58,13 @@ extend-exclude = ["README.md"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# HTML and CSS literals: splitting markup across string fragments makes it harder to read and
+# review, and ruff cannot wrap string literals itself.
+"src/github_issue_worker/ui/pages.py" = ["E501"]
+"src/github_issue_worker/ui/demo.py" = ["E501"]
+"tests/ui/*.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.13"
 strict = true

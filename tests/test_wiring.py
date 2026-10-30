@@ -269,3 +269,117 @@ def test_always_forbidden_traces_stay_forbidden_in_a_wired_repository_run(
     assert verdict == "merged"
     assert len(prompts) == 2
     assert "ai-trace" in prompts[1]
+
+
+def test_a_changed_configuration_is_applied_without_a_restart(tmp_path: Path) -> None:
+    # F0.7: workers and repositories added, changed and removed while the manager runs.
+    claude = executable(tmp_path / "bin" / "claude")
+    before = parse(
+        json.dumps(
+            {
+                "accounts": {"a": {}},
+                "workers": [
+                    {
+                        "name": "idle",
+                        "agent": "claude",
+                        "account": "a",
+                        "installation": {"type": "executable", "path": str(claude)},
+                    },
+                    {
+                        "name": "busy",
+                        "agent": "claude",
+                        "account": "a",
+                        "installation": {"type": "executable", "path": str(claude)},
+                    },
+                    {
+                        "name": "kept",
+                        "agent": "claude",
+                        "account": "a",
+                        "priority": 5,
+                        "installation": {"type": "executable", "path": str(claude)},
+                    },
+                ],
+                "repositories": [{"repository": "o/gone"}, {"repository": "o/stays"}],
+            }
+        )
+    )
+    clock = FakeClock(datetime(2026, 10, 30, tzinfo=UTC))
+    host = FakeHost()
+    watches = {
+        name: RepositoryWatch(
+            name=name,
+            host=host,
+            coordinator=Coordinator(
+                InMemoryClaimStore(), clock, ClaimPolicy(timedelta(days=7), timedelta(days=1))
+            ),
+            store=InMemoryClaimStore(),
+        )
+        for name in ("o/gone", "o/stays")
+    }
+    slots = [
+        WorkerSlot(name=w.name, agent=w.agent, account=w.account, priority=w.priority)
+        for w in before.workers
+    ]
+    slots[1].busy = True
+    runtime = Runtime(
+        config=before,
+        home=tmp_path,
+        api=None,  # type: ignore[arg-type]
+        state=JsonStateStore(tmp_path / "state.json"),
+        manager_id="m",
+        workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+        watches=dict(watches),
+        slots=list(slots),
+    )
+    from github_issue_worker.application.manager import Manager
+
+    manager = Manager(
+        manager_id="m",
+        manager_tags=frozenset(),
+        repositories=list(watches.values()),
+        workers=runtime.slots,
+        poll=lambda *a: (None, None),  # type: ignore[arg-type,return-value]
+        poll_states={},
+        limits=runtime.state,
+        clock=clock,
+        trusted_users=(),
+        run_issue=lambda *a: None,  # type: ignore[arg-type,return-value]
+        spawn=lambda job: job(),
+    )
+
+    after = parse(
+        json.dumps(
+            {
+                "trustedUsers": ["helper"],
+                "accounts": {"a": {}},
+                "workers": [
+                    {
+                        "name": "kept",
+                        "agent": "claude",
+                        "account": "a",
+                        "priority": 1,
+                        "model": "opus",
+                        "installation": {"type": "executable", "path": str(claude)},
+                    },
+                    {
+                        "name": "new",
+                        "agent": "codex",
+                        "account": "a",
+                        "installation": {"type": "executable", "path": str(tmp_path / "missing")},
+                    },
+                ],
+                "repositories": [{"repository": "o/stays", "mode": "labeled"}],
+            }
+        )
+    )
+    runtime.apply(after, manager)
+
+    assert runtime.config is after
+    assert manager.trusted_users == ("helper",)
+    assert [w.name for w in manager.repositories] == ["o/stays"]
+    assert manager.repositories[0].mode == "labeled"
+    names = {slot.name: slot for slot in manager.workers}
+    assert "idle" not in names  # removed at once
+    assert not names["busy"].enabled  # finishes its run, then takes nothing new
+    assert (names["kept"].priority, names["kept"].model) == (1, "opus")
+    assert not names["new"].available and "does not exist" in names["new"].reason

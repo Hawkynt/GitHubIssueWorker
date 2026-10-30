@@ -217,6 +217,56 @@ class Runtime:
             log.info("worker %s runs on %s", slot.name, display_model(report.model))
         return report
 
+    def apply(self, config: Configuration, manager: Manager) -> None:
+        """Apply a changed configuration without a restart (F0.7).
+
+        Repositories and workers are added and removed, existing ones updated. A worker that is
+        busy when it is removed finishes its current run first and then takes nothing new.
+        """
+        self.config = config
+        manager.trusted_users = tuple(config.trusted_users)
+        manager.manager_tags = frozenset(config.manager.tags)
+
+        wanted = {settings.repository: settings for settings in config.repositories}
+        for name in list(self.watches):
+            if name not in wanted:
+                watch = self.watches.pop(name)
+                if watch in manager.repositories:
+                    manager.repositories.remove(watch)
+        for name, settings in wanted.items():
+            if name in self.watches:
+                watch = self.watches[name]
+                watch.settings = repository_run(config, settings)
+                watch.mode = settings.mode or config.defaults.mode
+            else:
+                watch = self.watch(settings)
+                manager.repositories.append(watch)
+                watch.host.ensure_worker_labels()
+
+        configured = {worker.name: worker for worker in config.workers}
+        for slot in list(self.slots):
+            if slot.name not in configured:
+                if slot.busy:
+                    slot.enabled = False
+                    slot.reason = "removed; finishing its current run"
+                else:
+                    self.slots.remove(slot)
+                    self.adapters.pop(slot.name, None)
+        for worker in config.workers:
+            existing = next((s for s in self.slots if s.name == worker.name), None)
+            if existing is None:
+                existing = WorkerSlot(name=worker.name, agent=worker.agent, account=worker.account)
+                self.slots.append(existing)
+            slot = existing
+            slot.agent, slot.account, slot.priority = worker.agent, worker.account, worker.priority
+            slot.tags, slot.model = frozenset(worker.tags), worker.model
+            try:
+                self.adapters[worker.name] = make_adapter(worker, self.home)
+                slot.available, slot.reason = True, ""
+            except Unavailable as unavailable:
+                slot.available, slot.reason = False, str(unavailable)
+        manager.workers = self.slots
+
     def manager(self) -> Manager:
         for settings in self.config.repositories:
             self.watch(settings)
