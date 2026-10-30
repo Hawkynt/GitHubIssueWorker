@@ -36,6 +36,7 @@ class WorkerView:
     branch: str | None = None
     worktree: str | None = None
     since: datetime | None = None
+    merge_conflict: bool = False
     group: str = ""
     """The configured worker this is an instance of (``claude`` for ``claude.2``)."""
 
@@ -64,6 +65,8 @@ class ClaimView:
     expires: datetime
     branch: str
     paused_until: datetime | None = None
+    merge_conflict: bool = False
+    wait_reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +87,9 @@ class IssueView:
     since: datetime | None = None
     body: str = ""
     """The issue's description, shown as the tooltip of its title."""
+    merge_conflict: bool = False
+    wait_reason: str = ""
+    paused_until: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)

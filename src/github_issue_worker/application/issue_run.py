@@ -117,10 +117,13 @@ class IssueRun:
     progress: Callable[[str], None] = lambda step: None
     """Told each step the run enters: understand, implement, verify, push, checks, merge."""
 
+    conflict_changed: Callable[[bool], None] = lambda conflict: None
+
     def run(
         self, handle: ClaimHandle, issue: Issue, comments: tuple[Comment, ...], kind: RunKind
     ) -> Verdict:
         self._handle = handle
+        self.conflict_changed(handle.claim.merge_conflict)
         self._consumed = max((comment.id for comment in comments), default=None)
         self._understanding: str | None = None
         try:
@@ -217,6 +220,7 @@ class IssueRun:
                         continue
                     detail = problem
                 else:
+                    self._conflict(True)
                     detail = f"The branch conflicts with `{base}`: rebase onto origin/{base}."
             if state == "timeout":
                 return self._awaiting(issue, pull)
@@ -383,6 +387,14 @@ class IssueRun:
         deadline = self.clock.now() + self.settings.checks_timeout
         while True:
             current = self.host.pull_request(pull.number)
+            if current.mergeable_state == "dirty":
+                self._conflict(True)
+            elif (
+                current.merged
+                or current.mergeable_state in _MERGEABLE
+                or current.mergeable_state in ("behind", "blocked")
+            ):
+                self._conflict(False)
             if current.merged or current.mergeable_state in _MERGEABLE:
                 return "merge", ""
             if current.mergeable_state in _REBASE:
@@ -399,10 +411,16 @@ class IssueRun:
                 return "timeout", ""
             self.sleep(self.settings.check_interval.total_seconds())
 
+    def _conflict(self, conflict: bool) -> None:
+        self._handle = self.coordinator.set_merge_conflict(self._handle, conflict)
+        self.conflict_changed(conflict)
+
     def _merge(
         self, issue: Issue, pull: PullRequest, branch: str, tree: Path, base: str
     ) -> Verdict:
         current = self.host.pull_request(pull.number)
+        if current.mergeable_state == "dirty":
+            self._conflict(True)
         changes = "\n".join(self._changes(tree, base))
         # The PR's own title carries the change-line prefix, also when another run opened it.
         subject = current.title or getattr(self, "_title", "") or self._subject(issue, tree, base)
@@ -467,7 +485,9 @@ class IssueRun:
     def _pause(self, issue: Issue, report: RunReport) -> Verdict:
         assert report.limit is not None
         until = report.limit.reset_at or self.clock.now() + self.settings.limit_probe
-        self._handle = self.coordinator.pause(self._handle, until=until)
+        self._handle = self.coordinator.pause(
+            self._handle, until=until, reason=report.limit.message
+        )
         self.host.set_worker_label(issue.number, "worker:paused")
         return Verdict("paused", until=until, detail=report.limit.message)
 

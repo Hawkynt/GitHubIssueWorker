@@ -246,6 +246,7 @@ class Runtime:
                 split_issues=run.split_issues,
             ),
             progress=lambda step: setattr(slot, "step", step),
+            conflict_changed=lambda conflict: setattr(slot, "merge_conflict", conflict),
         ).run(handle, issue, comments, kind)
 
     def _new_log(self, slot: WorkerSlot, repository: str, issue: int) -> Path:

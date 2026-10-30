@@ -68,6 +68,7 @@ class WorkerSlot:
     current: tuple[str, int] | None = None
     enabled: bool = True
     """False while paused from the UI: the worker finishes nothing new and claims nothing."""
+    merge_conflict: bool = False
     step: str | None = None
     issue_title: str | None = None
     started_at: datetime | None = None
@@ -374,6 +375,7 @@ class Manager:
         slot.started_at = self.clock.now()
         slot.branch = handle.claim.branch
         slot.step = None
+        slot.merge_conflict = handle.claim.merge_conflict
         self._own[(watch.name, issue.number)] = slot.name
         self._labelled.pop((watch.name, issue.number), None)
         log.info(

@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from github_issue_worker.application.coordinator import Coordinator
 from github_issue_worker.application.issue_run import IssueRun, RunSettings, Verdict
 from github_issue_worker.domain.claim import ClaimPolicy, ClaimState, Holder
@@ -361,3 +363,61 @@ def test_a_run_that_finds_its_pull_request_merges_under_that_title(tmp_path: Pat
     assert h.run().kind == "merged"
     ((title, _),) = h.host.merge_messages
     assert title == "+ Retry on timeout (#100)"
+
+
+def test_merge_conflict_stays_checkpointed_during_repair_and_resource_pause(tmp_path: Path) -> None:
+    h = Harness(tmp_path, [])
+    h.host.states = ["dirty"]
+    h.workspace.rebase_ok = False
+
+    def repair(run: AgentRun) -> RunReport:
+        current = h.store.current(42)
+        assert current is not None and current.merge_conflict
+        return RunReport(session="s", outcome=None, limit=UsageLimit("Rate control", T0))
+
+    h.agent.steps = [step(h.workspace, ok()), repair]
+    assert h.run().kind == "paused"
+    checkpoint = h.store.current(42)
+    assert checkpoint is not None and checkpoint.merge_conflict
+    assert checkpoint.wait_reason == "Rate control"
+
+
+def test_resolved_merge_conflict_clears_checkpoint_after_restart(tmp_path: Path) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
+    h.handle = h.coordinator.set_merge_conflict(h.handle, True)
+    # A new IssueRun reads the checkpoint, observes clean mergeability and clears it.
+    assert h.run().kind == "merged"
+    checkpoint = h.store.current(42)
+    assert checkpoint is not None and not checkpoint.merge_conflict
+
+
+def test_failed_rebase_marks_conflict_even_when_remote_only_reports_behind(tmp_path: Path) -> None:
+    h = Harness(tmp_path, [])
+    h.host.states = ["behind"]
+    h.workspace.rebase_ok = False
+
+    def repair(run: AgentRun) -> RunReport:
+        current = h.store.current(42)
+        assert current is not None and current.merge_conflict
+        return ok(Outcome("needs-input", "Please resolve the conflicting changes."))
+
+    h.agent.steps = [step(h.workspace, ok()), repair]
+    assert h.run().kind == "needs-input"
+    current = h.store.current(42)
+    assert current is not None and current.merge_conflict
+
+
+def test_conflict_detected_at_merge_is_checkpointed_before_the_merge_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
+    h.host.states = ["clean", "dirty"]
+
+    def reject(*args: object, **kwargs: object) -> str:
+        raise RuntimeError("merge conflict")
+
+    monkeypatch.setattr(h.host, "merge", reject)
+    with pytest.raises(RuntimeError, match="merge conflict"):
+        h.run()
+    checkpoint = h.store.current(42)
+    assert checkpoint is not None and checkpoint.merge_conflict

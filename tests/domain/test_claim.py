@@ -112,3 +112,18 @@ def test_json_round_trip_uses_the_documented_keys() -> None:
     assert data["holder"] == {"manager": "office-pc-7f3a", "worker": "codex"}
     assert data["renewedAt"] == "2026-10-30T12:00:00Z"
     assert Claim.from_json(data) == original
+
+
+def test_conflict_and_wait_reason_survive_checkpoints_without_migrating_old_claims() -> None:
+    old = claim().to_json()
+    assert not Claim.from_json(old).merge_conflict
+    assert Claim.from_json(old).wait_reason == ""
+    blocked = claim(merge_conflict=True, wait_reason="Rate limit")
+    assert Claim.from_json(blocked.to_json()) == blocked
+    assert POLICY.taken_over(blocked, HOLDER, T0).merge_conflict
+
+
+def test_taking_over_a_paused_claim_clears_the_obsolete_wait_reason() -> None:
+    waiting = claim(state=ClaimState.PAUSED, wait_reason="Token allowance", paused_until=T0)
+    resumed = POLICY.taken_over(waiting, HOLDER, T0)
+    assert resumed.wait_reason == "" and resumed.paused_until is None

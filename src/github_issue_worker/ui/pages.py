@@ -48,9 +48,10 @@ from github_issue_worker.ui.model import STEPS, ClaimView, IssueView, Snapshot, 
 STYLE = """
 :root {
   --paper: #edf0f3; --sheet: #f7f9fb; --ink: #1b2430; --muted: #5a6775; --rule: #c8d0d9;
-  --steel: #2e5c8a; --steel-soft: #d6e2ee; --amber: #b7791f; --amber-soft: #f3e6cf;
+  --steel: #2e5c8a; --steel-soft: #d6e2ee; --amber: #80520d; --amber-soft: #f3e6cf;
   --brick: #a63d2f; --brick-soft: #f2dcd8; --done: #4d6b52;
   --changed: #fbf0bd; --changed-rule: #a8862a;
+  --wait: #52606d; --wait-soft: #e2e5e8;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -58,6 +59,7 @@ STYLE = """
     --paper: #141a21; --sheet: #1b232c; --ink: #e3e8ee; --muted: #9aa6b3; --rule: #33404d;
     --steel: #7fa8d1; --steel-soft: #23384d; --amber: #e0a44a; --amber-soft: #3a2f1c;
     --brick: #e07a6b; --brick-soft: #3b2420; --done: #8fb596;
+    --wait: #b4bcc7; --wait-soft: #252b34;
     --changed: #3d3714; --changed-rule: #c9a83f; color-scheme: dark;
   }
 }
@@ -98,7 +100,14 @@ h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
 .quiet { color: var(--muted); }
 .flag { display: inline-block; padding: .1rem .5rem; border-radius: 3px; font-size: 13px;
   font-weight: 600; }
-.flag.limited, .flag.paused { background: var(--amber-soft); color: var(--amber); }
+.flag.feedback { background: var(--amber-soft); color: var(--amber); }
+.flag.limited, .flag.paused, .flag.idle { background: var(--wait-soft); color: var(--wait); }
+.flag.conflict { background: var(--brick-soft); color: var(--brick); }
+.track span.conflict { border-top-color: var(--brick); color: var(--brick); }
+.track span.waiting { border-top-color: var(--wait); color: var(--wait); }
+.run.waiting { background: var(--wait-soft); }
+.lane.waiting { background: var(--wait-soft); border-radius: 8px; }
+.lane.waiting .model { color: var(--wait); }
 .flag.unavailable, .flag.failed { background: var(--brick-soft); color: var(--brick); }
 .flag.working { background: var(--steel-soft); color: var(--steel); }
 .actions { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: flex-end; }
@@ -162,6 +171,9 @@ body.deck {
   --steel: #6fb3e8; --steel-soft: #16304d; --amber: #e0a44a; --amber-soft: #3a2f1c;
   --brick: #e07a6b; --brick-soft: #3b2420; --done: #8fb596; --glow: #4aa3ff;
   --changed: #3d3714; --changed-rule: #c9a83f;
+
+
+  --wait: #b4bcc7; --wait-soft: #252b34;
   color-scheme: dark; background: var(--paper); overflow-x: hidden;
 }
 body.deck::before { content: ""; position: fixed; inset: -20%; z-index: -2; pointer-events: none;
@@ -398,7 +410,7 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
   @keyframes blink { 50% { opacity: .35; } }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .track span.now { animation: beat 2.4s ease-in-out infinite; }
+  .track span.now:not(.conflict):not(.waiting) { animation: beat 2.4s ease-in-out infinite; }
   @keyframes beat { 50% { border-top-color: var(--steel-soft); } }
 }
 """
@@ -728,13 +740,19 @@ def page(title: str, path: str, snapshot_id: str, body: str, live: bool = False)
 # --- workers -------------------------------------------------------------------------------------
 
 
-def _track(step: str | None) -> str:
+def _track(step: str | None, merge_conflict: bool = False, waiting: bool = False) -> str:
     position = STEPS.index(step) if step in STEPS else -1
     cells = []
     for index, name in enumerate(STEPS):
         css = "now" if index == position else "past" if index < position else ""
+        title = ""
+        if name == "merge" and merge_conflict:
+            css = (css + " conflict").strip()
+            title = ' title="Merge conflict"'
+        elif index == position and waiting:
+            css = (css + " waiting").strip()
         current = ' aria-current="step"' if index == position else ""
-        cells.append(f'<span class="{css}"{current}>{name}</span>')
+        cells.append(f'<span class="{css}"{current}{title}>{name}</span>')
     return f'<div class=track role=list aria-label="Steps">{"".join(cells)}</div>'
 
 
@@ -780,7 +798,8 @@ def _instance(
 ) -> str:
     """One sub-row: what this instance of the worker is doing, with its own log and stop."""
     label = worker.name
-    if worker.state == "working" and worker.issue is not None and worker.repository:
+    waiting = worker.state in ("idle", "paused", "limited")
+    if worker.state != "unavailable" and worker.issue is not None and worker.repository:
         name = e(worker.name)
         facts = []
         if worker.branch:
@@ -800,14 +819,30 @@ def _instance(
             f'<form method=post action="/workers/{name}/stop"><button class=danger '
             f'title="Kill the agent, give the issue back and pause {name}">Stop &amp; release</button></form>'
         )
-        return _run(
-            slots.get(worker.repository, 0), issue, _track(worker.step), facts, label, actions
-        )
-    if worker.state == "limited" and worker.limited_until:
-        return _free(
-            f'<span class="flag limited">Usage limit</span> '
-            f"<span class=quiet>resets {when_live(worker.limited_until, now)}</span>",
+        if worker.state != "working":
+            actions = ""
+        if worker.state == "limited":
+            facts.append(_limit_status(worker, now))
+        elif worker.state == "paused":
+            facts.append('<span class="flag paused">Paused</span>')
+            if worker.reason:
+                facts.append(e(worker.reason))
+            if worker.limited_until:
+                facts.append(f"resets {when_live(worker.limited_until, now)}")
+        if worker.merge_conflict:
+            facts.append('<span class="flag conflict">Merge conflict</span>')
+        result = _run(
+            slots.get(worker.repository, 0),
+            issue,
+            _track(worker.step, worker.merge_conflict, waiting),
+            facts,
             label,
+            actions,
+        )
+        return result.replace("class=run", 'class="run waiting"', 1) if waiting else result
+    if worker.state == "limited":
+        return _free(_limit_status(worker, now), label).replace(
+            "class=run", 'class="run waiting"', 1
         )
     if worker.state == "unavailable":
         return _free(
@@ -818,8 +853,10 @@ def _instance(
         return _free(
             '<span class="flag paused">Paused</span> <span class=quiet>takes no new issue</span>',
             label,
-        )
-    return _free("<span class=quiet>Idle, waiting for an issue.</span>", label)
+        ).replace("class=run", 'class="run waiting"', 1)
+    return _free(
+        '<span class="flag idle">Idle</span> <span class=quiet>waiting for an issue.</span>', label
+    ).replace("class=run", 'class="run waiting"', 1)
 
 
 def _agent_row(
@@ -846,9 +883,22 @@ def _agent_row(
         f'<a class=button href="/workers/{group}">Edit</a>'
     )
     rows = "".join(_instance(instance, now, issues, slots) for instance in instances)
+    waiting = all(i.state in ("idle", "paused", "limited") for i in instances)
     return (
-        f'<div class=lane role=group aria-label="{group}"><div>{who}</div>'
+        f'<div class="lane{" waiting" if waiting else ""}" role=group aria-label="{group}"><div>{who}</div>'
         f"<div class=stack>{rows}</div><div class=actions>{actions}</div></div>"
+    )
+
+
+def _limit_status(worker: WorkerView, now: datetime) -> str:
+    reset = (
+        f"resets {when_live(worker.limited_until, now)}"
+        if worker.limited_until
+        else "reset unknown"
+    )
+    return (
+        '<span class="flag limited">Usage limit</span> '
+        + f"<span class=quiet>{e(worker.reason)} {reset}</span>"
     )
 
 
@@ -877,7 +927,20 @@ def _remote_row(
                 0,
                 f'<span class="flag paused">Paused</span> until {when_live(claim.paused_until, now)}',
             )
-        rows.append(_run(slots.get(claim.repository, 0), issue, _track(claim.step), facts, manager))
+        if claim.wait_reason:
+            facts.append(e(claim.wait_reason))
+        if claim.merge_conflict:
+            facts.append('<span class="flag conflict">Merge conflict</span>')
+        row = _run(
+            slots.get(claim.repository, 0),
+            issue,
+            _track(claim.step, claim.merge_conflict, claim.state == "paused"),
+            facts,
+            manager,
+        )
+        rows.append(
+            row.replace("class=run", 'class="run waiting"', 1) if claim.state == "paused" else row
+        )
     managers = len({claim.holder.partition("/")[0] for claim in claims})
     who = _who(
         "Remote",
@@ -887,7 +950,7 @@ def _remote_row(
         "watched, not steered from here",
     )
     return (
-        '<div class="lane remote" role=group aria-label="Remote">'
+        f'<div class="lane remote{" waiting" if all(c.state == "paused" for c in claims) else ""}" role=group aria-label="Remote">'
         f"<div>{who}</div><div class=stack>{''.join(rows)}</div><div></div></div>"
     )
 
@@ -1724,6 +1787,17 @@ def _issue_row(issue: IssueView, workers: Mapping[str, WorkerView], now: datetim
         who = "<span class=quiet>nobody</span>"
     since = f" for {ticking(issue.since, now)}" if issue.since else ""
     step = f"{e(issue.step)}{since}" if issue.step else ""
+    status = e(issue.state)
+    if issue.state == "waiting for your answer":
+        status = f'<span class="flag feedback">{status}</span>'
+    elif issue.state == "paused until the usage limit resets":
+        status = f'<span class="flag paused">{status}</span>'
+    if issue.wait_reason:
+        status += f" <span class=quiet>{e(issue.wait_reason)}</span>"
+    if issue.paused_until:
+        status += f" <span class=quiet>resets {when(issue.paused_until, now)}</span>"
+    if issue.merge_conflict:
+        step += ' <span class="flag conflict">Merge conflict</span>'
     worker = workers.get(issue.worker or "") if issue.local else None
     if worker is not None:
         actions = f"<div class=actions>{_worker_actions(worker)}</div>"
@@ -1732,7 +1806,7 @@ def _issue_row(issue: IssueView, workers: Mapping[str, WorkerView], now: datetim
     else:
         actions = ""
     return (
-        f"<tr><td>{link}</td><td>{e(issue.state)}</td><td>{who}</td><td class=nowrap>{step}</td>"
+        f"<tr><td>{link}</td><td>{status}</td><td>{who}</td><td class=nowrap>{step}</td>"
         f"<td>{actions}</td></tr>"
     )
 
