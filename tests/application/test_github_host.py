@@ -102,20 +102,40 @@ def test_a_branch_that_is_already_gone_is_fine() -> None:
     gh.delete_branch("issue/7-x")
 
 
-def test_checks_are_read_from_check_runs() -> None:
+def test_checks_are_read_from_check_runs_with_failure_annotations() -> None:
     runs = {
         "check_runs": [
             {
+                "id": 9,
                 "name": "CI",
                 "status": "completed",
                 "conclusion": "failure",
-                "output": {"summary": "2 tests failed"},
-            }
+                "output": {"summary": "2 tests failed", "annotations_count": 2},
+            },
+            {
+                "id": 8,
+                "name": "Lint",
+                "status": "completed",
+                "conclusion": "success",
+                "output": {"summary": None, "annotations_count": 1},
+            },
         ]
     }
-    gh, _ = host({("GET", f"repos/{REPO}/commits/abc/check-runs"): runs})
-    (check,) = gh.checks("abc")
-    assert (check.name, check.conclusion, check.summary) == ("CI", "failure", "2 tests failed")
+    notes = [
+        {"annotation_level": "failure", "message": "The job was not started because ..."},
+        {"annotation_level": "notice", "message": "ubuntu-latest will migrate"},
+    ]
+    gh, api = host(
+        {
+            ("GET", f"repos/{REPO}/commits/abc/check-runs"): runs,
+            ("GET", f"repos/{REPO}/check-runs/9/annotations"): notes,
+        }
+    )
+    ci, lint = gh.checks("abc")
+    assert (ci.name, ci.conclusion, ci.summary) == ("CI", "failure", "2 tests failed")
+    assert ci.annotations == ("The job was not started because ...",)
+    assert lint.annotations == ()  # annotations are only read for failed runs
+    assert not any("check-runs/8" in path for _, path, _ in api.calls)
 
 
 def test_unexpected_errors_propagate() -> None:

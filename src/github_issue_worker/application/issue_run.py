@@ -21,13 +21,20 @@ from github_issue_worker.domain.outcome import Outcome
 from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import AgentRun, RunReport
 from github_issue_worker.ports.clock import Clock
-from github_issue_worker.ports.repository import PullRequest, RepositoryHost
+from github_issue_worker.ports.repository import Check, PullRequest, RepositoryHost
 from github_issue_worker.ports.workspace import WorkspacePort
 
 VerdictKind = Literal["merged", "needs-input", "awaiting-review", "paused", "failed", "lost"]
 _MERGEABLE = frozenset({"clean", "unstable", "has_hooks"})
 _REBASE = frozenset({"dirty", "behind"})
 _FAILED = frozenset({"failure", "timed_out", "cancelled", "action_required", "startup_failure"})
+_NOT_STARTED = ("job was not started", "spending limit", "billing")
+"""Signs that CI never ran the job, which no change to the code can repair (seen live)."""
+
+
+def _never_started(check: Check) -> bool:
+    text = " ".join(check.annotations).lower()
+    return any(sign in text for sign in _NOT_STARTED)
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +157,8 @@ class IssueRun:
                     detail = f"The branch conflicts with `{base}`: rebase onto origin/{base}."
             if state == "timeout":
                 return self._awaiting(issue, pull)
+            if state == "blocked":
+                return self._awaiting(issue, pull, reason=detail)
             repairs += 1
             if repairs > self.settings.ci_repair_attempts:
                 return self._fail(
@@ -237,6 +246,8 @@ class IssueRun:
             if current.mergeable_state in _REBASE:
                 return "rebase", ""
             failing = [c for c in self.host.checks(current.head_sha) if c.conclusion in _FAILED]
+            if failing and all(_never_started(check) for check in failing):
+                return "blocked", failing[0].annotations[0]
             if failing:
                 lines = [
                     f"- {check.name}: {check.conclusion}\n{check.summary}" for check in failing
@@ -291,15 +302,19 @@ class IssueRun:
         self.host.set_worker_label(issue.number, "worker:paused")
         return Verdict("paused", until=until, detail=report.limit.message)
 
-    def _awaiting(self, issue: Issue, pull: PullRequest) -> Verdict:
-        self._fenced(
-            lambda: self.host.comment(
-                issue.number,
+    def _awaiting(self, issue: Issue, pull: PullRequest, reason: str | None = None) -> Verdict:
+        if reason:
+            text = (
+                f"{pull.url} is ready, but CI could not run, so nothing in the code can fix it: "
+                f"{reason}\n\nOnce CI runs again, comment here and the work continues."
+            )
+        else:
+            text = (
                 f"{pull.url} is ready, but the repository's rules block the merge (a required "
                 "review or required checks). It merges once they are satisfied and the issue "
-                "gets a new comment or approval.",
+                "gets a new comment or approval."
             )
-        )
+        self._fenced(lambda: self.host.comment(issue.number, text))
         self.host.set_worker_label(issue.number, "worker:awaiting-review")
         self.coordinator.release(self._handle, step="awaiting-review", consumed=self._consumed)
         return Verdict("awaiting-review", detail=pull.url)

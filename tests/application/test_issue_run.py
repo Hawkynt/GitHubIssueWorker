@@ -261,3 +261,24 @@ def test_a_lost_claim_stops_before_any_push(tmp_path: Path) -> None:
     assert h.run().kind == "lost"
     assert h.workspace.pushes == []
     assert h.host.pulls == {}
+
+
+def test_ci_that_never_started_goes_to_the_maintainer_not_the_agent(tmp_path: Path) -> None:
+    # Seen live: with Actions billing blocked, every job "fails" without starting. Nothing in the
+    # code can fix that, so the agent must not be asked to.
+    reason = (
+        "The job was not started because recent account payments have failed or your spending "
+        "limit needs to be increased."
+    )
+
+    def setup(h: Harness) -> list:  # type: ignore[type-arg]
+        h.host.states = ["blocked"]
+        h.host.check_results = [[Check("CI", "completed", "failure", "", (reason,))]]
+        return [step(h.workspace, ok())]
+
+    h = Harness(tmp_path, setup)
+    verdict = h.run()
+    assert verdict.kind == "awaiting-review"
+    assert len(h.agent.runs) == 1
+    assert reason in h.host.posted[-1][1]
+    assert h.host.worker_label[42] == "worker:awaiting-review"

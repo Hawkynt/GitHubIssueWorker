@@ -139,15 +139,28 @@ class GitHubHost:
         data = self.api.request(
             "GET", self._path(f"commits/{sha}/check-runs"), params={"per_page": "100"}
         ).body
-        return [
-            Check(
-                name=run["name"],
-                status=run["status"],
-                conclusion=run.get("conclusion"),
-                summary=((run.get("output") or {}).get("summary") or "")[:2000],
+        checks = []
+        for run in (data or {}).get("check_runs", []):
+            output = run.get("output") or {}
+            annotations: tuple[str, ...] = ()
+            failed = run.get("conclusion") not in (None, "success", "neutral", "skipped")
+            if failed and output.get("annotations_count") and "id" in run:
+                notes = self.api.request("GET", self._path(f"check-runs/{run['id']}/annotations"))
+                annotations = tuple(
+                    str(note.get("message", ""))
+                    for note in notes.body or []
+                    if note.get("annotation_level") == "failure"
+                )
+            checks.append(
+                Check(
+                    name=run["name"],
+                    status=run["status"],
+                    conclusion=run.get("conclusion"),
+                    summary=(output.get("summary") or "")[:2000],
+                    annotations=annotations,
+                )
             )
-            for run in (data or {}).get("check_runs", [])
-        ]
+        return checks
 
     def merge(self, number: int, method: str, sha: str) -> str:
         data = self.api.request(

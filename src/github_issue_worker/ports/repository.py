@@ -42,6 +42,8 @@ class Check:
     status: str
     conclusion: str | None
     summary: str = ""
+    annotations: tuple[str, ...] = ()
+    """Failure annotations of a failed run, e.g. why GitHub never started the job."""
 
 
 class RepositoryHost(Protocol):
