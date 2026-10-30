@@ -51,3 +51,31 @@ def test_the_schema_is_strict_enough_for_codex_structured_output() -> None:
             check(schema["items"])
 
     check(OUTCOME_SCHEMA)
+
+
+def test_sub_issues_parse_with_their_titles_bodies_and_scenarios() -> None:
+    outcome = Outcome.parse(
+        '{"outcome": "done", "summary": "Two independent parts.", "restatement": "R",'
+        ' "subIssues": [{"title": "Export CSV", "body": "Add CSV.", "scenarios": ["Given a"]},'
+        ' {"title": "Export JSON", "body": "Add JSON.", "scenarios": []}]}'
+    )
+    assert [sub.title for sub in outcome.sub_issues] == ["Export CSV", "Export JSON"]
+    assert outcome.sub_issues[0].body == "Add CSV."
+    assert outcome.sub_issues[0].scenarios == ("Given a",)
+
+
+def test_sub_issues_are_optional_when_parsing() -> None:
+    assert Outcome.parse('{"outcome": "done", "summary": "x"}').sub_issues == ()
+
+
+def test_a_sub_issue_without_a_title_is_rejected() -> None:
+    with pytest.raises(OutcomeError):
+        Outcome.parse(
+            '{"outcome": "done", "summary": "x",'
+            ' "subIssues": [{"title": " ", "body": "b", "scenarios": []}]}'
+        )
+
+
+def test_the_schema_asks_for_sub_issues() -> None:
+    items = OUTCOME_SCHEMA["properties"]["subIssues"]["items"]
+    assert set(items["required"]) == {"title", "body", "scenarios"}

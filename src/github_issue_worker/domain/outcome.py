@@ -12,7 +12,15 @@ _KINDS: tuple[OutcomeKind, ...] = ("done", "needs-input", "impossible")
 OUTCOME_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["outcome", "summary", "scenarios", "questions", "labels", "restatement"],
+    "required": [
+        "outcome",
+        "summary",
+        "scenarios",
+        "questions",
+        "labels",
+        "restatement",
+        "subIssues",
+    ],
     "properties": {
         "outcome": {"type": "string", "enum": list(_KINDS)},
         "summary": {"type": "string"},
@@ -29,6 +37,19 @@ OUTCOME_SCHEMA: dict[str, Any] = {
                     "text": {"type": "string"},
                     "options": {"type": "array", "items": {"type": "string"}},
                     "recommendation": {"type": "string"},
+                },
+            },
+        },
+        "subIssues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["title", "body", "scenarios"],
+                "properties": {
+                    "title": {"type": "string"},
+                    "body": {"type": "string"},
+                    "scenarios": {"type": "array", "items": {"type": "string"}},
                 },
             },
         },
@@ -49,6 +70,15 @@ class Question:
 
 
 @dataclass(frozen=True, slots=True)
+class SubIssue:
+    """One independent part of a large issue, to be worked as an issue of its own (F4.6)."""
+
+    title: str
+    body: str
+    scenarios: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class Outcome:
     kind: OutcomeKind
     summary: str
@@ -58,6 +88,8 @@ class Outcome:
     """Labels the agent chose from the repository's existing set, for an unlabelled issue (F4.1)."""
     restatement: str = ""
     """The issue in the agent's own words, measurable (F4.5); asked for by the understanding run."""
+    sub_issues: tuple[SubIssue, ...] = ()
+    """Independent parts the understanding run split a large issue into (F4.6); empty: no split."""
 
     @staticmethod
     def parse(text: str) -> Outcome:
@@ -88,6 +120,16 @@ class Outcome:
 
         scenarios = tuple(str(scenario) for scenario in data.get("scenarios") or [])
         labels = tuple(str(label) for label in data.get("labels") or [])
+        sub_issues = tuple(
+            SubIssue(
+                title=str(entry.get("title") or "").strip(),
+                body=str(entry.get("body") or "").strip(),
+                scenarios=tuple(str(scenario) for scenario in entry.get("scenarios") or []),
+            )
+            for entry in data.get("subIssues") or []
+        )
+        if any(not sub.title for sub in sub_issues):
+            raise OutcomeError("every sub-issue needs a title")
         return Outcome(
             kind=kind,
             summary=summary,
@@ -95,4 +137,5 @@ class Outcome:
             questions=questions,
             labels=labels,
             restatement=str(data.get("restatement") or "").strip(),
+            sub_issues=sub_issues,
         )
