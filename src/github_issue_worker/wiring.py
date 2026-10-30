@@ -29,6 +29,7 @@ from github_issue_worker.application.manager import Manager, RepositoryWatch, Wo
 from github_issue_worker.application.poller import Poller, PollState
 from github_issue_worker.configuration import Configuration, RepositorySettings, WorkerSettings
 from github_issue_worker.domain.claim import ClaimPolicy
+from github_issue_worker.domain.commit_message import DEFAULT_FORBIDDEN_WORDS, CommitGate
 from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import AgentAdapter, AgentRun, Invocation, RunReport
@@ -59,6 +60,11 @@ class RepositoryRun:
     checks_timeout: float
     build: str | None
     test: str | None
+    forbidden_words: tuple[str, ...] = DEFAULT_FORBIDDEN_WORDS
+
+    @property
+    def gate(self) -> CommitGate:
+        return CommitGate(forbidden_words=self.forbidden_words)
 
 
 def repository_run(config: Configuration, repository: RepositorySettings) -> RepositoryRun:
@@ -76,6 +82,7 @@ def repository_run(config: Configuration, repository: RepositorySettings) -> Rep
         checks_timeout=pick("checks_timeout").total_seconds(),  # type: ignore[attr-defined]
         build=pick("build"),  # type: ignore[arg-type]
         test=pick("test"),  # type: ignore[arg-type]
+        forbidden_words=tuple(pick("forbidden_words")),  # type: ignore[arg-type]
     )
 
 
@@ -194,6 +201,7 @@ class Runtime:
                 base_branch=run.base_branch,
                 ci_repair_attempts=run.ci_repair_attempts,
                 checks_timeout=timedelta(seconds=run.checks_timeout),
+                gate=run.gate,
             ),
         ).run(handle, issue, comments, kind)
 

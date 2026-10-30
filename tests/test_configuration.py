@@ -15,6 +15,7 @@ from github_issue_worker.configuration import (
     parse,
     save,
 )
+from github_issue_worker.domain.commit_message import DEFAULT_FORBIDDEN_WORDS
 
 README = Path(__file__).resolve().parent.parent / "README.md"
 
@@ -182,3 +183,38 @@ def test_default_path_follows_the_platform(monkeypatch: pytest.MonkeyPatch, tmp_
     monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
     expected = tmp_path / "roaming" / "GitHubIssueWorker" / "config.json"
     assert default_path(platform="win32") == expected
+
+
+def test_leaving_forbidden_words_out_uses_the_default_list() -> None:
+    config = parse('{"repositories": [{"repository": "Hawkynt/ShiftDiff"}]}')
+    assert tuple(config.defaults.forbidden_words) == DEFAULT_FORBIDDEN_WORDS
+    assert not config.defaults.is_set("forbidden_words")
+    assert config.repositories[0].forbidden_words is None
+
+
+def test_forbidden_words_can_be_set_in_defaults_and_overridden_per_repository(
+    tmp_path: Path,
+) -> None:
+    raw = {
+        "defaults": {"forbiddenWords": ["claude", "codex"]},
+        "repositories": [
+            {"repository": "Hawkynt/ShiftDiff"},
+            {"repository": "Hawkynt/GitHubIssueWorker", "forbiddenWords": []},
+        ],
+    }
+    config = parse(json.dumps(raw))
+    assert config.defaults.forbidden_words == ["claude", "codex"]
+    assert config.defaults.is_set("forbidden_words")
+    assert config.repositories[0].forbidden_words is None
+    assert config.repositories[1].forbidden_words == []
+
+    path = tmp_path / "config.json"
+    save(config, path)
+    assert json.loads(path.read_text(encoding="utf-8")) == raw
+    assert load(path) == config
+
+
+def test_the_readme_configuration_table_documents_forbidden_words() -> None:
+    text = README.read_text(encoding="utf-8")
+    section = text[text.index("## ⚙️ Configuration") : text.index("## 🛡️ Security")]
+    assert "| `forbiddenWords` |" in section

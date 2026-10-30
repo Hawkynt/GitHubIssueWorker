@@ -26,6 +26,8 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_camel
 
+from github_issue_worker.domain.commit_message import DEFAULT_FORBIDDEN_WORDS
+
 _DURATION = re.compile(
     r"^(?:(?P<days>\d+)\.)?(?P<hours>\d{1,2}):(?P<minutes>\d{2}):(?P<seconds>\d{2})$"
 )
@@ -162,6 +164,7 @@ class DefaultsSettings(_Settings):
     checks_timeout: Duration = timedelta(hours=2)
     build: str | None = None
     test: str | None = None
+    forbidden_words: list[str] = Field(default_factory=lambda: list(DEFAULT_FORBIDDEN_WORDS))
 
 
 class RepositorySettings(_Settings):
@@ -179,6 +182,7 @@ class RepositorySettings(_Settings):
     checks_timeout: Duration | None = None
     build: str | None = None
     test: str | None = None
+    forbidden_words: list[str] | None = None
 
 
 class Configuration(_Settings):
