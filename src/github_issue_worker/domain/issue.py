@@ -28,6 +28,8 @@ class Issue:
     is_pull_request: bool
     created_at: datetime
     updated_at: datetime
+    state_reason: str | None = None
+    """Why a closed issue was closed: ``completed``, ``not_planned``, ... (F4.6)."""
 
 
 @dataclass(frozen=True, slots=True)

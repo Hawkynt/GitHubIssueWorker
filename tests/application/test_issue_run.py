@@ -68,6 +68,7 @@ class Harness:
         handle = self.coordinator.claim(42, WORKER, branch="issue/42-retry-on-timeout")
         assert handle is not None
         self.handle = handle
+        self.issue = ISSUE
 
     def verify(self, worktree: Path) -> tuple[bool, str]:
         return (
@@ -88,7 +89,7 @@ class Harness:
             sleep=lambda seconds: self.clock.advance(timedelta(seconds=seconds)),
             # The understanding run has its own tests; here it is off unless a test asks for it.
             settings=RunSettings(**{"understand_first": False, **settings}),  # type: ignore[arg-type]
-        ).run(self.handle, ISSUE, comments, kind)
+        ).run(self.handle, self.issue, comments, kind)
 
 
 def ok(outcome: Outcome | None = None, session: str = "s1") -> RunReport:

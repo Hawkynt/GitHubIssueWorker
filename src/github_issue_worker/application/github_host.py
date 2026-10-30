@@ -193,6 +193,27 @@ class GitHubHost:
             if error.status != 422:  # already gone
                 raise
 
+    def create_sub_issue(self, parent: int, title: str, body: str, labels: list[str]) -> int:
+        data = self.api.request(
+            "POST", self._path("issues"), body={"title": title, "body": body, "labels": labels}
+        ).body
+        self.api.request(
+            "POST", self._path(f"issues/{parent}/sub_issues"), body={"sub_issue_id": data["id"]}
+        )
+        return int(data["number"])
+
+    def sub_issues(self, parent: int) -> list[Issue]:
+        found: list[Issue] = []
+        response = self.api.request(
+            "GET", self._path(f"issues/{parent}/sub_issues"), params={"per_page": "100"}
+        )
+        while True:
+            found += [parse_issue(item) for item in response.body or []]
+            page = next_link(response.headers)
+            if page is None:
+                return found
+            response = self.api.request("GET", page)
+
     def close_issue(self, issue: int) -> None:
         self.api.request(
             "PATCH",

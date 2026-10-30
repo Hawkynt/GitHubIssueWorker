@@ -55,6 +55,7 @@ _LABEL_STATES = (
     ("worker:awaiting-review", "waiting for review or CI"),
     ("worker:failed", "failed; its last comment says why"),
     ("worker:unserved", "no worker can serve it"),
+    ("worker:split", "split; waiting for its sub-issues"),
     ("worker:queued", "waiting for a worker"),
 )
 

@@ -25,6 +25,7 @@ from github_issue_worker.ui.live import RuntimeBackend, issue_state, worker_mode
         ({"worker:awaiting-review"}, None, False, "waiting for review or CI"),
         ({"worker:failed"}, None, False, "failed; its last comment says why"),
         ({"worker:unserved"}, None, False, "no worker can serve it"),
+        ({"worker:split"}, None, False, "split; waiting for its sub-issues"),
         ({"worker:skip", "bug"}, None, False, "skipped (worker:skip)"),
         ({"bug"}, None, False, "not picked up"),
     ],

@@ -61,6 +61,7 @@ def parse_issue(item: dict[str, Any]) -> Issue:
         is_pull_request="pull_request" in item,
         created_at=_time(item["created_at"]),
         updated_at=_time(item["updated_at"]),
+        state_reason=item.get("state_reason"),
     )
 
 
