@@ -705,7 +705,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F0.1** House-standard repository: license, editorconfig, gitignore, AGENTS, CONTRIBUTING,
   smoke/CI/nightly/release workflows in the house Python dialect, README checked by `repo-readme`.
 - [x] 🟥 **F0.2** Package skeleton (`pyproject.toml`, `src/github_issue_worker`, `tests/`) that is
-  `ruff`/`mypy --strict` clean and tests green, with a `github-issue-worker --version` entry point.
+  `ruff`/`mypy --strict` clean and tests green, with a `github-issue-worker --version` (short `-V`)
+  entry point.
 - [ ] 🟥 **F0.3** Configuration loads from the platform path or `--config`, validates every key, and
   reports an invalid key by its JSON path. Unknown keys are an error, not ignored. One validator serves
   the file, the CLI and the UI, and every write is atomic.
