@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "github-issue-worker"
+version = "0.1.0"
+description = "Watches GitHub repositories you can push to and works each issue to a merged pull request."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "LGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Hawkynt" }]
+dependencies = [
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "build>=1.2",
+]
+
+[project.scripts]
+github-issue-worker = "github_issue_worker.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/Hawkynt/GitHubIssueWorker"
+Issues = "https://github.com/Hawkynt/GitHubIssueWorker/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/github_issue_worker"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+  "slow: quick in kind, expensive in practice — deferred to the pull request tier",
+  "e2e: drives a real GitHub repository end to end — pull request tier",
+  "os_integration: needs something of the host OS — pull request tier",
+  "external_interop: runs a real git or claude executable — pull request tier",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+# The README is the specification; its code blocks are spec text, never reformatted.
+extend-exclude = ["README.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+mypy_path = "src"
+packages = ["github_issue_worker"]

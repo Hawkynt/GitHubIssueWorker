@@ -1,0 +1,84 @@
+name: Nightly
+
+# Fires on a merge to main. CI no longer runs on a push, because a pull request has to be green
+# before it can merge — so the code landing here has already been tested, and this builds it rather
+# than testing it again.
+#
+# The trade-off, stated plainly: a squash merge produces a commit no run ever saw. It carries the
+# pull request's tree onto a base that may have moved, so a semantic conflict between two separately
+# green pull requests would first show up here, as a failed nightly build.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+# Force JavaScript-based actions to run on Node 24 instead of the deprecated Node 20 ahead of
+# the 2026-06-16 hard cutover, until we bump each action to a Node-24-native major version.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build.yml
+    with:
+      ref: ${{ github.sha }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0                         # release-notes reads git log
+      - name: Compute nightly tag
+        run: echo "TAG=nightly-$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-artifacts
+          path: dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # --notes-only: CHANGELOG.md is committed by release.yml exclusively.
+      - name: Generate release notes (functional changes, bucketed by + - * # !)
+        uses: Hawkynt/RepositoryTemplate/release-notes@v1
+        with:
+          mode: nightly
+          notes: RELEASE_NOTES.md
+
+      # Same-day re-run: drop the existing nightly release AND its tag first, so the tag always
+      # points at the SHA that was actually built.
+      - name: Replace same-day nightly (release + tag), if any
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete "$TAG" --cleanup-tag --yes || true
+      - name: Publish nightly prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          files: dist/*
+          body_path: RELEASE_NOTES.md            # commit-message changelog, not GitHub's PR notes
+
+  prune:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: GFS prune of old nightlies (7 daily + 4 weekly + 3 monthly)
+        uses: Hawkynt/RepositoryTemplate/prune-nightlies@v1

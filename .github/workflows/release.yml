@@ -1,0 +1,62 @@
+name: Release
+
+# Stable release — MANUAL dispatch only. Runs CI, builds wheel and sdist, then
+# cuts a dated GitHub Release. Versions never come from a git tag; the
+# repo-level marker is the date, so the release/tag is `vYYYYMMDD`. Nightlies
+# happen automatically (nightly.yml).
+#
+# No CHANGELOG.md commit: every commit on main must be signed, and a bot
+# `git push` is not — the commit-prefix changelog lives in the release body.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why are you cutting this release? (optional, for the audit log)'
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: ci
+    uses: ./.github/workflows/_build.yml
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute release marker
+        run: echo "REL=v$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-artifacts
+          path: dist
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate release notes (bucketed by + - * # !)
+        uses: Hawkynt/RepositoryTemplate/release-notes@v1
+        with:
+          mode: release
+          marker: ${{ env.REL }}
+          notes: RELEASE_NOTES.md
+      - name: Create GitHub Release (dated marker)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.REL }}
+          name: ${{ env.REL }}
+          target_commitish: ${{ github.sha }}
+          files: dist/*
+          body_path: RELEASE_NOTES.md

@@ -1,0 +1,89 @@
+name: CI
+
+# The gate a pull request has to pass: lint and types, the full test battery on every OS, and the
+# repository README check.
+#
+# It does NOT run on a push to main. A pull request must be green to merge, so re-running the same
+# matrix on the merge commit proves nothing and costs a machine — the nightly builds main after the
+# merge instead. `workflow_call` stays, because release.yml runs this as its own first gate.
+on:
+  pull_request:
+    branches: [main]
+  workflow_call: {}
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  lint:
+    name: Lint and type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: pip install -e '.[dev]'
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: pip install -e '.[dev]'
+      # The full battery: every marker, coverage as a reporting metric (not a gate).
+      - run: pytest -q --cov=github_issue_worker --cov-report=term
+        timeout-minutes: 25
+
+  readme:
+    name: Repository README
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # No `gui: true`: the worker is a headless CLI/daemon with no user interface.
+      - uses: Hawkynt/RepositoryTemplate/repo-readme@v1
+
+  # Aggregate context: the branch protection requires this one check by name, so required-check
+  # upkeep does not follow every matrix leg.
+  ci:
+    name: CI
+    needs: [lint, test, readme]
+    # always(): a skipped required check does not block a merge, so the aggregate must run even when
+    # a gate failed and report the failure itself.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Gate on every dependency result
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'GATE'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          bad = {k: v["result"] for k, v in needs.items() if v["result"] != "success"}
+          if bad:
+              print("failing gates:", bad)
+              sys.exit(1)
+          print("all gates green")
+          GATE

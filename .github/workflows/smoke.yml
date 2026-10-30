@@ -1,0 +1,41 @@
+name: Smoke
+
+# The fast tier, on every push to a working branch. It answers one question — "is what I just pushed
+# broken?" — in minutes: one OS, fast tests only, no coverage. The pull request is where the matrix
+# and the slow markers live.
+#
+# Never on main: that branch takes changes through pull requests, which already ran the full gate.
+on:
+  push:
+    branches-ignore: [main, master]
+  workflow_dispatch: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  smoke:
+    name: Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - run: pip install -e '.[dev]'
+      - run: ruff check .
+      # A test is in the fast tier unless it opts out with a marker; opting out defers a test to the
+      # pull request, it never skips one.
+      - run: pytest -q -m "not slow and not e2e and not os_integration and not external_interop"
+        timeout-minutes: 10
+
+  # The README check is cheap enough for this tier.
+  readme:
+    name: Repository README
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Hawkynt/RepositoryTemplate/repo-readme@v1
