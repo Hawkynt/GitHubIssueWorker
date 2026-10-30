@@ -2,7 +2,7 @@
   "branch": "issue/39-flight-log-priority",
   "claimedAt": "2026-10-30T19:12:45Z",
   "consumedThrough": {
-    "comment": null,
+    "comment": 6531418409,
     "review": null
   },
   "expiresAt": "2026-11-06T19:25:31Z",
@@ -13,8 +13,8 @@
   },
   "issue": 39,
   "pausedUntil": null,
-  "renewedAt": "2026-10-30T19:25:31Z",
-  "state": "working",
-  "step": "needs-input",
+  "renewedAt": "2026-10-30T19:27:33Z",
+  "state": "done",
+  "step": "done",
   "takeovers": 0
 }
