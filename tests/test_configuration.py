@@ -6,14 +6,17 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from github_issue_worker.configuration import (
+    AccountSettings,
     Configuration,
     ConfigurationError,
     default_path,
     load,
     parse,
     save,
+    validate,
 )
 from github_issue_worker.domain.commit_message import DEFAULT_FORBIDDEN_WORDS
 
@@ -218,3 +221,20 @@ def test_the_readme_configuration_table_documents_forbidden_words() -> None:
     text = README.read_text(encoding="utf-8")
     section = text[text.index("## ⚙️ Configuration") : text.index("## 🛡️ Security")]
     assert "| `forbiddenWords` |" in section
+
+
+def test_concurrent_runs_default_to_one_and_stop_at_twenty() -> None:
+    assert AccountSettings().max_concurrent_runs == 1
+    for wrong in (0, 21, None):
+        with pytest.raises(ValidationError):
+            AccountSettings(max_concurrent_runs=wrong)  # type: ignore[arg-type]
+
+
+def test_a_worker_name_cannot_look_like_an_instance() -> None:
+    data = {
+        "accounts": {"a": {}},
+        "workers": [{"name": "claude.2", "agent": "claude", "account": "a"}],
+    }
+    with pytest.raises(ConfigurationError) as raised:
+        validate(data)
+    assert "workers[0].name" in str(raised.value)

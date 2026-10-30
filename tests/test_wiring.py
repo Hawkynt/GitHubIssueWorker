@@ -11,7 +11,12 @@ import github_issue_worker.wiring as wiring
 from github_issue_worker.adapters.state_store import JsonStateStore
 from github_issue_worker.application.coordinator import Coordinator
 from github_issue_worker.application.manager import RepositoryWatch, WorkerSlot
-from github_issue_worker.configuration import RepositorySettings, WorkerSettings, parse
+from github_issue_worker.configuration import (
+    Configuration,
+    RepositorySettings,
+    WorkerSettings,
+    parse,
+)
 from github_issue_worker.domain.claim import ClaimPolicy, Holder
 from github_issue_worker.domain.commit_message import DEFAULT_FORBIDDEN_WORDS, CommitGate, Rule
 from github_issue_worker.domain.issue import Actor, Issue
@@ -396,3 +401,48 @@ def test_the_prose_limit_reaches_the_commit_gate() -> None:
     )
     assert repository_run(config, config.repositories[0]).gate.max_prose_lines == 0
     assert repository_run(config, config.repositories[1]).gate.max_prose_lines == 5
+
+
+def _instances_config(claude: Path, runs: int) -> Configuration:
+    return parse(
+        json.dumps(
+            {
+                "accounts": {"a": {"maxConcurrentRuns": runs}},
+                "workers": [
+                    {
+                        "name": "claude",
+                        "agent": "claude",
+                        "account": "a",
+                        "installation": {"type": "executable", "path": str(claude)},
+                    }
+                ],
+            }
+        )
+    )
+
+
+def test_a_worker_runs_as_many_instances_as_its_account_allows(tmp_path: Path) -> None:
+    # F12.11: maxConcurrentRuns 3 gives claude, claude.2 and claude.3, one issue each.
+    claude = executable(tmp_path / "bin" / "claude")
+    runtime = Runtime(
+        config=_instances_config(claude, 3),
+        home=tmp_path,
+        api=None,  # type: ignore[arg-type]
+        state=JsonStateStore(tmp_path / "state.json"),
+        manager_id="m",
+        workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+    )
+    runtime.sync_slots()
+    assert [(s.name, s.group) for s in runtime.slots] == [
+        ("claude", "claude"),
+        ("claude.2", "claude"),
+        ("claude.3", "claude"),
+    ]
+    assert set(runtime.adapters) == {"claude"}  # one adapter serves every instance
+
+    runtime.slots[1].busy = True
+    runtime.config = _instances_config(claude, 1)
+    runtime.sync_slots()
+    names = {slot.name: slot for slot in runtime.slots}
+    assert set(names) == {"claude", "claude.2"}  # claude.3 went at once
+    assert not names["claude.2"].enabled  # finishes its run, then takes nothing new

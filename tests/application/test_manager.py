@@ -316,3 +316,16 @@ def test_every_finished_run_is_recorded_for_the_cockpit() -> None:
     )
     assert (run.model, run.kind, run.verdict) == ("Claude Opus 5.5", "first", "merged")
     assert run.started == T0 and run.finished == T0
+
+
+def test_an_accounts_cap_counts_every_instance_on_it() -> None:
+    # F12.11: two workers on one account capped at 2 run two issues, the third queues.
+    workers = [slot("claude"), slot("claude.2", worker="claude"), slot("codex", "codex")]
+    f = Fixture(workers, verdicts=[Verdict("paused", until=T0 + timedelta(hours=1))] * 3)
+    f.manager.max_runs = lambda account: 2
+    f.limits.limited_until = lambda account: None  # type: ignore[method-assign]
+    f.new_issues(issue(1), issue(2, minutes=1), issue(3, minutes=2))
+    f.manager.tick()
+    assert sorted(run.issue for run in f.runs) == [1, 2]
+    assert f.host.worker_label[3] == "worker:queued"
+    assert {run.worker for run in f.runs} <= {"claude", "claude.2", "codex"}

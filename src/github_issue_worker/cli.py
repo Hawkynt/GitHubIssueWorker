@@ -166,8 +166,7 @@ def _workers(config: Configuration, path: Path, args: argparse.Namespace, home: 
                 if raw["name"] in existing:
                     continue
                 if raw["account"] not in accounts:
-                    runs = 1 if raw["installation"]["type"] == "claudelocal" else None
-                    accounts[raw["account"]] = AccountSettings(max_concurrent_runs=runs)
+                    accounts[raw["account"]] = AccountSettings()
                 workers.append(WorkerSettings.model_validate(raw))
             config.workers, config.accounts = workers, accounts
             save(config, path)

@@ -26,7 +26,12 @@ from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.github_host import GitHubHost
 from github_issue_worker.application.history import HistoryStore, RunRecord
 from github_issue_worker.application.issue_run import IssueRun, RunSettings, RunStopped, Verdict
-from github_issue_worker.application.manager import Manager, RepositoryWatch, WorkerSlot
+from github_issue_worker.application.manager import (
+    Manager,
+    RepositoryWatch,
+    WorkerSlot,
+    instance_name,
+)
 from github_issue_worker.application.poller import Poller, PollState
 from github_issue_worker.configuration import Configuration, RepositorySettings, WorkerSettings
 from github_issue_worker.domain.claim import ClaimPolicy
@@ -204,7 +209,7 @@ class Runtime:
     ) -> Verdict:
         run = watch.settings
         assert isinstance(run, RepositoryRun)
-        adapter = self.adapters[slot.name]
+        adapter = self.adapters[slot.group]
         info = watch.host.info()
         method = (
             run.merge_method if run.merge_method in info.merge_methods else info.merge_methods[0]
@@ -250,7 +255,7 @@ class Runtime:
         """Remember which model the run reported, for status, the log and the UI."""
         if report.model and report.model != slot.observed_model:
             slot.observed_model = report.model
-            self.state.set_model(slot.name, report.model)
+            self.state.set_model(slot.group, report.model)
             log.info("worker %s runs on %s", slot.name, display_model(report.model))
         return report
 
@@ -280,29 +285,66 @@ class Runtime:
                 manager.repositories.append(watch)
                 watch.host.ensure_worker_labels()
 
-        configured = {worker.name: worker for worker in config.workers}
+        self.sync_slots()
+        manager.workers = self.slots
+        manager.max_runs = self.max_runs
+
+    def max_runs(self, account: str) -> int:
+        settings = self.config.accounts.get(account)
+        return settings.max_concurrent_runs if settings else 1
+
+    def sync_slots(self) -> None:
+        """One slot per instance: as many per worker as its account runs at once (F12.11).
+
+        Instances no longer wanted are dropped, or, while busy, finish their run and take
+        nothing new.
+        """
+        wanted = {
+            instance_name(worker.name, number): worker
+            for worker in self.config.workers
+            for number in range(1, self.max_runs(worker.account) + 1)
+        }
         for slot in list(self.slots):
-            if slot.name not in configured:
+            if slot.name not in wanted:
                 if slot.busy:
                     slot.enabled = False
                     slot.reason = "removed; finishing its current run"
                 else:
                     self.slots.remove(slot)
-                    self.adapters.pop(slot.name, None)
-        for worker in config.workers:
-            existing = next((s for s in self.slots if s.name == worker.name), None)
-            if existing is None:
-                existing = WorkerSlot(name=worker.name, agent=worker.agent, account=worker.account)
-                self.slots.append(existing)
-            slot = existing
-            slot.agent, slot.account, slot.priority = worker.agent, worker.account, worker.priority
-            slot.tags, slot.model = frozenset(worker.tags), worker.model
+        for worker in self.config.workers:
             try:
                 self.adapters[worker.name] = make_adapter(worker, self.home)
-                slot.available, slot.reason = True, ""
+                available, reason = True, ""
             except Unavailable as unavailable:
-                slot.available, slot.reason = False, str(unavailable)
-        manager.workers = self.slots
+                self.adapters.pop(worker.name, None)
+                available, reason = False, str(unavailable)
+                log.warning("worker %s is unavailable: %s", worker.name, unavailable)
+            for name in (n for n, w in wanted.items() if w is worker):
+                instance = next((s for s in self.slots if s.name == name), None)
+                if instance is None:
+                    instance = WorkerSlot(
+                        name=name,
+                        agent=worker.agent,
+                        account=worker.account,
+                        worker=worker.name,
+                        observed_model=self.state.model(worker.name),
+                    )
+                    self.slots.append(instance)
+                instance.agent, instance.account, instance.priority = (
+                    worker.agent,
+                    worker.account,
+                    worker.priority,
+                )
+                instance.tags, instance.model, instance.worker = (
+                    frozenset(worker.tags),
+                    worker.model,
+                    worker.name,
+                )
+                instance.available, instance.reason = available, reason
+        configured = {worker.name for worker in self.config.workers}
+        for name in list(self.adapters):
+            if name not in configured and not any(s.group == name for s in self.slots):
+                self.adapters.pop(name)
 
     @property
     def history(self) -> HistoryStore:
@@ -330,6 +372,7 @@ class Runtime:
             run_issue=self.run_issue,
             spawn=lambda job: threading.Thread(target=job, daemon=True).start(),
             on_finished=self.record,
+            max_runs=self.max_runs,
         )
 
 
@@ -351,21 +394,5 @@ def build_runtime(
         workspace=Workspace(cache or cache_dir(home), remote_url, home),
         state_path=state_path,
     )
-    for worker in config.workers:
-        slot = WorkerSlot(
-            name=worker.name,
-            agent=worker.agent,
-            account=worker.account,
-            priority=worker.priority,
-            tags=frozenset(worker.tags),
-            model=worker.model,
-            observed_model=state.model(worker.name),
-        )
-        try:
-            runtime.adapters[worker.name] = make_adapter(worker, home)
-        except Unavailable as unavailable:
-            slot.available = False
-            slot.reason = str(unavailable)
-            log.warning("worker %s is unavailable: %s", worker.name, unavailable)
-        runtime.slots.append(slot)
+    runtime.sync_slots()
     return runtime
