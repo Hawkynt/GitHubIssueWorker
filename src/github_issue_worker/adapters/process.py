@@ -92,7 +92,8 @@ def _run(
 ) -> ProcessResult:
     with log.open("w", encoding="utf-8") as output:
         process = subprocess.Popen(
-            invocation.argv,
+            invocation.argv[0] if invocation.shell else invocation.argv,
+            shell=invocation.shell,
             cwd=invocation.cwd,
             stdin=subprocess.PIPE,
             stdout=output,

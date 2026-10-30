@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -53,7 +54,12 @@ def test_verification_runs_without_github_credentials(
 ) -> None:
     # It runs code the agent wrote, so it gets the agent's environment, not the manager's.
     monkeypatch.setenv("GH_TOKEN", "secret")
-    ok, output = Verifier(test='test -z "$GH_TOKEN" && echo clean').verify(tmp_path)
+    # A Python script, so the check is the same under bash and under Windows' cmd.
+    (tmp_path / "check.py").write_text(
+        "import os, sys\nprint('clean')\nsys.exit(1 if os.environ.get('GH_TOKEN') else 0)\n",
+        encoding="utf-8",
+    )
+    ok, output = Verifier(test=f'"{sys.executable}" check.py').verify(tmp_path)
     assert ok and "clean" in output
 
 

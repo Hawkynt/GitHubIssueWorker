@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import stat
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from github_issue_worker.adapters.installations import portable_tool
 from github_issue_worker.application.manager import WorkerSlot
 from github_issue_worker.cli import detect_workers, main, normalize_issue, normalize_repository
 from github_issue_worker.configuration import load
@@ -182,13 +184,13 @@ def test_detection_finds_portable_profiles_claudelocal_and_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     portable = tmp_path / "ClaudeCodePortable" / "profiles"
-    tool(portable / "default" / "npm-global" / "bin" / "claude")
-    tool(portable / "ChatGPTCodex" / "npm-global" / "bin" / "codex")
+    tool(portable_tool(portable / "default", "claude"))
+    tool(portable_tool(portable / "ChatGPTCodex", "codex"))
     (portable / "ChatGPTCodex" / ".tool").write_text("codex", encoding="utf-8")
-    tool(portable / "GoogleGemini" / ".local" / "bin" / "agy")
+    tool(portable_tool(portable / "GoogleGemini", "antigravity"))
     (portable / "GoogleGemini" / ".tool").write_text("antigravity", encoding="utf-8")
-    tool(tmp_path / "ClaudeLocal" / "claude.sh")
-    tool(tmp_path / "bin" / "opencode")
+    tool(tmp_path / "ClaudeLocal" / ("Claude.bat" if sys.platform == "win32" else "claude.sh"))
+    tool(tmp_path / "bin" / ("opencode.cmd" if sys.platform == "win32" else "opencode"))
     monkeypatch.setenv("PATH", str(tmp_path / "bin"))
 
     found = {(w["name"], w["agent"], w["installation"]["type"]) for w in detect_workers(tmp_path)}

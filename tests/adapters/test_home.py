@@ -24,7 +24,7 @@ def test_a_configured_home_wins(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_tools_run_with_the_account_home() -> None:
     base = {"HOME": "/home/me/ClaudeCodePortable/profiles/default", "PATH": "/usr/bin"}
     env = tool_environment(Path("/home/me"), base=base, platform="linux")
-    assert env["HOME"] == "/home/me"
+    assert env["HOME"] == str(Path("/home/me"))
     assert env["PATH"] == "/usr/bin"
 
 
