@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import secrets
-from collections.abc import AsyncIterator
 from typing import Annotated, Any
 from urllib.parse import parse_qsl
 
@@ -15,7 +13,6 @@ from fastapi.responses import (
     JSONResponse,
     PlainTextResponse,
     RedirectResponse,
-    StreamingResponse,
 )
 
 from github_issue_worker.application.history import SplitBy
@@ -115,21 +112,18 @@ def create_app(backend: Backend) -> FastAPI:
     def settings(notice: str = "") -> str:
         return pages.settings_page(backend.snapshot().manager_id, backend.config(), notice)
 
-    @app.get("/events")
-    async def events() -> StreamingResponse:
-        async def stream() -> AsyncIterator[str]:
-            last = ""
-            while True:
-                snapshot = backend.snapshot()
-                digest = hashlib.sha1(
-                    repr((snapshot.workers, snapshot.claims, snapshot.repositories)).encode()
-                ).hexdigest()
-                if digest != last:
-                    last = digest
-                    yield f"data: {digest}\n\n"
-                await asyncio.sleep(2)
+    @app.get("/events", response_class=PlainTextResponse)
+    def events() -> str:
+        """A digest of what the live pages show; it changes when they should refresh.
 
-        return StreamingResponse(stream(), media_type="text/event-stream")
+        A short request the page polls, not a stream: a stream per open tab used up the
+        browser's few connections per host, so a click on any button waited forever. A plain
+        ``def`` runs in the thread pool, so a slow snapshot never stalls the server's loop.
+        """
+        snapshot = backend.snapshot()
+        return hashlib.sha1(
+            repr((snapshot.workers, snapshot.claims, snapshot.repositories)).encode()
+        ).hexdigest()
 
     # --- settings --------------------------------------------------------------------------------
 

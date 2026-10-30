@@ -56,3 +56,20 @@ def test_times_tick_and_the_page_refreshes_in_the_background(
     page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
     page.wait_for_function("window.fetched > 0")
     assert page.evaluate("window.untouched") is True  # refreshed in place, not reloaded
+
+
+def test_buttons_answer_with_many_tabs_open(browser: Browser, server: UiServer) -> None:
+    # Browsers allow six connections per host; a stream held open by every tab used them up and
+    # a click on Pause or Resume never got through.
+    context = browser.new_context(reduced_motion="reduce")
+    for _ in range(7):
+        context.new_page().goto(server.url + "/workers")
+    page = context.new_page()
+    page.goto(server.url + "/workers")
+    with page.expect_navigation(timeout=5000):
+        page.click("form[action='/workers/local/pause'] button")
+    assert "local takes no new issue until resumed" in page.inner_text("main")
+    with page.expect_navigation(timeout=5000):
+        page.click("form[action='/workers/local/resume'] button")
+    assert "local takes issues again" in page.inner_text("main")
+    context.close()

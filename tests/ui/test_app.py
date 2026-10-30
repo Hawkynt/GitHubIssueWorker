@@ -498,3 +498,13 @@ def test_live_fragments_carry_the_managers_clock_and_ticking_times(client: TestC
     assert 'data-since="2026-10-30T13:57:00+00:00">23m<' in cockpit  # claude on #214 for 23m
     assert "data-until=" in cockpit  # antigravity's usage limit counts down
     assert "<time data-clock>" in cockpit
+
+
+def test_the_change_digest_is_a_short_answer_that_follows_the_workers(
+    client: TestClient,
+) -> None:
+    before = client.get("/events")
+    assert before.status_code == 200 and len(before.text) == 40
+    assert client.get("/events").text == before.text
+    client.post("/workers/local/pause")
+    assert client.get("/events").text != before.text

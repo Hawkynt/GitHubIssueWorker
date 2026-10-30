@@ -483,7 +483,21 @@ LIVE = """
       busy = false;
     }
   };
-  if (window.EventSource) new EventSource("/events").onmessage = refresh;
+  // Ask every 3 s whether anything changed; refresh at once if so, and every 15 s anyway.
+  let digest = "";
+  const changed = async () => {
+    if (document.hidden) return;
+    try {
+      const response = await fetch("/events", { cache: "no-store" });
+      const now = response.ok ? await response.text() : digest;
+      if (digest && now !== digest) refresh();
+      digest = now;
+    } catch (error) {
+      // the manager is restarting
+    }
+  };
+  changed();
+  setInterval(changed, 3000);
   setInterval(refresh, 15000);
   document.addEventListener("visibilitychange", () => document.hidden || refresh());
 })();
