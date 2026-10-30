@@ -273,6 +273,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   smoke/CI/nightly/release workflows in the house Python dialect, README checked by `repo-readme`.
 - [x] 🟥 **F0.2** Package skeleton (`pyproject.toml`, `src/github_issue_worker`, `tests/`) that is
   `ruff`/`mypy --strict` clean and tests green, with a `github-issue-worker --version` entry point.
+  Both `--version` and its short alias `-V` print the same product name and version and exit with 0.
 - [ ] 🟥 **F0.3** Configuration loads from the platform path or `--config`, validates every key, and
   reports an invalid key by its JSON path. Unknown keys are an error, not ignored.
 - [ ] 🟥 **F0.4** Structured log to console plus one log file per repository and per issue run.
