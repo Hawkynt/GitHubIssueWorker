@@ -12,7 +12,7 @@ import sys
 import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from github_issue_worker.adapters.home import account_home
 from github_issue_worker.adapters.installations import EXECUTABLES
@@ -26,7 +26,11 @@ from github_issue_worker.configuration import (
     load,
     save,
 )
+from github_issue_worker.ports.github import GhUnavailable
 from github_issue_worker.product import NAME, version
+
+if TYPE_CHECKING:
+    from github_issue_worker.wiring import Runtime
 
 _REPOSITORY = re.compile(
     r"^(?:https?://github\.com/|git@github\.com:)?(?P<owner>[A-Za-z0-9-]+)/(?P<name>[A-Za-z0-9._-]+?)"
@@ -41,6 +45,7 @@ class _Host(Protocol):
 
 
 HostFactory = Callable[[str], _Host]
+RuntimeFactory = Callable[[Configuration, Path, Path | None, Path | None], "Runtime"]
 
 
 def normalize_repository(text: str) -> str:
@@ -182,11 +187,21 @@ def _workers(config: Configuration, path: Path, args: argparse.Namespace, home: 
     return 0
 
 
-def _watch(config: Configuration, args: argparse.Namespace, home: Path) -> int:
+def _watch(
+    config: Configuration, args: argparse.Namespace, home: Path, runtime_factory: RuntimeFactory
+) -> int:
     from github_issue_worker.adapters.process import terminate_all
-    from github_issue_worker.wiring import build_runtime
 
-    runtime = build_runtime(config, home, *_dirs(args))
+    runtime = runtime_factory(config, home, *_dirs(args))
+    # The login is proven by the adapter the manager polls through, not by a second `gh` (F0.5).
+    try:
+        runtime.api.request("GET", "user")
+    except GhUnavailable:
+        print(
+            "gh cannot reach GitHub as your account: run 'gh auth login' and start again",
+            file=sys.stderr,
+        )
+        return 2
     manager = runtime.manager()
     for watch in manager.repositories:
         watch.host.ensure_worker_labels()
@@ -293,6 +308,12 @@ def _work(config: Configuration, args: argparse.Namespace, home: Path) -> int:
     return 0 if verdict.kind in ("merged", "needs-input", "awaiting-review", "paused") else 1
 
 
+def _build_runtime() -> RuntimeFactory:
+    from github_issue_worker.wiring import build_runtime
+
+    return build_runtime
+
+
 def _dirs(args: argparse.Namespace) -> tuple[Path | None, Path | None]:
     state = args.state_dir / "state.json" if args.state_dir else None
     return state, args.cache_dir
@@ -342,6 +363,7 @@ def main(
     argv: Sequence[str] | None = None,
     host_factory: HostFactory | None = None,
     home: Path | None = None,
+    runtime_factory: RuntimeFactory | None = None,
 ) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -376,7 +398,7 @@ def main(
         if args.command == "workers":
             return _workers(config, path, args, home)
         if args.command == "watch":
-            return _watch(config, args, home)
+            return _watch(config, args, home, runtime_factory or _build_runtime())
         if args.command == "status":
             return _status(config, args, home)
         if args.command == "release":
