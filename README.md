@@ -605,7 +605,9 @@ not a second program: what the UI changes, the manager does, with the same check
 Every page wears the cockpit's deck: one dark look whatever the system's colour scheme, its
 sections as panels, and the overview pages (Issues, Repositories, Fleet) open with readouts counted
 from what the page lists. The deck boots with one animated sequence, keeps still for anyone who
-prefers reduced motion, and a live refresh never replays it.
+prefers reduced motion, and a live refresh never replays it. A link that leads out of the UI, to an issue,
+a branch or a repository on GitHub, opens in a new tab and leaves the UI where it was; the UI's own
+pages open in the same tab.
 
 It updates live (server-sent events), needs no build step, and binds to loopback only. Binding to
 another address requires `ui.token`, which every request must then carry, and the UI refuses to save
@@ -1130,6 +1132,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
   prefix, alphabetical), by keyboard and mouse. The list comes from `GET /user/repos`, read in the
   background when the UI starts and kept in memory for 10 minutes; a stale, empty or failed read
   never blocks the page or the add, which stays verified as in F1.1/F1.2. The demo completes too.
+- [x] 🟧 **F14.17** Every link that leaves the UI (an `http(s)` link: issues, branches and
+  repositories on GitHub) opens in a new tab, `target="_blank"` with `rel="noopener noreferrer"`, on
+  every page and live fragment; links to the UI's own pages open in the same tab.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
 - [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
