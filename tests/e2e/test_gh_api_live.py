@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from github_issue_worker.adapters.gh_api import GhApi
+from github_issue_worker.application.github_host import GitHubHost
 from github_issue_worker.ports.github import GitHubError
 
 pytestmark = pytest.mark.e2e
@@ -32,3 +33,11 @@ def test_a_missing_issue_is_a_404() -> None:
     with pytest.raises(GitHubError) as caught:
         GhApi().request("GET", f"{REPOSITORY}/issues/999999")
     assert caught.value.status == 404
+
+
+def test_sub_issues_are_listed_by_the_live_endpoint() -> None:
+    # Read-only: creating sub-issues on every CI run would litter the repository with issues.
+    host = GitHubHost(GhApi(), REPOSITORY.removeprefix("repos/"))
+    children = host.sub_issues(33)
+    assert isinstance(children, list)
+    assert all(child.number != 33 for child in children)

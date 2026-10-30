@@ -74,6 +74,7 @@ class RepositoryRun:
     test: str | None
     forbidden_words: tuple[str, ...] = DEFAULT_FORBIDDEN_WORDS
     max_prose_lines: int = 2
+    split_issues: bool = True
 
     @property
     def gate(self) -> CommitGate:
@@ -99,6 +100,7 @@ def repository_run(config: Configuration, repository: RepositorySettings) -> Rep
         test=pick("test"),  # type: ignore[arg-type]
         forbidden_words=tuple(pick("forbidden_words")),  # type: ignore[arg-type]
         max_prose_lines=int(pick("max_prose_lines")),  # type: ignore[call-overload]
+        split_issues=bool(pick("split_issues")),
     )
 
 
@@ -240,6 +242,7 @@ class Runtime:
                 ci_repair_attempts=run.ci_repair_attempts,
                 checks_timeout=timedelta(seconds=run.checks_timeout),
                 gate=run.gate,
+                split_issues=run.split_issues,
             ),
             progress=lambda step: setattr(slot, "step", step),
         ).run(handle, issue, comments, kind)

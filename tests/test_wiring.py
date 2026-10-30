@@ -446,3 +446,17 @@ def test_a_worker_runs_as_many_instances_as_its_account_allows(tmp_path: Path) -
     names = {slot.name: slot for slot in runtime.slots}
     assert set(names) == {"claude", "claude.2"}  # claude.3 went at once
     assert not names["claude.2"].enabled  # finishes its run, then takes nothing new
+
+
+def test_splitting_is_on_by_default_and_can_be_switched_off_per_repository() -> None:
+    config = parse(
+        json.dumps(
+            {"repositories": [{"repository": "o/a"}, {"repository": "o/b", "splitIssues": False}]}
+        )
+    )
+    assert repository_run(config, config.repositories[0]).split_issues is True
+    assert repository_run(config, config.repositories[1]).split_issues is False
+    off = parse(
+        json.dumps({"defaults": {"splitIssues": False}, "repositories": [{"repository": "o/a"}]})
+    )
+    assert repository_run(off, off.repositories[0]).split_issues is False

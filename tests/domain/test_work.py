@@ -106,7 +106,7 @@ def test_a_released_hand_off_continues_without_new_input() -> None:
     assert pending_run(context(claim=held(ClaimState.RELEASED))) is RunKind.CONTINUATION
 
 
-@pytest.mark.parametrize("step", ["needs-input", "awaiting-review", "failed"])
+@pytest.mark.parametrize("step", ["needs-input", "awaiting-review", "failed", "split"])
 def test_a_waiting_issue_waits_for_a_new_trusted_comment(step: str) -> None:
     waiting = held(ClaimState.RELEASED, step=step, consumed=10)
     assert pending_run(context(claim=waiting)) is None

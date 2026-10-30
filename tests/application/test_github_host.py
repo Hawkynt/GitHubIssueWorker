@@ -160,3 +160,38 @@ def test_open_issues_leave_pull_requests_out() -> None:
         {("GET", f"repos/{REPO}/issues"): [issue, {**issue, "number": 4, "pull_request": {}}]}
     )
     assert [found.number for found in gh.open_issues()] == [3]
+
+
+ISSUE_JSON = {
+    "number": 40,
+    "title": "Export CSV",
+    "body": "b",
+    "state": "closed",
+    "state_reason": "completed",
+    "user": {"login": "Hawkynt", "type": "User"},
+    "labels": [],
+    "created_at": "2026-10-30T12:00:00Z",
+    "updated_at": "2026-10-30T12:00:00Z",
+}
+
+
+def test_a_sub_issue_is_created_with_its_labels_and_attached_to_its_parent() -> None:
+    created = {**ISSUE_JSON, "id": 9001, "state": "open", "state_reason": None}
+    gh, api = host({("POST", f"repos/{REPO}/issues"): created})
+    assert gh.create_sub_issue(33, "Export CSV", "b", ["agent:codex", "worker:queued"]) == 40
+    assert api.calls[0] == (
+        "POST",
+        f"repos/{REPO}/issues",
+        {"title": "Export CSV", "body": "b", "labels": ["agent:codex", "worker:queued"]},
+    )
+    assert api.calls[1] == ("POST", f"repos/{REPO}/issues/33/sub_issues", {"sub_issue_id": 9001})
+
+
+def test_sub_issues_are_listed_with_why_they_were_closed() -> None:
+    gh, _ = host({("GET", f"repos/{REPO}/issues/33/sub_issues"): [ISSUE_JSON]})
+    (child,) = gh.sub_issues(33)
+    assert (child.number, child.state, child.state_reason) == (40, "closed", "completed")
+
+
+def test_the_split_label_is_one_of_the_worker_labels() -> None:
+    assert "worker:split" in WORKER_LABELS

@@ -25,6 +25,13 @@ from github_issue_worker.application.poller import PollResult, PollState
 from github_issue_worker.domain.claim import ClaimState, Holder
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.model_name import display_model
+from github_issue_worker.domain.split import (
+    SPLIT_LABEL,
+    merged_pull,
+    parent_of,
+    split_finished,
+    split_summary,
+)
 from github_issue_worker.domain.trust import is_trusted
 from github_issue_worker.domain.work import RunKind, WorkContext, new_input, pending_run
 from github_issue_worker.ports.claims import ClaimStore
@@ -181,6 +188,12 @@ class Manager:
     def _consider(self, watch: RepositoryWatch, number: int, since: datetime) -> None:
         now = self.clock.now()
         issue = self._issue(watch, number)
+        parent = parent_of(issue)
+        if issue.state == "closed" and parent is not None:
+            self._finish_split(watch, parent)
+        elif SPLIT_LABEL in issue.labels:
+            self._finish_split(watch, number)
+            issue = self._issue(watch, number)
         stored = watch.store.read(number)
         claim = stored.claim if stored else None
 
@@ -264,6 +277,26 @@ class Manager:
                     return
                 handle = watch.coordinator.resume(handle)
             self._start(watch, slot, handle, issue, new_input(context), RunKind.CONTINUATION)
+
+    def _finish_split(self, watch: RepositoryWatch, number: int) -> None:
+        """Close a split parent once every sub-issue is completed (F4.6)."""
+        parent = watch.host.issue(number)
+        self._known[(watch.name, number)] = parent
+        if parent.state != "open" or SPLIT_LABEL not in parent.labels:
+            return
+        children = watch.host.sub_issues(number)
+        if not split_finished(children):
+            return
+        pulls = {
+            child.number: pull
+            for child in children
+            if (pull := merged_pull(watch.host.comments(child.number)))
+        }
+        watch.host.comment(number, split_summary(children, pulls))
+        watch.host.close_issue(number)
+        watch.host.set_worker_label(number, None)
+        self._labelled.pop((watch.name, number), None)
+        log.info("%s#%d: every sub-issue is done, closed", watch.name, number)
 
     # --- workers -------------------------------------------------------------------------------
 

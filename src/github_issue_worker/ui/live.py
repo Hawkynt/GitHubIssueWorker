@@ -16,6 +16,10 @@ from github_issue_worker.application.coordinator import ClaimHandle
 from github_issue_worker.application.github_host import GitHubHost
 from github_issue_worker.application.history import RunRecord
 from github_issue_worker.application.manager import Manager, WorkerSlot
+from github_issue_worker.application.repository_suggestions import (
+    PushableRepositories,
+    pushable_repositories,
+)
 from github_issue_worker.configuration import ClaudeLocalInstallation, Configuration, save
 from github_issue_worker.domain.issue import Issue
 from github_issue_worker.domain.model_name import display_model
@@ -51,6 +55,7 @@ _LABEL_STATES = (
     ("worker:awaiting-review", "waiting for review or CI"),
     ("worker:failed", "failed; its last comment says why"),
     ("worker:unserved", "no worker can serve it"),
+    ("worker:split", "split; waiting for its sub-issues"),
     ("worker:queued", "waiting for a worker"),
 )
 
@@ -105,6 +110,8 @@ class RuntimeBackend:
         self._history_at = 0.0
         self._claims_at = 0.0
         self._refreshing = threading.Lock()
+        self._pushable = PushableRepositories(lambda: pushable_repositories(self._runtime.api))
+        self._pushable.refresh()
 
     # --- reading ---------------------------------------------------------------------------------
 
@@ -249,6 +256,9 @@ class RuntimeBackend:
 
     def config(self) -> Configuration:
         return self._runtime.config
+
+    def pushable_repositories(self) -> tuple[str, ...]:
+        return self._pushable.names()
 
     # --- changing --------------------------------------------------------------------------------
 

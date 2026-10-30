@@ -13,7 +13,7 @@ from github_issue_worker.domain.issue import Actor, Comment, Issue
 
 SKIP_LABEL = "worker:skip"
 OPT_IN_LABEL = "worker"
-WAITING_STEPS = frozenset({"needs-input", "awaiting-review", "failed"})
+WAITING_STEPS = frozenset({"needs-input", "awaiting-review", "failed", "split"})
 """Steps of a released claim that wait for a person rather than for a worker."""
 
 

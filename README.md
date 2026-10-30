@@ -193,8 +193,8 @@ from now, `2026-11-06 10:00 UTC (in 6d 23h)`.
 Generated from the UI's demo scenario (`github-issue-worker ui --demo`) on every branch push, so they
 always show the current UI with the same believable sample fleet.
 
-**Issues**, the start page. Every open issue in the watched repositories, what is happening with
-it in words, and who works it: a worker of this machine with its model and step, which you can
+**Issues**, the start page. Readouts on top (open, worked here, worked elsewhere, waiting), then
+every open issue in the watched repositories, what is happening with it in words, and who works it: a worker of this machine with its model and step, which you can
 pause, stop & release (the agent is killed and the issue freed) or watch, or a worker of another
 manager, marked remote.
 
@@ -220,13 +220,13 @@ runs, and their output, refreshed as it goes.
 
 ![The log of a worker: messages, commands and their output](docs/screenshots/log.png)
 
-**Repositories.** The watch list with per-repository overrides; a repository is added only when
-your account can push to it.
+**Repositories.** Readouts for the watch list, then one panel per repository with its overrides; a
+repository is added only when your account can push to it.
 
 ![Repositories page with three watched repositories](docs/screenshots/repositories.png)
 
-**Fleet.** Every claim in the watched repositories, this manager's and other managers', with step,
-renewal and expiry. Releasing another manager's claim needs the issue typed out.
+**Fleet.** Readouts for the claims, then every claim in the watched repositories, this manager's and
+other managers', one panel per repository, with step, renewal and expiry. Releasing another manager's claim needs the issue typed out.
 
 ![Fleet page with claims from this and two other managers](docs/screenshots/fleet.png)
 
@@ -249,6 +249,9 @@ stateDiagram-v2
   Unserved --> Queued: an eligible worker appears
   Triage --> Working: restated and labelled, restatement posted
   Triage --> NeedsInput: too vague to start
+  Triage --> Split: large, with independent parts
+  Split --> Done: every sub-issue completed
+  Split --> Queued: trusted comment
   Working --> NeedsInput: question or design decision
   Working --> Paused: agent hit its usage limit
   Paused --> Working: limit reset, or an idle local worker takes over
@@ -279,6 +282,7 @@ The next worker resumes from the last checkpoint.
 | NeedsInput | `worker:needs-input` | no | A question is in the issue. Work is checkpointed, so whoever claims the answer continues from it. |
 | AwaitingReview | `worker:awaiting-review` | no | PR is green but the ruleset requires an approving review. |
 | Failed | `worker:failed` | no | Gave up. The last comment says why and what was tried. |
+| Split | `worker:split` | no | Split into sub-issues that are worked on their own. Closed as soon as every sub-issue is completed. |
 | Done | — | no | PR merged, issue closed with a summary comment, local and remote leftovers removed. |
 
 Only states that are actively being worked hold a claim. An issue waiting for a human or a review
@@ -308,6 +312,18 @@ understand this issue") together with the labels, before any code is written. It
 is then measured against, and a comment correcting it is new input like any other. The issue text
 itself stays as its author wrote it. A request that cannot be restated without guessing becomes a
 question instead.
+
+**Splitting a large issue.** The understanding run may also split a large issue into GitHub
+sub-issues, when it has two or more parts that can each be implemented, tested and merged on their
+own, in any order. Parts that have to be done one after the other are not split: the issue is worked
+as one. The manager creates the sub-issues, each with a link to the parent, its own scenarios, the
+parent's `agent:*`, `needs:*` and `priority:*` labels and `worker:queued`, so idle workers on any
+machine take them in parallel. The parent gets its restatement, is labelled `worker:split` and
+releases its claim; nothing is implemented on it. Once every sub-issue is closed as completed, a
+manager closes the parent with one comment listing the sub-issues and their pull requests. A
+sub-issue closed as not planned leaves the parent open for you. Sub-issues are never split again,
+and a manager that crashed half-way reuses the sub-issues that already exist instead of creating
+them twice. `splitIssues: false` turns splitting off.
 
 The manager then hands the issue to its worker's agent with a fixed working contract, and checks
 the result itself instead of trusting the report. The contract, in order:
@@ -597,10 +613,17 @@ not a second program: what the UI changes, the manager does, with the same check
 | Page | Shows | Lets you |
 | --- | --- | --- |
 | **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
-| **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), edit its per-repository overrides, remove one. |
+| **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), with the box completing the owner and then, after the `/`, that owner's repositories your account can push to and does not watch yet; the list is read in the background and kept in memory for 10 minutes. Edit its per-repository overrides, remove one. |
 | **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
 | **Issue** | One issue's runs, the journal, the outcome, the log tail, and the claim's history. | Skip it, release it, open the PR. |
+
+Every page wears the cockpit's deck: one dark look whatever the system's colour scheme, its
+sections as panels, and the overview pages (Issues, Repositories, Fleet) open with readouts counted
+from what the page lists. The deck boots with one animated sequence, keeps still for anyone who
+prefers reduced motion, and a live refresh never replays it. A link that leads out of the UI, to an issue,
+a branch or a repository on GitHub, opens in a new tab and leaves the UI where it was; the UI's own
+pages open in the same tab.
 
 It updates live (server-sent events), needs no build step, and binds to loopback only. Binding to
 another address requires `ui.token`, which every request must then carry, and the UI refuses to save
@@ -668,7 +691,8 @@ first, and a moved UI listener reopens on its new address.
     "createMissingLabels": false,
     "maxActiveIssuesPerRepository": 4,
     "runTimeout": "02:00:00",
-    "checksTimeout": "02:00:00"
+    "checksTimeout": "02:00:00",
+    "splitIssues": true
   },
   "repositories": [
     { "repository": "Hawkynt/ShiftDiff" },
@@ -712,6 +736,7 @@ first, and a moved UI listener reopens on its new address.
 | `runTimeout` | 2 h | Wall-clock limit of one agent run. |
 | `checksTimeout` | 2 h | How long a mergeable-looking pull request may wait for required checks or a review before it is labelled `worker:awaiting-review` and released. |
 | `build` / `test` | detected | Verification commands. Detected from `AGENTS.md`/`CONTRIBUTING.md`, then from the stack (`*.sln[x]`, `package.json`, `pyproject.toml`, `Cargo.toml`, …). |
+| `splitIssues` | `true` | Let the understanding run split a large issue with independent parts into sub-issues that are worked in parallel. |
 | `maxProseLines` | 2 | Commit body lines allowed besides change lines (`+ - * # !` and a space, or their indented continuation). More, and the commit is sent back to be rewritten as change lines. |
 | `forbiddenWords` | agent and vendor names | Case-insensitive whole-word regular-expression fragments the commit gate refuses (`claude`, `anthropic`, `codex`, `openai`, `gemini`, `antigravity`, `opencode`, `llm`, `agents?`). `AI` as a word, `generated with` and 🤖 stay forbidden whatever this list says. |
 
@@ -860,6 +885,12 @@ operational items, demonstrated on a real repository. Commits that implement an 
   marked comment before any work starts, and every later run's prompt carries it as the agreed
   understanding. The issue text itself is never edited. A request too vague to restate becomes a
   question instead (F8). An existing restatement is reused, not posted again.
+- [ ] 🟧 **F4.6** With `splitIssues` on, the understanding run may split a large issue whose parts
+  are independent into GitHub sub-issues (outcome `subIssues`, at least two). Each sub-issue links
+  the parent, carries its scenarios, inherits `agent:*`, `needs:*` and `priority:*` and is queued;
+  the parent is labelled `worker:split`, its claim released, and it is closed with a summary once
+  every sub-issue is completed (not when one is not planned). Sub-issues are never split again,
+  existing ones are reused after a crash, and sequential work is never split.
 
 ### F5 — Workspace
 
@@ -1115,6 +1146,19 @@ operational items, demonstrated on a real repository. Commits that implement an 
   controls.
 - [x] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
   without one.
+- [x] 🟧 **F14.15** One deck for every page: Issues, Repositories, Fleet, Settings, the worker form
+  and the Log share the cockpit's dark deck in light and dark schemes, their sections are panels,
+  Issues, Repositories and Fleet open with readouts that agree with their rows, change hints stay
+  distinct on the deck, nothing animates under reduced motion, a live refresh does not replay the
+  boot, and every page fits a 390 px wide screen.
+- [x] 🟧 **F14.16** The Repositories page's add box completes as you type: owners first, after the
+  `/` that owner's repositories the account can push to and does not watch yet (case-insensitive
+  prefix, alphabetical), by keyboard and mouse. The list comes from `GET /user/repos`, read in the
+  background when the UI starts and kept in memory for 10 minutes; a stale, empty or failed read
+  never blocks the page or the add, which stays verified as in F1.1/F1.2. The demo completes too.
+- [x] 🟧 **F14.17** Every link that leaves the UI (an `http(s)` link: issues, branches and
+  repositories on GitHub) opens in a new tab, `target="_blank"` with `rel="noopener noreferrer"`, on
+  every page and live fragment; links to the UI's own pages open in the same tab.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
 - [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.

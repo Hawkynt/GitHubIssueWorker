@@ -14,6 +14,7 @@ WORKER_LABELS = {
     "worker:needs-input": ("d93f0b", "A question is in the issue"),
     "worker:awaiting-review": ("5319e7", "The pull request waits for a review or required checks"),
     "worker:failed": ("b60205", "The worker gave up; the last comment says why"),
+    "worker:split": ("0e8a16", "Split into sub-issues; closed once every one is completed"),
     "worker:unserved": ("c5def5", "No worker can serve this issue's routing labels"),
     "worker:skip": ("000000", "Never worked by the issue worker"),
 }
@@ -69,3 +70,8 @@ class RepositoryHost(Protocol):
 
     def delete_branch(self, branch: str) -> None: ...
     def close_issue(self, issue: int) -> None: ...
+    def create_sub_issue(self, parent: int, title: str, body: str, labels: list[str]) -> int:
+        """Open an issue and attach it to ``parent`` as a sub-issue; returns its number."""
+        ...
+
+    def sub_issues(self, parent: int) -> list[Issue]: ...

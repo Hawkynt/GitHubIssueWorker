@@ -12,7 +12,10 @@ from github_issue_worker.application.manager import Manager, RepositoryWatch, Wo
 from github_issue_worker.application.poller import PollResult, PollState
 from github_issue_worker.domain.claim import ClaimPolicy, ClaimState, Holder
 from github_issue_worker.domain.issue import Actor, Comment, Issue
+from github_issue_worker.domain.outcome import SubIssue
+from github_issue_worker.domain.split import sub_issue_body
 from github_issue_worker.domain.work import RunKind
+from github_issue_worker.product import MARKER_PREFIX
 from tests.application.run_fakes import FakeHost
 from tests.fakes import FakeClock, InMemoryClaimStore
 
@@ -329,3 +332,64 @@ def test_an_accounts_cap_counts_every_instance_on_it() -> None:
     assert sorted(run.issue for run in f.runs) == [1, 2]
     assert f.host.worker_label[3] == "worker:queued"
     assert {run.worker for run in f.runs} <= {"claude", "claude.2", "codex"}
+
+
+def split_parent(f: Fixture, *children: Issue) -> None:
+    """Issue 1 was split into ``children``: labelled, its claim released with step split."""
+    f.host.issues[1] = issue(1, frozenset({"worker:split"}))
+    f.host.worker_label[1] = "worker:split"
+    claim = POLICY.new_claim(1, Holder(ME, "claude"), T0, "issue/1-x")
+    f.store.force_create(claim.replace(state=ClaimState.RELEASED, step="split"))
+    for child in children:
+        f.host.issues[child.number] = child
+        f.host.children.setdefault(1, []).append(child.number)
+
+
+def sub_issue(number: int, state: str = "open", reason: str | None = None) -> Issue:
+    body = sub_issue_body(1, SubIssue(f"Part {number}", "", ()))
+    return replace(issue(number), body=body, state=state, state_reason=reason)  # type: ignore[arg-type]
+
+
+def test_a_split_parent_waits_while_a_sub_issue_is_open() -> None:
+    f = Fixture([slot("claude")])
+    split_parent(f, sub_issue(2, "closed", "completed"), sub_issue(3))
+    f.polls.append(PollResult(issues=(f.host.issues[1], f.host.issues[2])))
+    f.manager.tick()
+    assert f.runs == []
+    assert f.host.posted == [] and f.host.closed == []
+    assert f.host.worker_label[1] == "worker:split"
+
+
+def test_a_split_parent_closes_when_its_last_sub_issue_is_completed() -> None:
+    f = Fixture([slot("claude")])
+    split_parent(f, sub_issue(2, "closed", "completed"), sub_issue(3, "closed", "completed"))
+    merged = f"Merged in https://x/pull/50 (m1).\n\n{MARKER_PREFIX}comment -->"
+    f.host.issue_comments.append(Comment(70, 3, OWNER, merged, T0, T0))
+    f.polls.append(PollResult(issues=(f.host.issues[3],)))
+    f.manager.tick()
+
+    assert f.runs == []
+    assert f.host.closed == [1]
+    ((number, summary),) = f.host.posted
+    assert number == 1 and "#2" in summary and "#3" in summary
+    assert "https://x/pull/50" in summary
+    assert f.host.worker_label[1] is None
+
+
+def test_a_sub_issue_not_planned_leaves_the_parent_to_a_person() -> None:
+    f = Fixture([slot("claude")])
+    split_parent(f, sub_issue(2, "closed", "completed"), sub_issue(3, "closed", "not_planned"))
+    f.polls.append(PollResult(issues=(f.host.issues[3],)))
+    f.manager.tick()
+    assert f.host.closed == [] and f.host.posted == []
+    assert f.host.worker_label[1] == "worker:split"
+
+
+def test_a_trusted_comment_on_a_split_parent_queues_a_rework_run() -> None:
+    f = Fixture([slot("claude")])
+    split_parent(f, sub_issue(2, "closed", "not_planned"))
+    note = Comment(80, 1, OWNER, "Do part 2 here after all.", T0, T0)
+    f.host.issue_comments.append(note)
+    f.polls.append(PollResult(comments=(note,)))
+    f.manager.tick()
+    assert f.runs == [Recorded("claude", 1, RunKind.REWORK)]

@@ -84,8 +84,12 @@ def capture_screenshots(backend: Backend, directory: Path) -> list[Path]:
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
+            # Reduced motion shows the deck as it settles: readouts at their value, not counting.
             page = browser.new_page(
-                viewport={"width": 1280, "height": 820}, color_scheme="light", locale="en-US"
+                viewport={"width": 1280, "height": 820},
+                color_scheme="light",
+                locale="en-US",
+                reduced_motion="reduce",
             )
             for name, path, whole in SCREENSHOTS:
                 page.goto(server.url + path, wait_until="networkidle")
