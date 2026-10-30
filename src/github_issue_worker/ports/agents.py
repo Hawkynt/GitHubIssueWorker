@@ -34,6 +34,8 @@ class Invocation:
     stdin: str = ""
     env: Mapping[str, str] = field(default_factory=dict)
     """Variables to set on top of the scrubbed environment."""
+    shell: bool = False
+    """``argv[0]`` is one command line for the platform's shell, passed to it verbatim."""
 
 
 @dataclass(frozen=True, slots=True)
