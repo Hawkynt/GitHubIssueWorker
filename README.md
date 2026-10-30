@@ -265,12 +265,17 @@ Every agent is driven through the same contract, so agents are interchangeable m
 - **Signals:** an adapter turns the agent's own output into *progress*, *cost*, *session id* and
   *usage limit* events. Usage-limit detection is the part that differs most between vendors. See
   [Usage limits](#-usage-limits).
+- **No permission prompts.** A headless run has nobody to answer a prompt, so every adapter starts
+  its agent with prompts switched off: `--dangerously-skip-permissions` for `claude` and `agy`,
+  `--dangerously-bypass-approvals-and-sandbox` for `codex`, all permissions allowed in the run's own
+  configuration for `opencode`. What keeps the agent from acting outward is its environment, not a
+  prompt (see Security).
 
 | Agent kind | Invocation | Continues a conversation with | Native schema | Limit signal |
 | --- | --- | --- | :---: | --- |
-| `claude` | `claude -p --output-format stream-json --verbose` | `--session-id` / `--resume` | `--json-schema` | `rate_limit_event` (`status`, `resetsAt`), `api_error: usage_limit_reached` |
-| `codex` | `codex exec --json` | `codex exec resume <id>` | `--output-schema` | `error` / `turn.failed` message text, "try again at …" |
-| `antigravity` | `agy -p --output-format stream-json`, under a pseudo-terminal | `--conversation <uuid>` | — | message and log text |
+| `claude` | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions` | `--session-id` / `--resume` | `--json-schema` | `rate_limit_event` (`status`, `resetsAt`), `api_error: usage_limit_reached` |
+| `codex` | `codex exec --json --dangerously-bypass-approvals-and-sandbox` | `codex exec resume <id>` | `--output-schema` | `error` / `turn.failed` message text, "try again at …" |
+| `antigravity` | `agy -p --output-format stream-json --dangerously-skip-permissions`, under a pseudo-terminal | `--conversation <uuid>` | — | message and log text |
 | `opencode` | `opencode run --format json`, model as `provider/model` | `--session <id>` | — | provider error events |
 | `command` | any CLI, from a configured argument template | template-defined | — | configured patterns + exit code |
 | `remote` | a vendor's cloud agent: submit, poll, collect the diff | vendor-defined | — | vendor API |
@@ -605,9 +610,14 @@ untrusted until proven otherwise:
   and cached per poll cycle, because an association of `COLLABORATOR` alone can mean read-only), or
   the login is in `trustedUsers`. Bots are never trusted. Anyone else's text is never put into a
   prompt, including as context for a trusted comment.
-- **No agent can reach outward.** Every agent run is denied `git push`, `gh`, and the GitHub API
-  where the agent supports tool restrictions, and runs without a GitHub token either way. Pushing,
-  claiming, commenting, labelling and merging are done by the manager after its own checks.
+- **No agent can reach outward.** Runs have no permission prompts, so the boundary is the
+  environment: no GitHub token and no `GH_CONFIG_DIR`, no `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND` set to
+  fail, the worktree's push URL disabled, and deny rules for `git push` and `gh` where the agent
+  honours them even without prompts (Claude). A push that slips through anyway is caught: the manager
+  pushes the issue branch with `--force-with-lease` against the commit it expects, so a foreign
+  commit on the branch aborts the run and is reported. Pushing, claiming, commenting, labelling and
+  merging are done by the manager after its own checks. An agent can still read files your account
+  can read, including keys, which is why a dedicated OS user or container is recommended below.
 - **No secrets in the worktree.** The run's environment is scrubbed of `GH_TOKEN`, `GITHUB_TOKEN`,
   `GH_CONFIG_DIR` and the manager's own credentials, so an agent cannot reach `gh`'s login either. No
   token is ever written to disk, logs, checkpoints or claims.
@@ -743,8 +753,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
   description.
 - [ ] 🟥 **F6.3** The [working contract](#-how-an-issue-is-worked) (SDD → BDD → DDD → TDD) and the
   journal duty are part of every implementation prompt.
-- [ ] 🟥 **F6.4** Every agent is denied `git push`, `gh` and GitHub API access where it supports tool
-  restrictions, and every agent's environment carries no GitHub token.
+- [ ] 🟥 **F6.4** Every agent runs without permission prompts and without outward credentials: no
+  `GH_TOKEN`/`GITHUB_TOKEN`/`GH_CONFIG_DIR`/`SSH_AUTH_SOCK`, `GIT_SSH_COMMAND` failing, the worktree's
+  push URL disabled, and deny rules for `git push` and `gh` where the agent honours them. Tested: a
+  fake agent that tries `git push` and `gh api` in its run fails at both, and a commit pushed to the
+  issue branch behind the manager's back aborts the run.
 - [ ] 🟥 **F6.5** Each adapter switches its agent's own attribution off where the agent has one
   (Claude: `--settings`), so no co-author trailer or footer is added. The commit gate (F7.1) catches
   whatever an agent adds anyway.
@@ -868,17 +881,18 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F12.2** One manager runs all its workers concurrently, each in its own worktree and
   process, with a crash or hang of one worker never affecting another (tested with four fake agents,
   one of which hangs and one of which crashes).
-- [ ] 🟥 **F12.3** `claude` adapter: `claude -p --output-format stream-json --verbose`,
-  `--session-id`/`--resume`, `--json-schema`, `--max-budget-usd`, `--model`, attribution off, tool
-  restrictions for push/`gh`.
-- [ ] 🟥 **F12.4** `codex` adapter: `codex exec --json`, `codex exec resume <id>`, `--output-schema`,
-  workspace-write sandbox, `--model`.
-- [ ] 🟥 **F12.5** `antigravity` adapter: `agy -p --output-format stream-json`, `--conversation`,
-  `--mode accept-edits`, run under a pseudo-terminal because `agy -p` can lose its output without a
-  TTY.
+- [ ] 🟥 **F12.3** `claude` adapter: `claude -p --output-format stream-json --verbose
+  --dangerously-skip-permissions`, `--session-id`/`--resume`, `--json-schema`, `--max-budget-usd`,
+  `--model`, attribution off, deny rules for `git push` and `gh`.
+- [ ] 🟥 **F12.4** `codex` adapter: `codex exec --json --dangerously-bypass-approvals-and-sandbox`,
+  `codex exec resume <id>`, `--output-schema`, `--model`.
+- [ ] 🟥 **F12.5** `antigravity` adapter: `agy -p --output-format stream-json
+  --dangerously-skip-permissions`, `--conversation`, run under a pseudo-terminal because `agy -p`
+  can lose its output without a TTY.
 - [ ] 🟧 **F12.6** `opencode` adapter: `opencode run --format json`, `--session`, `--model
-  provider/model`, for models behind any provider OpenCode supports, local ones included. Tested
-  against a fake replaying captured OpenCode output; verified against a real installation in F15.8.
+  provider/model`, with every permission allowed in the run's own configuration, for models behind
+  any provider OpenCode supports, local ones included. Tested against a fake replaying captured
+  OpenCode output; verified against a real installation in F15.8.
 - [ ] 🟥 **F12.7** `command` adapter: argument template with `{prompt}`, `{worktree}`, `{outcome}`,
   `{session}` placeholders, configured limit patterns and exit codes, for any further CLI agent.
 - [ ] 🟥 **F12.8** `workers` command: list workers with agent, installation, version, account,
