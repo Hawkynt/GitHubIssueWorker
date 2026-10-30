@@ -2,7 +2,7 @@
   "branch": "issue/22-webui-change-hints",
   "claimedAt": "2026-10-30T16:38:19Z",
   "consumedThrough": {
-    "comment": null,
+    "comment": 6528052692,
     "review": null
   },
   "expiresAt": "2026-11-06T16:43:37Z",
@@ -13,8 +13,8 @@
   },
   "issue": 22,
   "pausedUntil": null,
-  "renewedAt": "2026-10-30T16:43:37Z",
-  "state": "working",
-  "step": "needs-input",
+  "renewedAt": "2026-10-30T16:44:48Z",
+  "state": "done",
+  "step": "done",
   "takeovers": 0
 }
