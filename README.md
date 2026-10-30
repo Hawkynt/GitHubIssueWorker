@@ -22,7 +22,7 @@
 > (Claude, Codex, Antigravity, OpenCode, local or cloud) share the work without doing anything twice
 > or leaving an issue stranded.
 
-![The Issues page: every open issue, who works it on which model, here or remote](docs/screenshots/issues.png)
+![The Workers page: each worker's agent, model, issue and step at a glance](docs/screenshots/workers.png)
 
 ## 🧭 Vision
 

@@ -2,7 +2,8 @@ name: Generate
 
 # Regenerates the UI screenshots from the demo scenario on every push to a working branch and
 # commits the changed images straight back onto that branch (F14.7). The commits go through the
-# contents API, so GitHub signs them, and they cannot trigger another push workflow.
+# contents API, so GitHub signs them, and they cannot trigger another push workflow; for an open
+# pull request CI is then dispatched on the generated head.
 on:
   push:
     branches-ignore: [main, master]
@@ -60,3 +61,28 @@ jobs:
         with:
           file: docs/screenshots/settings.png
           message: '* refresh the settings page screenshot'
+
+  # A commit made with the workflow token cannot start another workflow, so the pull request's
+  # checks would stay on the head before the screenshots. Run CI on the generated head explicitly.
+  trigger-ci:
+    name: Run CI on the generated head
+    needs: screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch CI for this branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          branch="$GITHUB_REF_NAME"
+          generated_head=$(gh api "repos/$GITHUB_REPOSITORY/branches/$branch" --jq '.commit.sha')
+          if [ "$generated_head" = "$GITHUB_SHA" ]; then
+            exit 0
+          fi
+          open_prs=$(gh api --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=open -f head="${GITHUB_REPOSITORY_OWNER}:$branch" --jq 'length')
+          if [ "$open_prs" -eq 0 ]; then
+            exit 0
+          fi
+          gh workflow run ci.yml --ref "$branch"
