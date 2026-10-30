@@ -5,12 +5,15 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 from github_issue_worker.adapters.workspace import CommitInfo, PushRejected
-from github_issue_worker.domain.issue import Comment, Issue
+from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.ports.agents import AgentRun, RunReport
 from github_issue_worker.ports.repository import Check, PullRequest, RepositoryInfo
+
+NOW = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
 
 
 @dataclass
@@ -32,6 +35,8 @@ class FakeHost:
     deleted_branches: list[str] = field(default_factory=list)
     closed: list[int] = field(default_factory=list)
     head_of: dict[str, str] = field(default_factory=dict)
+    children: dict[int, list[int]] = field(default_factory=dict)
+    """Sub-issue numbers per parent, in the order they were attached."""
 
     def info(self) -> RepositoryInfo:
         return RepositoryInfo("main", True, ("squash", "merge"))
@@ -96,6 +101,18 @@ class FakeHost:
 
     def close_issue(self, issue: int) -> None:
         self.closed.append(issue)
+
+    def create_sub_issue(self, parent: int, title: str, body: str, labels: list[str]) -> int:
+        number = max([*self.issues, 0]) + 1
+        author = self.issues[parent].author if parent in self.issues else Actor("Hawkynt")
+        self.issues[number] = Issue(
+            number, title, body, "open", author, frozenset(labels), False, NOW, NOW
+        )
+        self.children.setdefault(parent, []).append(number)
+        return number
+
+    def sub_issues(self, parent: int) -> list[Issue]:
+        return [self.issue(number) for number in self.children.get(parent, [])]
 
 
 @dataclass
