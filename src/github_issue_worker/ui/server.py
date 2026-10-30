@@ -30,12 +30,27 @@ class UiServer:
     """uvicorn in a background thread, so the manager's loop keeps the main thread."""
 
     def __init__(self, backend: Backend, host: str, port: int) -> None:
-        config = uvicorn.Config(create_app(backend), host=host, port=port, log_level="warning")
-        self._server = uvicorn.Server(config)
+        self._config = uvicorn.Config(
+            create_app(backend), host=host, port=port, log_level="warning"
+        )
+        self._server = uvicorn.Server(self._config)
         self._thread = threading.Thread(target=self._server.run, daemon=True)
         self.url = f"http://{'localhost' if host in ('127.0.0.1', '::1') else host}:{port}"
 
-    def start(self, timeout: float = 10) -> bool:
+    def start(self, timeout: float = 10, wait_for_port: float = 0, retry: float = 1.0) -> bool:
+        """Serve; while the port is still taken (a manager that is just stopping), keep trying
+        for up to ``wait_for_port`` seconds."""
+        give_up = time.monotonic() + wait_for_port
+        while True:
+            if self._attempt(timeout):
+                return True
+            if time.monotonic() + retry > give_up:
+                return False
+            time.sleep(retry)
+            self._server = uvicorn.Server(self._config)
+            self._thread = threading.Thread(target=self._server.run, daemon=True)
+
+    def _attempt(self, timeout: float) -> bool:
         self._thread.start()
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:

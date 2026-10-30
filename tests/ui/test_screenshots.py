@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
+import socket
+import threading
 from pathlib import Path
 
 import pytest
 
 from github_issue_worker.ui.demo import DemoBackend
-from github_issue_worker.ui.server import SCREENSHOTS, capture_screenshots
+from github_issue_worker.ui.server import SCREENSHOTS, UiServer, capture_screenshots, free_port
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 README = ROOT / "README.md"
@@ -55,3 +57,19 @@ def test_every_page_is_captured_from_the_demo_scenario(tmp_path: Path) -> None:
     assert {path.name for path in written} == _captured()
     for path in written:
         assert path.stat().st_size > 10_000, path.name
+
+
+@pytest.mark.slow  # a real socket and a real server, about a second
+def test_the_ui_waits_for_a_port_that_is_still_taken() -> None:
+    # A restarted manager must not give up its UI because the old one still holds the port.
+    port = free_port()
+    held = socket.socket()
+    held.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    held.bind(("127.0.0.1", port))
+    held.listen()
+    threading.Timer(0.4, held.close).start()
+    server = UiServer(DemoBackend(), "127.0.0.1", port)
+    try:
+        assert server.start(wait_for_port=10, retry=0.2)
+    finally:
+        server.stop()

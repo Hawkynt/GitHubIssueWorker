@@ -274,7 +274,7 @@ def _start_ui(runtime: Any, manager: Any, path: Path) -> Any:
 
     ui = runtime.config.ui
     server = UiServer(RuntimeBackend(runtime, manager, path, detect_workers), ui.bind, ui.port)
-    if server.start():
+    if server.start(wait_for_port=60):
         print(f"  ui: {server.url}")
         return server
     print(f"  ui: could not listen on {ui.bind}:{ui.port}; running without it", file=sys.stderr)
