@@ -156,8 +156,8 @@ from now, `2026-11-06 10:00 UTC (in 6d 23h)`.
 Generated from the UI's demo scenario (`github-issue-worker ui --demo`) on every branch push, so they
 always show the current UI with the same believable sample fleet.
 
-**Issues**, the start page. Every open issue in the watched repositories, what is happening with
-it in words, and who works it: a worker of this machine with its model and step, which you can
+**Issues**, the start page. Readouts on top (open, worked here, worked elsewhere, waiting), then
+every open issue in the watched repositories, what is happening with it in words, and who works it: a worker of this machine with its model and step, which you can
 pause, stop & release (the agent is killed and the issue freed) or watch, or a worker of another
 manager, marked remote.
 
@@ -181,13 +181,13 @@ runs, and their output, refreshed as it goes.
 
 ![The log of a worker: messages, commands and their output](docs/screenshots/log.png)
 
-**Repositories.** The watch list with per-repository overrides; a repository is added only when
-your account can push to it.
+**Repositories.** Readouts for the watch list, then one panel per repository with its overrides; a
+repository is added only when your account can push to it.
 
 ![Repositories page with three watched repositories](docs/screenshots/repositories.png)
 
-**Fleet.** Every claim in the watched repositories, this manager's and other managers', with step,
-renewal and expiry. Releasing another manager's claim needs the issue typed out.
+**Fleet.** Readouts for the claims, then every claim in the watched repositories, this manager's and
+other managers', one panel per repository, with step, renewal and expiry. Releasing another manager's claim needs the issue typed out.
 
 ![Fleet page with claims from this and two other managers](docs/screenshots/fleet.png)
 
@@ -559,6 +559,11 @@ not a second program: what the UI changes, the manager does, with the same check
 | **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
 | **Issue** | One issue's runs, the journal, the outcome, the log tail, and the claim's history. | Skip it, release it, open the PR. |
+
+Every page wears the cockpit's deck: one dark look whatever the system's colour scheme, its
+sections as panels, and the overview pages (Issues, Repositories, Fleet) open with readouts counted
+from what the page lists. The deck boots with one animated sequence, keeps still for anyone who
+prefers reduced motion, and a live refresh never replays it.
 
 It updates live (server-sent events), needs no build step, and binds to loopback only. Binding to
 another address requires `ui.token`, which every request must then carry, and the UI refuses to save
@@ -1068,6 +1073,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
   link to the branch on GitHub. Other managers' workers form a remote row without controls.
 - [x] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
   without one.
+- [x] 🟧 **F14.15** One deck for every page: Issues, Repositories, Fleet, Settings, the worker form
+  and the Log share the cockpit's dark deck in light and dark schemes, their sections are panels,
+  Issues, Repositories and Fleet open with readouts that agree with their rows, change hints stay
+  distinct on the deck, nothing animates under reduced motion, a live refresh does not replay the
+  boot, and every page fits a 390 px wide screen.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
 - [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
