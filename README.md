@@ -210,6 +210,9 @@ stateDiagram-v2
   Unserved --> Queued: an eligible worker appears
   Triage --> Working: restated and labelled, restatement posted
   Triage --> NeedsInput: too vague to start
+  Triage --> Split: large, with independent parts
+  Split --> Done: every sub-issue completed
+  Split --> Queued: trusted comment
   Working --> NeedsInput: question or design decision
   Working --> Paused: agent hit its usage limit
   Paused --> Working: limit reset, or an idle local worker takes over
@@ -240,6 +243,7 @@ The next worker resumes from the last checkpoint.
 | NeedsInput | `worker:needs-input` | no | A question is in the issue. Work is checkpointed, so whoever claims the answer continues from it. |
 | AwaitingReview | `worker:awaiting-review` | no | PR is green but the ruleset requires an approving review. |
 | Failed | `worker:failed` | no | Gave up. The last comment says why and what was tried. |
+| Split | `worker:split` | no | Split into sub-issues that are worked on their own. Closed as soon as every sub-issue is completed. |
 | Done | — | no | PR merged, issue closed with a summary comment, local and remote leftovers removed. |
 
 Only states that are actively being worked hold a claim. An issue waiting for a human or a review
@@ -269,6 +273,18 @@ understand this issue") together with the labels, before any code is written. It
 is then measured against, and a comment correcting it is new input like any other. The issue text
 itself stays as its author wrote it. A request that cannot be restated without guessing becomes a
 question instead.
+
+**Splitting a large issue.** The understanding run may also split a large issue into GitHub
+sub-issues, when it has two or more parts that can each be implemented, tested and merged on their
+own, in any order. Parts that have to be done one after the other are not split: the issue is worked
+as one. The manager creates the sub-issues, each with a link to the parent, its own scenarios, the
+parent's `agent:*`, `needs:*` and `priority:*` labels and `worker:queued`, so idle workers on any
+machine take them in parallel. The parent gets its restatement, is labelled `worker:split` and
+releases its claim; nothing is implemented on it. Once every sub-issue is closed as completed, a
+manager closes the parent with one comment listing the sub-issues and their pull requests. A
+sub-issue closed as not planned leaves the parent open for you. Sub-issues are never split again,
+and a manager that crashed half-way reuses the sub-issues that already exist instead of creating
+them twice. `splitIssues: false` turns splitting off.
 
 The manager then hands the issue to its worker's agent with a fixed working contract, and checks
 the result itself instead of trusting the report. The contract, in order:
@@ -631,7 +647,8 @@ first, and a moved UI listener reopens on its new address.
     "createMissingLabels": false,
     "maxActiveIssuesPerRepository": 4,
     "runTimeout": "02:00:00",
-    "checksTimeout": "02:00:00"
+    "checksTimeout": "02:00:00",
+    "splitIssues": true
   },
   "repositories": [
     { "repository": "Hawkynt/ShiftDiff" },
@@ -675,6 +692,7 @@ first, and a moved UI listener reopens on its new address.
 | `runTimeout` | 2 h | Wall-clock limit of one agent run. |
 | `checksTimeout` | 2 h | How long a mergeable-looking pull request may wait for required checks or a review before it is labelled `worker:awaiting-review` and released. |
 | `build` / `test` | detected | Verification commands. Detected from `AGENTS.md`/`CONTRIBUTING.md`, then from the stack (`*.sln[x]`, `package.json`, `pyproject.toml`, `Cargo.toml`, …). |
+| `splitIssues` | `true` | Let the understanding run split a large issue with independent parts into sub-issues that are worked in parallel. |
 | `maxProseLines` | 2 | Commit body lines allowed besides change lines (`+ - * # !` and a space, or their indented continuation). More, and the commit is sent back to be rewritten as change lines. |
 | `forbiddenWords` | agent and vendor names | Case-insensitive whole-word regular-expression fragments the commit gate refuses (`claude`, `anthropic`, `codex`, `openai`, `gemini`, `antigravity`, `opencode`, `llm`, `agents?`). `AI` as a word, `generated with` and 🤖 stay forbidden whatever this list says. |
 
@@ -823,6 +841,12 @@ operational items, demonstrated on a real repository. Commits that implement an 
   marked comment before any work starts, and every later run's prompt carries it as the agreed
   understanding. The issue text itself is never edited. A request too vague to restate becomes a
   question instead (F8). An existing restatement is reused, not posted again.
+- [ ] 🟧 **F4.6** With `splitIssues` on, the understanding run may split a large issue whose parts
+  are independent into GitHub sub-issues (outcome `subIssues`, at least two). Each sub-issue links
+  the parent, carries its scenarios, inherits `agent:*`, `needs:*` and `priority:*` and is queued;
+  the parent is labelled `worker:split`, its claim released, and it is closed with a summary once
+  every sub-issue is completed (not when one is not planned). Sub-issues are never split again,
+  existing ones are reused after a crash, and sequential work is never split.
 
 ### F5 — Workspace
 
