@@ -40,3 +40,19 @@ def test_a_switch_redraws_only_its_own_chart(browser: Browser, server: UiServer)
     assert page.evaluate("window.untouched") is True
     assert page.url.endswith("?by=agent&days=30&time=model")
     assert "Claude Opus 5.5" in page.inner_text("#time")  # the other chart kept its split
+
+
+def test_times_tick_and_the_page_refreshes_in_the_background(
+    browser: Browser, server: UiServer
+) -> None:
+    page = browser.new_page(reduced_motion="reduce")
+    page.goto(server.url + "/workers")
+    clock = page.inner_text("[data-clock]")
+    page.wait_for_function(f"document.querySelector('[data-clock]').textContent !== '{clock}'")
+    page.evaluate(
+        "window.untouched = true; window.fetched = 0; const f = window.fetch;"
+        "window.fetch = (...a) => { window.fetched++; return f(...a); }"
+    )
+    page.evaluate("document.dispatchEvent(new Event('visibilitychange'))")
+    page.wait_for_function("window.fetched > 0")
+    assert page.evaluate("window.untouched") is True  # refreshed in place, not reloaded
