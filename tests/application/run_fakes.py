@@ -11,7 +11,7 @@ from pathlib import Path
 from github_issue_worker.adapters.workspace import CommitInfo, PushRejected
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.ports.agents import AgentRun, RunReport
-from github_issue_worker.ports.repository import Check, PullRequest, RepositoryInfo
+from github_issue_worker.ports.repository import Check, PullRequest, RepositoryInfo, WaitingRun
 
 NOW = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
 
@@ -38,6 +38,9 @@ class FakeHost:
     children: dict[int, list[int]] = field(default_factory=dict)
     remote_branches: list[str] = field(default_factory=list)
     branch_pulls: dict[str, list[PullRequest]] = field(default_factory=dict)
+    approvals: list[list[WaitingRun]] = field(default_factory=lambda: [[]])
+    """Runs waiting for approval in successive calls; the last answer repeats."""
+    approved: list[int] = field(default_factory=list)
     """Sub-issue numbers per parent, in the order they were attached."""
 
     def info(self) -> RepositoryInfo:
@@ -104,6 +107,12 @@ class FakeHost:
         self.deleted_branches.append(branch)
         if branch in self.remote_branches:
             self.remote_branches.remove(branch)
+
+    def waiting_for_approval(self, sha: str) -> list[WaitingRun]:
+        return self.approvals.pop(0) if len(self.approvals) > 1 else self.approvals[0]
+
+    def approve_run(self, run: int) -> None:
+        self.approved.append(run)
 
     def branches(self, prefix: str) -> list[str]:
         return [branch for branch in self.remote_branches if branch.startswith(prefix)]

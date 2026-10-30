@@ -39,6 +39,9 @@ class WorkerView:
     merge_conflict: bool = False
     group: str = ""
     """The configured worker this is an instance of (``claude`` for ``claude.2``)."""
+    blocker: str = ""
+    """What its run waits on that only a person can do; empty when nothing."""
+    blocker_url: str = ""
 
     @property
     def worker(self) -> str:
@@ -127,6 +130,13 @@ class Backend(Protocol):
     def detect_workers(self) -> list[dict[str, object]]: ...
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None: ...
+
+    def approve_ci(self, name: str) -> None:
+        """Approve the CI runs the worker's pull request waits for.
+
+        Raises `ActionError` when nothing waits for an approval.
+        """
+        ...
 
     def stop_worker(self, name: str) -> None:
         """Kill the worker's agent, release its issue and pause it (F14.4).

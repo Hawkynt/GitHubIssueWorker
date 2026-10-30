@@ -126,6 +126,8 @@ WORKERS = (
         worktree="~/.cache/GitHubIssueWorker/acme/billing-cli/issues/88",
         since=NOW - timedelta(hours=1, minutes=4),
         group="codex",
+        blocker="CI (CI) waits for approval to run",
+        blocker_url="https://github.com/acme/billing-cli/actions/runs/9120391",
     ),
     WorkerView("codex.2", "Codex", "openai-plus", "GPT 6.1 Sol", "idle", group="codex"),
     *(
@@ -263,7 +265,7 @@ ISSUES: tuple[IssueView, ...] = (
         "acme/billing-cli",
         88,
         "Invoices round VAT per line instead of per total",
-        "worked here",
+        "blocked: CI (CI) waits for approval to run",
         "codex",
         MANAGER,
         True,
@@ -435,6 +437,7 @@ class DemoBackend:
         self._workers = list(WORKERS)
         self.stopped: list[str] = []
         self.opened: list[str] = []
+        self.approved: list[str] = []
         self._history = demo_history()
 
     def snapshot(self) -> Snapshot:
@@ -497,6 +500,13 @@ class DemoBackend:
 
     def release(self, repository: str, issue: int, force: bool) -> None:
         return None
+
+    def approve_ci(self, name: str) -> None:
+        worker = next((w for w in self._workers if w.name == name), None)
+        if worker is None or not worker.blocker:
+            raise ActionError(f"{name} has no CI run waiting for an approval")
+        self.approved.append(name)
+        self._workers = [replace(w, blocker="") if w.name == name else w for w in self._workers]
 
     def stop_worker(self, name: str) -> None:
         worker = next((w for w in self._workers if w.name == name), None)

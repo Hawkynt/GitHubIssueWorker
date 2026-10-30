@@ -247,6 +247,7 @@ class Runtime:
             ),
             progress=lambda step: setattr(slot, "step", step),
             conflict_changed=lambda conflict: setattr(slot, "merge_conflict", conflict),
+            blocked=lambda blocker: setattr(slot, "blocker", blocker),
         ).run(handle, issue, comments, kind)
 
     def _new_log(self, slot: WorkerSlot, repository: str, issue: int) -> Path:

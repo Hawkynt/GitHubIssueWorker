@@ -36,7 +36,7 @@ from github_issue_worker.domain.trust import is_trusted
 from github_issue_worker.domain.work import RunKind, WorkContext, new_input, pending_run
 from github_issue_worker.ports.claims import ClaimStore
 from github_issue_worker.ports.clock import Clock
-from github_issue_worker.ports.repository import RepositoryHost
+from github_issue_worker.ports.repository import Blocker, RepositoryHost
 
 log = logging.getLogger(__name__)
 
@@ -77,6 +77,8 @@ class WorkerSlot:
     """Where the current (or last) agent run of this worker writes its output."""
     worker: str = ""
     """The configured worker this slot is an instance of; empty means the slot's own name."""
+    blocker: Blocker | None = None
+    """What the current run waits on that only a person can do, such as approving CI."""
 
     @property
     def group(self) -> str:
@@ -414,6 +416,7 @@ class Manager:
                     slot.started_at = None
                     slot.branch = None
                     slot.step = None
+                    slot.blocker = None
                 self._record(
                     watch, slot, issue, kind, "crashed" if crashed else verdict.kind, started
                 )

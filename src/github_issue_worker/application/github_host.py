@@ -13,6 +13,7 @@ from github_issue_worker.ports.repository import (
     Check,
     PullRequest,
     RepositoryInfo,
+    WaitingRun,
 )
 from github_issue_worker.product import MARKER_PREFIX
 
@@ -194,6 +195,20 @@ class GitHubHost:
         except GitHubError as error:
             if error.status != 422:  # already gone
                 raise
+
+    def waiting_for_approval(self, sha: str) -> list[WaitingRun]:
+        data = self.api.request(
+            "GET",
+            self._path("actions/runs"),
+            params={"head_sha": sha, "status": "action_required", "per_page": "100"},
+        ).body
+        return [
+            WaitingRun(int(run["id"]), str(run.get("name") or "workflow"), run.get("html_url", ""))
+            for run in (data or {}).get("workflow_runs", [])
+        ]
+
+    def approve_run(self, run: int) -> None:
+        self.api.request("POST", self._path(f"actions/runs/{run}/approve"))
 
     def branches(self, prefix: str) -> list[str]:
         refs = self.api.request("GET", self._path(f"git/matching-refs/heads/{prefix}")).body
