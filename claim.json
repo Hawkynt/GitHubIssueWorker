@@ -1,0 +1,20 @@
+{
+  "branch": "issue/41-model-coloring",
+  "claimedAt": "2026-10-30T19:11:33Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-06T19:11:33Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "codex.2"
+  },
+  "issue": 41,
+  "pausedUntil": null,
+  "renewedAt": "2026-10-30T19:11:33Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
