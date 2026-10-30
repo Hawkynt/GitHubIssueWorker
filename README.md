@@ -119,7 +119,9 @@ real home directory, taken from the operating system's user database rather than
 launchers such as ClaudeCodePortable and ClaudeLocal relocate `HOME` into a profile, and there `gh`
 reports "not logged into any GitHub hosts". `manager.home` overrides the directory, and an explicit
 `GH_CONFIG_DIR` or `GH_TOKEN` works as it does for `gh` itself. Agents do not get it: inside a run
-there is no GitHub access at all (see Security).
+there is no GitHub access at all (see Security). `watch` checks the login with one request before it
+polls anything, so an account that is not logged in stops there with `gh auth login` instead of
+failing somewhere inside the first poll.
 
 ## 🚀 Quick start
 
@@ -665,7 +667,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
   headers (`ETag`, `Date`, rate limit, `Retry-After`) and body are parsed from `gh api -i`, including
   `304` and error responses, which `gh` reports with a non-zero exit. `gh` and networked `git` run
   with the account's home from the OS user database (or `manager.home`), never a relocated `HOME`.
-  `gh auth status` failing at start stops the manager with the command that fixes it.
+  One `GET user` through the adapter at start proves the login: when `gh` cannot answer it, the
+  manager stops before polling with the command that fixes it (`gh auth login`).
 - [ ] 🟥 **F0.6** Start-up preflight: `git` and `gh` are found and runnable, every worker's
   installation answers a version probe (a worker that does not is *unavailable* with the reason, and
   the manager runs with the rest), and commit signing is configured when a watched repository's
