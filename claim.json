@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-06T14:58:14Z",
+  "expiresAt": "2026-11-06T15:08:48Z",
   "generation": 1,
   "holder": {
     "manager": "trial-87aa",
@@ -13,7 +13,7 @@
   },
   "issue": 9,
   "pausedUntil": null,
-  "renewedAt": "2026-10-30T14:58:14Z",
+  "renewedAt": "2026-10-30T15:08:48Z",
   "state": "working",
   "step": "triage",
   "takeovers": 0
