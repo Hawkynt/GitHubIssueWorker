@@ -350,3 +350,14 @@ def test_the_pr_the_squash_commit_and_the_comment_are_change_lines_not_prose(
     assert (
         all(line in merged_comment for line in lines) and "paragraph of prose" not in merged_comment
     )
+
+
+def test_a_run_that_finds_its_pull_request_merges_under_that_title(tmp_path: Path) -> None:
+    # A continuation after a restart did not open the PR itself; its squash subject is still the
+    # PR's change line, not the bare issue title.
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
+    h.host.head_of["issue/42-retry-on-timeout"] = "old"
+    h.host.create_pull_request("issue/42-retry-on-timeout", "main", "+ Retry on timeout", "")
+    assert h.run().kind == "merged"
+    ((title, _),) = h.host.merge_messages
+    assert title == "+ Retry on timeout (#100)"

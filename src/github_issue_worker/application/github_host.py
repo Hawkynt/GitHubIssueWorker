@@ -26,6 +26,7 @@ def _pull(data: dict[str, Any]) -> PullRequest:
         url=data.get("html_url", ""),
         mergeable_state=str(data.get("mergeable_state") or "unknown"),
         merged=bool(data.get("merged")),
+        title=str(data.get("title") or ""),
     )
 
 

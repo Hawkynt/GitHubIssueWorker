@@ -35,6 +35,7 @@ class PullRequest:
     mergeable_state: str
     """GitHub's view: clean, unstable, blocked, behind, dirty, unknown, ..."""
     merged: bool = False
+    title: str = ""
 
 
 @dataclass(frozen=True, slots=True)
