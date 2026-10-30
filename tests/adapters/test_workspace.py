@@ -150,3 +150,14 @@ def test_no_identity_anywhere_is_an_error(
     workspace = Workspace(cache=tmp_path / "c2", remote_url=lambda r: str(remote), home=tmp_path)
     with pytest.raises(WorkspaceError, match=r"user\.name"):
         workspace.clone(REPO)
+
+
+def test_remove_also_drops_branches_an_agent_left_behind(workspace: Workspace) -> None:
+    kept = workspace.worktree(REPO, issue=7, branch="issue/7-kept", base="main")
+    gone = workspace.worktree(REPO, issue=8, branch="issue/8-gone", base="main")
+    git("branch", "backup/issue8-before-rebase", cwd=gone)
+    workspace.remove(REPO, 8, "issue/8-gone")
+    branches = git("branch", "--format=%(refname:short)", cwd=kept).split()
+    assert "issue/8-gone" not in branches and "backup/issue8-before-rebase" not in branches
+    assert "issue/7-kept" in branches  # still checked out in its worktree
+    assert workspace.worktrees(REPO) == {7: "issue/7-kept"}

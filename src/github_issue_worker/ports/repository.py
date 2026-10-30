@@ -36,6 +36,8 @@ class PullRequest:
     """GitHub's view: clean, unstable, blocked, behind, dirty, unknown, ..."""
     merged: bool = False
     title: str = ""
+    state: str = "open"
+    """``open`` or ``closed``; a merged pull request is closed."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +72,14 @@ class RepositoryHost(Protocol):
         ...
 
     def delete_branch(self, branch: str) -> None: ...
+    def branches(self, prefix: str) -> list[str]:
+        """Names of the remote branches that start with ``prefix``."""
+        ...
+
+    def pull_requests_for(self, branch: str) -> list[PullRequest]:
+        """Every pull request, open or closed, whose head is ``branch``."""
+        ...
+
     def close_issue(self, issue: int) -> None: ...
     def create_sub_issue(self, parent: int, title: str, body: str, labels: list[str]) -> int:
         """Open an issue and attach it to ``parent`` as a sub-issue; returns its number."""

@@ -25,6 +25,7 @@ from github_issue_worker.adapters.workspace import Workspace
 from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.github_host import GitHubHost
 from github_issue_worker.application.history import HistoryStore, RunRecord
+from github_issue_worker.application.housekeeping import Housekeeping
 from github_issue_worker.application.issue_run import IssueRun, RunSettings, RunStopped, Verdict
 from github_issue_worker.application.manager import (
     Manager,
@@ -376,6 +377,9 @@ class Runtime:
             spawn=lambda job: threading.Thread(target=job, daemon=True).start(),
             on_finished=self.record,
             max_runs=self.max_runs,
+            sweep=lambda watch, mine, claimed: Housekeeping(watch.host, self.workspace).sweep(
+                mine, claimed
+            ),
         )
 
 

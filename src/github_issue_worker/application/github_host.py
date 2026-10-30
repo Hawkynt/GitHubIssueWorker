@@ -27,6 +27,7 @@ def _pull(data: dict[str, Any]) -> PullRequest:
         mergeable_state=str(data.get("mergeable_state") or "unknown"),
         merged=bool(data.get("merged")),
         title=str(data.get("title") or ""),
+        state=str(data.get("state") or "open"),
     )
 
 
@@ -193,6 +194,19 @@ class GitHubHost:
         except GitHubError as error:
             if error.status != 422:  # already gone
                 raise
+
+    def branches(self, prefix: str) -> list[str]:
+        refs = self.api.request("GET", self._path(f"git/matching-refs/heads/{prefix}")).body
+        return [str(ref["ref"]).removeprefix("refs/heads/") for ref in refs or []]
+
+    def pull_requests_for(self, branch: str) -> list[PullRequest]:
+        owner = self.repository.split("/", 1)[0]
+        pulls = self.api.request(
+            "GET",
+            self._path("pulls"),
+            params={"head": f"{owner}:{branch}", "state": "all", "per_page": "100"},
+        ).body
+        return [_pull(data) for data in pulls or []]
 
     def create_sub_issue(self, parent: int, title: str, body: str, labels: list[str]) -> int:
         data = self.api.request(

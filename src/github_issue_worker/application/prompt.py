@@ -45,6 +45,10 @@ stricter than this text, they win.
 
 ## Rules
 
+- Work on the branch that is checked out. Create no other branch (no backups before a rebase),
+  tag or stash: once the pull request is merged or closed, the manager deletes the branch on
+  GitHub and here, together with this worktree, to keep the disk clean, and anything kept outside
+  the branch is lost with it.
 - Commit your work in this worktree, one concern per commit. Every subject starts with one of
   `+` (added), `-` (removed), `*` (changed), `#` (bug fixed), `!` (critical todo) and a space,
   never with "fix", "bugfix", "changed", "modified" or "updated". After a blank line comes a body of
