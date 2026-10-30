@@ -92,8 +92,12 @@ class UiSettings(_Settings):
     token: str | None = None
 
 
+MAX_CONCURRENT_RUNS = 20
+"""The most issues one account's workers may run at once on one manager; there is no unlimited."""
+
+
 class AccountSettings(_Settings):
-    max_concurrent_runs: int | None = Field(default=None, ge=1)
+    max_concurrent_runs: int = Field(default=1, ge=1, le=MAX_CONCURRENT_RUNS)
 
 
 class PathInstallation(_Settings):
@@ -235,6 +239,13 @@ def _semantic_problems(config: Configuration) -> list[Problem]:
                 Problem(path=f"{at}.name", message=f"duplicate worker name {worker.name!r}")
             )
         seen.add(worker.name)
+        if re.search(r"\.\d+$", worker.name):
+            problems.append(
+                Problem(
+                    path=f"{at}.name",
+                    message=f"{worker.name!r} ends like an instance name (.2, .3, ...); rename it",
+                )
+            )
         if worker.account not in config.accounts:
             problems.append(
                 Problem(path=f"{at}.account", message=f"no account {worker.account!r} in accounts")

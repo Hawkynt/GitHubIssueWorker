@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -394,7 +395,9 @@ def test_remote_workers_get_their_own_row_with_github_branch_links_and_no_contro
     client: TestClient,
 ) -> None:
     crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
-    remote = crew.split("<h3>Remote</h3>", 1)[1]
+    remote = crew.split('aria-label="Remote"', 1)[1]
+    assert crew.count('aria-label="Remote"') == 1  # one row, a sub-row per issue held elsewhere
+    assert remote.count("class=run>") == 2
     assert "laptop-01ab" in remote and "ci-runner-03" in remote
     assert "#219 Buffer metrics while offline" in remote
     assert (
@@ -411,3 +414,24 @@ def test_opening_a_worktree_hands_it_to_the_file_manager(
     response = client.post("/workers/claude/open", headers={"referer": "http://testserver/workers"})
     assert response.status_code == 200 and backend.opened == ["claude"]
     assert "is not working on an issue" in client.post("/workers/local/open").text
+
+
+def test_a_worker_row_has_a_sub_row_per_instance_its_account_allows(client: TestClient) -> None:
+    crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
+    claude = crew.split('aria-label="claude"', 1)[1].split("class=lane", 1)[0]
+    assert claude.count("class=run>") == 3  # anthropic-max runs three at once
+    assert "2 of 3 running" in claude
+    assert "#214 Retry uploads" in claude and "#57 Export tokens" in claude
+    assert 'action="/workers/claude.2/stop"' in claude  # each instance stops on its own
+    assert claude.count('action="/workers/claude/pause"') == 1  # the worker pauses as a whole
+    codex = crew.split('aria-label="codex"', 1)[1].split("class=lane", 1)[0]
+    assert codex.count("class=run>") == 2 and "1 of 2 running" in codex
+    assert crew.count('aria-label="local"') == 1
+
+
+def test_no_remote_row_without_issues_held_elsewhere(backend: DemoBackend) -> None:
+    from github_issue_worker.ui import pages
+
+    snapshot = backend.snapshot()
+    alone = replace(snapshot, claims=tuple(c for c in snapshot.claims if c.mine))
+    assert 'aria-label="Remote"' not in pages.cockpit_fragment(alone, [])

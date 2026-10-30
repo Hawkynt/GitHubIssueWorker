@@ -1,7 +1,9 @@
 """The manager loop: poll, decide, claim, hand issues to idle workers (F3, F11.8, F11.11, F13).
 
-Each worker holds at most one claim, and claims only when it is idle, eligible for the issue, and
-its account is not limited, so nothing is reserved by a worker that cannot start it. A worker
+Each worker slot holds at most one claim, and claims only when it is idle, eligible for the issue,
+its account is not limited and below its concurrency cap, so nothing is reserved by a worker that
+cannot start it. A configured worker runs as several slots, its instances, when its account allows
+several runs at once. A worker
 whose run was paused by a usage limit keeps its issue and continues it once the reset has passed.
 """
 
@@ -37,9 +39,15 @@ class Limits(Protocol):
     def set_limited(self, account: str, until: datetime | None) -> None: ...
 
 
+def instance_name(worker: str, instance: int) -> str:
+    """The first instance carries the worker's own name, so its claims survive a resize."""
+    return worker if instance == 1 else f"{worker}.{instance}"
+
+
 @dataclass
 class WorkerSlot:
     name: str
+    """The instance's name: the worker's name, then ``<worker>.2``, ``<worker>.3``, ..."""
     agent: str
     account: str
     priority: int = 100
@@ -59,6 +67,12 @@ class WorkerSlot:
     branch: str | None = None
     log_path: Path | None = None
     """Where the current (or last) agent run of this worker writes its output."""
+    worker: str = ""
+    """The configured worker this slot is an instance of; empty means the slot's own name."""
+
+    @property
+    def group(self) -> str:
+        return self.worker or self.name
 
 
 @dataclass
@@ -99,6 +113,8 @@ class Manager:
     spawn: Callable[[Callable[[], None]], None]
     on_finished: Callable[[RunRecord], None] | None = None
     """Told about every finished run, for the long-term history the cockpit draws."""
+    max_runs: Callable[[str], int] | None = None
+    """An account's ``maxConcurrentRuns`` on this manager (F12.11); None leaves it uncapped."""
     _lock: threading.RLock = field(default_factory=threading.RLock)
     _known: dict[tuple[str, int], Issue] = field(default_factory=dict)
     _pending: dict[str, set[int]] = field(default_factory=dict)
@@ -217,7 +233,11 @@ class Manager:
             return
 
         with self._lock:
-            free = [slot for slot in eligible if self._idle(slot) and not self._limited(slot, now)]
+            free = [
+                slot
+                for slot in eligible
+                if self._idle(slot) and not self._limited(slot, now) and self._has_room(slot)
+            ]
             if not free:
                 self._pending[watch.name].add(number)
                 self._label(watch, number, "worker:queued")
@@ -261,6 +281,18 @@ class Manager:
 
     def _idle(self, slot: WorkerSlot) -> bool:
         return not slot.busy and slot.name not in self._own.values()
+
+    def _has_room(self, slot: WorkerSlot) -> bool:
+        """Below the account's cap, counting every slot on it that runs or holds a claim."""
+        if self.max_runs is None:
+            return True
+        holding = set(self._own.values())
+        used = sum(
+            1
+            for other in self.workers
+            if other.account == slot.account and (other.busy or other.name in holding)
+        )
+        return used < self.max_runs(slot.account)
 
     def _limited(self, slot: WorkerSlot, now: datetime) -> bool:
         until = self.limits.limited_until(slot.account)

@@ -23,6 +23,7 @@ from github_issue_worker.application.history import (
     weekly_mix,
 )
 from github_issue_worker.configuration import (
+    MAX_CONCURRENT_RUNS,
     AccountSettings,
     Configuration,
     DefaultsSettings,
@@ -222,7 +223,14 @@ body.deck h1 { font-size: clamp(1.8rem, 2.6vw, 2.6rem); font-weight: 250; letter
 .panel .lane:last-child { border-bottom: 0; }
 .panel .lane { border-top-color: #1a2840; }
 .stack { display: grid; gap: .6rem; }
-.run { display: grid; grid-template-columns: 1.1rem 1fr; gap: .7rem; align-items: start; }
+.run { display: grid; grid-template-columns: 7.5rem 1.1rem minmax(0, 1fr) auto; gap: .7rem;
+  align-items: start; padding: .55rem .6rem; border-radius: 10px; background: #0a12204d;
+  border: 1px solid #16233a; }
+.run .inst { color: var(--muted); font-size: 12.5px; padding-top: .15rem; overflow-wrap: anywhere;
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace; }
+.run .actions { flex-wrap: nowrap; }
+.load { color: var(--steel); font-size: 12.5px; }
+.lane.remote .name { color: #b39bff; }
 .square { display: block; width: 1.1rem; height: 1.1rem; border-radius: 4px; margin-top: .2rem;
   box-shadow: 0 0 14px currentColor; color: transparent; }
 .square.free { border: 1.5px dashed #2a3c58; box-shadow: none; }
@@ -301,7 +309,12 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
 #tip { position: fixed; z-index: 10; pointer-events: none; max-width: 24rem; padding: .4rem .7rem;
   background: #07101cf2; color: var(--ink); border: 1px solid #2a4a74; border-radius: 8px;
   font-size: 12.5px; box-shadow: 0 0 24px #4aa3ff33, 0 10px 30px #000a; backdrop-filter: blur(6px); }
-@media (max-width: 760px) { .share { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  .share { grid-template-columns: 1fr; }
+  .run { grid-template-columns: 1.1rem minmax(0, 1fr); }
+  .run .inst { grid-column: 1 / -1; }
+  .run .actions { grid-column: 2; flex-wrap: wrap; }
+}
 @media (prefers-reduced-motion: no-preference) {
   body.deck::before { animation: aurora 38s ease-in-out infinite alternate; }
   @keyframes aurora { 50% { transform: translate(4%, 3%) rotate(6deg) scale(1.08); }
@@ -520,16 +533,23 @@ def _issue_link(repository: str, number: int, title: str | None, body: str) -> s
     )
 
 
-def _run(slot: int, issue: str, track: str, facts: Iterable[str]) -> str:
-    """One issue a worker holds: its repository's coloured square, the issue, the track."""
+def _run(
+    slot: int, issue: str, track: str, facts: Iterable[str], label: str = "", actions: str = ""
+) -> str:
+    """One issue held: the instance, its repository's coloured square, the issue, the track."""
     return (
-        f'<div class=run><i class="square s{slot}" aria-hidden=true></i><div>'
-        f"<div class=issue>{issue}</div>{track}<div class=facts>{', '.join(facts)}</div></div></div>"
+        f"<div class=run><span class=inst>{e(label)}</span>"
+        f'<i class="square s{slot}" aria-hidden=true></i><div>'
+        f"<div class=issue>{issue}</div>{track}<div class=facts>{', '.join(facts)}</div></div>"
+        f"<div class=actions>{actions}</div></div>"
     )
 
 
-def _free(text: str) -> str:
-    return f'<div class=run><i class="square free" aria-hidden=true></i><div>{text}</div></div>'
+def _free(text: str, label: str = "") -> str:
+    return (
+        f"<div class=run><span class=inst>{e(label)}</span>"
+        f'<i class="square free" aria-hidden=true></i><div>{text}</div><div></div></div>'
+    )
 
 
 def _who(
@@ -542,17 +562,14 @@ def _who(
     )
 
 
-def _lane(
+def _instance(
     worker: WorkerView,
     now: datetime,
     issues: Mapping[tuple[str, int], IssueView],
     slots: Mapping[str, int],
 ) -> str:
-    who = _who(
-        worker.name,
-        f"{e(worker.agent)} on account <span class=nowrap>{e(worker.account)}</span>",
-        worker.model,
-    )
+    """One sub-row: what this instance of the worker is doing, with its own log and stop."""
+    label = worker.name
     if worker.state == "working" and worker.issue is not None and worker.repository:
         name = e(worker.name)
         facts = []
@@ -568,54 +585,80 @@ def _lane(
         issue = f"<span class=repo>{e(worker.repository)}</span> " + _issue_link(
             worker.repository, worker.issue, worker.issue_title, known.body if known else ""
         )
-        middle = _run(slots.get(worker.repository, 0), issue, _track(worker.step), facts)
-    elif worker.state == "limited" and worker.limited_until:
-        middle = _free(
+        actions = (
+            f'<a class=button href="/workers/{name}/log">Log</a>'
+            f'<form method=post action="/workers/{name}/stop"><button class=danger '
+            f'title="Kill the agent, give the issue back and pause {name}">Stop &amp; release</button></form>'
+        )
+        return _run(
+            slots.get(worker.repository, 0), issue, _track(worker.step), facts, label, actions
+        )
+    if worker.state == "limited" and worker.limited_until:
+        return _free(
             f'<span class="flag limited">Usage limit</span> '
-            f"<span class=quiet>resets {when(worker.limited_until, now)}</span>"
+            f"<span class=quiet>resets {when(worker.limited_until, now)}</span>",
+            label,
         )
-    elif worker.state == "unavailable":
-        middle = _free(
-            f'<span class="flag unavailable">Unavailable</span> <span class=quiet>{e(worker.reason)}</span>'
+    if worker.state == "unavailable":
+        return _free(
+            f'<span class="flag unavailable">Unavailable</span> <span class=quiet>{e(worker.reason)}</span>',
+            label,
         )
-    elif worker.state == "paused":
-        middle = _free(
-            '<span class="flag paused">Paused</span> <span class=quiet>takes no new issue</span>'
+    if worker.state == "paused":
+        return _free(
+            '<span class="flag paused">Paused</span> <span class=quiet>takes no new issue</span>',
+            label,
         )
-    else:
-        middle = _free("<span class=quiet>Idle, waiting for an issue.</span>")
+    return _free("<span class=quiet>Idle, waiting for an issue.</span>", label)
 
-    actions = _worker_actions(worker) + f'<a class=button href="/workers/{e(worker.name)}">Edit</a>'
+
+def _agent_row(
+    instances: Sequence[WorkerView],
+    now: datetime,
+    issues: Mapping[tuple[str, int], IssueView],
+    slots: Mapping[str, int],
+) -> str:
+    """A configured worker with one sub-row per instance its account lets run at once."""
+    first = instances[0]
+    group = e(first.worker)
+    running = sum(1 for instance in instances if instance.state == "working")
+    model = next((i.model for i in instances if i.model and i.model != "-"), first.model)
+    who = _who(
+        first.worker,
+        f"{e(first.agent)} on account <span class=nowrap>{e(first.account)}</span>"
+        f"<br><span class=load>{running} of {len(instances)} running</span>",
+        model,
+    )
+    paused = all(instance.state == "paused" for instance in instances)
+    toggle = "resume" if paused else "pause"
+    actions = (
+        f'<form method=post action="/workers/{group}/{toggle}"><button>{toggle.capitalize()}</button></form>'
+        f'<a class=button href="/workers/{group}">Edit</a>'
+    )
+    rows = "".join(_instance(instance, now, issues, slots) for instance in instances)
     return (
-        f'<div class=lane role=group aria-label="{e(worker.name)}"><div>{who}</div>'
-        f"<div class=stack>{middle}</div><div class=actions>{actions}</div></div>"
+        f'<div class=lane role=group aria-label="{group}"><div>{who}</div>'
+        f"<div class=stack>{rows}</div><div class=actions>{actions}</div></div>"
     )
 
 
-def _remote_lane(
-    holder: str,
+def _remote_row(
     claims: Sequence[ClaimView],
     now: datetime,
     issues: Mapping[tuple[str, int], IssueView],
     slots: Mapping[str, int],
 ) -> str:
-    """Another manager's worker: the same squares, its branch on GitHub, and no controls."""
-    manager, _, worker = holder.partition("/")
-    model = next(
-        (
-            known.model
-            for c in claims
-            if (known := issues.get((c.repository, c.issue))) and known.model
-        ),
-        None,
-    )
-    runs = []
+    """Issues other managers hold: the same squares, branches on GitHub, and no controls."""
+    rows = []
     for claim in claims:
         known = issues.get((claim.repository, claim.issue))
         issue = f"<span class=repo>{e(claim.repository)}</span> " + _issue_link(
             claim.repository, claim.issue, known.title if known else "", known.body if known else ""
         )
+        manager, _, worker = claim.holder.partition("/")
         facts = [
+            f"{e(worker)} on <span class=nowrap>{e(manager)}</span>"
+            + (f", {e(known.model)}" if known and known.model else ""),
             f'<a href="https://github.com/{e(claim.repository)}/tree/{e(claim.branch)}">'
             f"{e(claim.branch)}</a>",
             f"renewed {span(now - claim.renewed)} ago",
@@ -624,13 +667,18 @@ def _remote_lane(
             facts.insert(
                 0, f'<span class="flag paused">Paused</span> until {when(claim.paused_until, now)}'
             )
-        runs.append(_run(slots.get(claim.repository, 0), issue, _track(claim.step), facts))
+        rows.append(_run(slots.get(claim.repository, 0), issue, _track(claim.step), facts, manager))
+    managers = len({claim.holder.partition("/")[0] for claim in claims})
     who = _who(
-        worker or holder, f"on <span class=nowrap>{e(manager)}</span>", model, "model not reported"
+        "Remote",
+        f"{len(claims)} {'issue' if len(claims) == 1 else 'issues'} held by "
+        f"{managers} other {'manager' if managers == 1 else 'managers'}",
+        None,
+        "watched, not steered from here",
     )
     return (
-        f'<div class="lane remote" role=group aria-label="{e(holder)}"><div>{who}</div>'
-        f"<div class=stack>{''.join(runs)}</div><div></div></div>"
+        '<div class="lane remote" role=group aria-label="Remote">'
+        f"<div>{who}</div><div class=stack>{''.join(rows)}</div><div></div></div>"
     )
 
 
@@ -843,27 +891,24 @@ def _crew(snapshot: Snapshot) -> str:
     legend = "".join(
         f'<li><i class="key s{slot}"></i>{e(name)}</li>' for name, slot in slots.items()
     )
-    lanes = (
-        "".join(_lane(worker, snapshot.now, issues, slots) for worker in snapshot.workers)
-        if snapshot.workers
+    groups: dict[str, list[WorkerView]] = {}
+    for worker in snapshot.workers:
+        groups.setdefault(worker.worker, []).append(worker)
+    rows = (
+        "".join(_agent_row(instances, snapshot.now, issues, slots) for instances in groups.values())
+        if groups
         else '<p class=empty>No workers yet. <a href="/workers/new">Add one</a> from the agents '
         "installed on this machine.</p>"
     )
-    remote: dict[str, list[ClaimView]] = {}
-    for claim in snapshot.claims:
-        if not claim.mine:
-            remote.setdefault(claim.holder, []).append(claim)
-    remote_lanes = "".join(
-        _remote_lane(holder, claims, snapshot.now, issues, slots)
-        for holder, claims in sorted(remote.items())
-    )
+    remote = [claim for claim in snapshot.claims if not claim.mine]
     return (
         '<section class="panel wide" aria-label="Crew"><header><h2>Crew</h2>'
         f'<a href="/workers/new">Add a worker</a></header>'
-        f"<p class=sub>{working} of {len(snapshot.workers)} on an issue here. A square is an issue "
-        "a worker holds, coloured by its repository; the track shows how far it has come.</p>"
-        f'<ul class="legend">{legend}</ul><h3>This machine</h3>{lanes}'
-        + (f"<h3>Remote</h3>{remote_lanes}" if remote_lanes else "")
+        f"<p class=sub>{working} of {len(snapshot.workers)} instances on an issue here. A worker "
+        "runs as many issues at once as its account allows; a square is one issue, coloured by "
+        "its repository.</p>"
+        f'<ul class="legend">{legend}</ul>{rows}'
+        + (_remote_row(remote, snapshot.now, issues, slots) if remote else "")
         + "</section>"
     )
 
@@ -1239,12 +1284,12 @@ def settings_page(
 def _accounts(config: Configuration) -> str:
     rows = []
     for index, (name, account) in enumerate([*config.accounts.items(), ("", AccountSettings())]):
-        runs = "" if account.max_concurrent_runs is None else str(account.max_concurrent_runs)
+        runs = str(account.max_concurrent_runs) if name else ""
         rows.append(
             f'<tr><td><input name="accounts[{index}].name" value="{e(name)}" '
             f'placeholder="{"new account" if not name else ""}" aria-label="Account name"{_saved(name, name)}></td>'
-            f'<td><input type=number min=1 name="accounts[{index}].maxConcurrentRuns" value="{e(runs)}" '
-            f'placeholder="unlimited" aria-label="Runs at once"{_saved(runs, runs)}></td>'
+            f'<td><input type=number min=1 max={MAX_CONCURRENT_RUNS} name="accounts[{index}].maxConcurrentRuns" '
+            f'value="{e(runs)}" placeholder="1" aria-label="Runs at once"{_saved(runs, runs)}></td>'
             + (
                 f'<td><label><input type=checkbox name="accounts[{index}].remove" value=true{_saved("false", "false")}> remove</label></td>'
                 if name

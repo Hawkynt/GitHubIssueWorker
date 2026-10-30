@@ -36,6 +36,12 @@ class WorkerView:
     branch: str | None = None
     worktree: str | None = None
     since: datetime | None = None
+    group: str = ""
+    """The configured worker this is an instance of (``claude`` for ``claude.2``)."""
+
+    @property
+    def worker(self) -> str:
+        return self.group or self.name
 
 
 @dataclass(frozen=True, slots=True)

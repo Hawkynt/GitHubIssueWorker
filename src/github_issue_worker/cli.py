@@ -166,8 +166,7 @@ def _workers(config: Configuration, path: Path, args: argparse.Namespace, home: 
                 if raw["name"] in existing:
                     continue
                 if raw["account"] not in accounts:
-                    runs = 1 if raw["installation"]["type"] == "claudelocal" else None
-                    accounts[raw["account"]] = AccountSettings(max_concurrent_runs=runs)
+                    accounts[raw["account"]] = AccountSettings()
                 workers.append(WorkerSettings.model_validate(raw))
             config.workers, config.accounts = workers, accounts
             save(config, path)
@@ -275,7 +274,7 @@ def _start_ui(runtime: Any, manager: Any, path: Path) -> Any:
 
     ui = runtime.config.ui
     server = UiServer(RuntimeBackend(runtime, manager, path, detect_workers), ui.bind, ui.port)
-    if server.start():
+    if server.start(wait_for_port=60):
         print(f"  ui: {server.url}")
         return server
     print(f"  ui: could not listen on {ui.bind}:{ui.port}; running without it", file=sys.stderr)
