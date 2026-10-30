@@ -1085,7 +1085,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   prefix, alphabetical), by keyboard and mouse. The list comes from `GET /user/repos`, read in the
   background when the UI starts and kept in memory for 10 minutes; a stale, empty or failed read
   never blocks the page or the add, which stays verified as in F1.1/F1.2. The demo completes too.
-- [ ] 🟧 **F14.17** Every link that leaves the UI (an `http(s)` link: issues, branches and
+- [x] 🟧 **F14.17** Every link that leaves the UI (an `http(s)` link: issues, branches and
   repositories on GitHub) opens in a new tab, `target="_blank"` with `rel="noopener noreferrer"`, on
   every page and live fragment; links to the UI's own pages open in the same tab.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
