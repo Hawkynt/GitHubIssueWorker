@@ -15,16 +15,23 @@ import subprocess
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode
 
 from github_issue_worker.adapters.server_clock import ServerClock
-from github_issue_worker.ports.github import GhUnavailable, GitHubError, RateLimited, Response
+from github_issue_worker.ports.github import (
+    GhUnavailable,
+    GitHubError,
+    RateLimited,
+    Response,
+    next_link,
+)
+
+__all__ = ["GhApi", "next_link", "run_gh"]
 
 GhRunner = Callable[[list[str], str | None], tuple[int, str, str]]
 """Runs ``gh`` with argv and optional stdin; returns exit code, stdout and stderr."""
 
 _STATUS = re.compile(r"^HTTP/[\d.]+ (\d{3})")
-_NEXT = re.compile(r'<([^>]+)>;\s*rel="next"')
 _DEFAULT_WAIT = timedelta(minutes=1)
 
 
@@ -38,15 +45,6 @@ def run_gh(argv: list[str], stdin: str | None) -> tuple[int, str, str]:
         check=False,
     )
     return result.returncode, result.stdout, result.stderr
-
-
-def next_link(headers: Mapping[str, str]) -> str | None:
-    """The ``rel="next"`` page of a paginated response, as a path ``gh api`` accepts."""
-    match = _NEXT.search(headers.get("link", ""))
-    if not match:
-        return None
-    url = urlsplit(match.group(1))
-    return url.path.lstrip("/") + (f"?{url.query}" if url.query else "")
 
 
 class GhApi:

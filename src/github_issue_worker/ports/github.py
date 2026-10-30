@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
+from urllib.parse import urlsplit
+
+_NEXT = re.compile(r'<([^>]+)>;\s*rel="next"')
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,3 +53,12 @@ class GitHubApi(Protocol):
     ) -> Response:
         """Send one request. 2xx and 304 return; other statuses raise `GitHubError`."""
         ...
+
+
+def next_link(headers: Mapping[str, str]) -> str | None:
+    """The ``rel="next"`` page of a paginated response, as a path ``gh api`` accepts."""
+    match = _NEXT.search(headers.get("link", ""))
+    if not match:
+        return None
+    url = urlsplit(match.group(1))
+    return url.path.lstrip("/") + (f"?{url.query}" if url.query else "")
