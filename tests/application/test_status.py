@@ -91,17 +91,15 @@ def test_workers_show_the_model_they_ran_on_or_are_configured_for() -> None:
     workers = [
         WorkerSlot("alpha", "claude", "personal", observed_model="claude-opus-5-5"),
         WorkerSlot("beta", "codex", "work", model="gpt-6.1-sol"),
-        WorkerSlot(
-            "local", "claude", "gpu", observed_model="Qwen3.8-Flash-Next IQ3_S (strata-iq3_s)"
-        ),
+        WorkerSlot("local", "claude", "gpu", observed_model="Qwen3.8-Flash-Next IQ3_S"),
     ]
     text = render([RepositoryClaims("o/a", ())], workers)
     rows = [re.split(r"\s{2,}", row.strip()) for row in section(text, "Workers")]
     models = [row[3] for row in rows[1:]]
     assert models == [
-        "claude-opus-5-5",
-        "gpt-6.1-sol (configured)",
-        "Qwen3.8-Flash-Next IQ3_S (strata-iq3_s)",
+        "Claude Opus 5.5",
+        "GPT 6.1 Sol (configured)",
+        "Qwen3.8 Flash Next IQ3_S",
     ]
 
 
@@ -109,7 +107,7 @@ def test_this_managers_claims_show_which_model_works_the_issue() -> None:
     workers = [WorkerSlot("alpha", "claude", "personal", observed_model="claude-opus-5-5")]
     lines = section(render([RepositoryClaims("o/a", (claim(12),))], workers), "o/a")
     assert lines[1].split()[:3] == ["ISSUE", "WORKER", "MODEL"]
-    assert lines[2].split()[:3] == ["#12", "alpha", "claude-opus-5-5"]
+    assert re.split(r"\s{2,}", lines[2].strip())[:3] == ["#12", "alpha", "Claude Opus 5.5"]
 
 
 def test_claims_of_this_manager_show_worker_step_branch_renewal_and_expiry() -> None:

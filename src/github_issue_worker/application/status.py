@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 from github_issue_worker.application.manager import WorkerSlot
 from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState
+from github_issue_worker.domain.model_name import display_model
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,8 +61,8 @@ def model_of(slot: WorkerSlot | None) -> str:
     if slot is None:
         return "-"
     if slot.observed_model:
-        return slot.observed_model
-    return f"{slot.model} (configured)" if slot.model else "-"
+        return display_model(slot.observed_model)
+    return f"{display_model(slot.model)} (configured)" if slot.model else "-"
 
 
 def _worker_state(slot: WorkerSlot, limited_until: datetime | None, now: datetime) -> str:
