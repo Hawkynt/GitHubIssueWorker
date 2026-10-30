@@ -41,6 +41,25 @@ class PullRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class WaitingRun:
+    """A workflow run GitHub holds back until someone with write access approves it."""
+
+    id: int
+    name: str
+    url: str
+
+
+@dataclass(frozen=True, slots=True)
+class Blocker:
+    """Why a run cannot go on by itself, and what would unblock it."""
+
+    reason: str
+    url: str = ""
+    approvals: tuple[int, ...] = ()
+    """Workflow runs whose approval would unblock it."""
+
+
+@dataclass(frozen=True, slots=True)
 class Check:
     name: str
     status: str
@@ -75,6 +94,12 @@ class RepositoryHost(Protocol):
     def branches(self, prefix: str) -> list[str]:
         """Names of the remote branches that start with ``prefix``."""
         ...
+
+    def waiting_for_approval(self, sha: str) -> list[WaitingRun]:
+        """Workflow runs for ``sha`` held back until someone approves them."""
+        ...
+
+    def approve_run(self, run: int) -> None: ...
 
     def pull_requests_for(self, branch: str) -> list[PullRequest]:
         """Every pull request, open or closed, whose head is ``branch``."""

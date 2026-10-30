@@ -15,6 +15,7 @@ from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.outcome import SubIssue
 from github_issue_worker.domain.split import sub_issue_body
 from github_issue_worker.domain.work import RunKind
+from github_issue_worker.ports.repository import Blocker
 from github_issue_worker.product import MARKER_PREFIX
 from tests.application.run_fakes import FakeHost
 from tests.fakes import FakeClock, InMemoryClaimStore
@@ -409,3 +410,17 @@ def test_housekeeping_runs_hourly_with_the_claims_held_here_and_anywhere() -> No
     f.clock.advance(timedelta(hours=1))
     f.manager.tick()
     assert len(swept) == 2
+
+
+def test_a_finished_run_leaves_no_blocker_behind() -> None:
+    f = Fixture([slot("claude")])
+    original = f.run_issue
+
+    def blocked_then_merged(watch, worker, handle, item, comments, kind):  # type: ignore[no-untyped-def]
+        worker.blocker = Blocker("CI (CI) waits for approval to run", approvals=(7,))
+        return original(watch, worker, handle, item, comments, kind)
+
+    f.manager.run_issue = blocked_then_merged
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert f.manager.workers[0].blocker is None

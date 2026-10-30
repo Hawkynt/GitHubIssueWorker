@@ -157,7 +157,9 @@ class RuntimeBackend:
                         repository=repository,
                         number=issue.number,
                         title=issue.title,
-                        state=issue_state(
+                        state=f"blocked: {slot.blocker.reason}"
+                        if slot and slot.blocker
+                        else issue_state(
                             issue.labels,
                             "working" if slot else claim.state if claim else None,
                             local,
@@ -222,6 +224,8 @@ class RuntimeBackend:
         return WorkerView(
             name=slot.name,
             group=slot.group,
+            blocker=slot.blocker.reason if slot.blocker else "",
+            blocker_url=slot.blocker.url if slot.blocker else "",
             agent=agent,
             account=slot.account,
             model=model,
@@ -320,6 +324,17 @@ class RuntimeBackend:
         for slot in self._manager.workers:
             if name in (slot.name, slot.group):
                 slot.enabled = enabled
+
+    def approve_ci(self, name: str) -> None:
+        slot = next((s for s in self._manager.workers if s.name == name), None)
+        if slot is None or slot.blocker is None or not slot.blocker.approvals or not slot.current:
+            raise ActionError(f"{name} has no CI run waiting for an approval")
+        watch = self._runtime.watches.get(slot.current[0])
+        if watch is None:
+            raise ActionError(f"{slot.current[0]} is no longer watched")
+        for run in slot.blocker.approvals:
+            watch.host.approve_run(run)
+        slot.blocker = None
 
     def stop_worker(self, name: str) -> None:
         slot = next((s for s in self._manager.workers if s.name == name), None)

@@ -108,7 +108,9 @@ h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
 .run.waiting { background: var(--wait-soft); }
 .lane.waiting { background: var(--wait-soft); border-radius: 8px; }
 .lane.waiting .model { color: var(--wait); }
-.flag.unavailable, .flag.failed { background: var(--brick-soft); color: var(--brick); }
+.flag.unavailable, .flag.failed, .flag.blocked { background: var(--brick-soft); color: var(--brick); }
+.needs-you { margin: .2rem 0 .4rem; padding: .5rem .75rem; border-radius: 8px;
+  border: 1px solid var(--brick); background: var(--brick-soft); color: var(--ink); }
 .flag.working { background: var(--steel-soft); color: var(--steel); }
 .actions { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: flex-end; }
 .nowrap { white-space: nowrap; }
@@ -407,6 +409,7 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
   @keyframes glow { 50% { box-shadow: 0 0 22px currentColor, 0 0 4px currentColor; } }
   .panel h2::before, fieldset.panel > legend::before { animation: blink 3s ease-in-out infinite; }
   .status .dot { animation: blink 1.6s ease-in-out infinite; }
+  .flag.blocked { animation: blink 1.4s ease-in-out infinite; }
   @keyframes blink { 50% { opacity: .35; } }
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -814,7 +817,19 @@ def _instance(
         issue = f"<span class=repo>{e(worker.repository)}</span> " + _issue_link(
             worker.repository, worker.issue, worker.issue_title, known.body if known else ""
         )
-        actions = (
+        if worker.blocker:
+            facts.insert(
+                0,
+                f'<span class="flag blocked">Blocked</span> {e(worker.blocker)}'
+                + (f" {_out(worker.blocker_url, 'on GitHub')}" if worker.blocker_url else ""),
+            )
+        approve = (
+            f'<form method=post action="/workers/{name}/approve-ci"><button class=primary '
+            f'title="Approve the waiting CI runs of this pull request">Approve CI</button></form>'
+            if worker.blocker
+            else ""
+        )
+        actions = approve + (
             f'<a class=button href="/workers/{name}/log">Log</a>'
             f'<form method=post action="/workers/{name}/stop"><button class=danger '
             f'title="Kill the agent, give the issue back and pause {name}">Stop &amp; release</button></form>'
@@ -1190,8 +1205,15 @@ def _crew(snapshot: Snapshot) -> str:
     remote = [claim for claim in snapshot.claims if not claim.mine]
     return (
         '<section class="panel wide" aria-label="Crew"><header><h2>Crew</h2>'
-        f'<a href="/workers/new">Add a worker</a></header>'
-        f"<p class=sub>{working} of {len(snapshot.workers)} instances on an issue here. A worker "
+        '<a href="/workers/new">Add a worker</a></header>'
+        + (
+            f'<p class=needs-you><span class="flag blocked">Needs you</span> {blocked} '
+            f"{'run waits' if blocked == 1 else 'runs wait'} on something only you can do; "
+            "see the blocked rows below.</p>"
+            if (blocked := sum(1 for w in snapshot.workers if w.blocker))
+            else ""
+        )
+        + f"<p class=sub>{working} of {len(snapshot.workers)} instances on an issue here. A worker "
         "runs as many issues at once as its account allows; a square is one issue, coloured by "
         "its repository.</p>"
         f'<ul class="legend">{legend}</ul>{rows}'

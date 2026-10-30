@@ -354,6 +354,14 @@ def create_app(backend: Backend) -> FastAPI:
         backend.set_worker_enabled(name, True)
         return back(came_from(request), f"{name} takes issues again.")
 
+    @app.post("/workers/{name}/approve-ci")
+    def approve_ci(name: str, request: Request) -> RedirectResponse:
+        try:
+            backend.approve_ci(name)
+        except ActionError as error:
+            return back(came_from(request), str(error))
+        return back(came_from(request), f"CI of {name}'s pull request was approved and starts now.")
+
     @app.post("/workers/{name}/stop", response_class=HTMLResponse, response_model=None)
     def stop_worker(name: str, request: Request) -> Any:
         try:

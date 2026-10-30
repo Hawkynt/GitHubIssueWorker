@@ -1162,6 +1162,10 @@ operational items, demonstrated on a real repository. Commits that implement an 
   allows, with log and stop & release per instance and pause and edit per worker. Issues held by
   other managers form one remote row, shown only when there are any, with a sub-row per issue and no
   controls.
+- [x] 🟥 **F14.15** Blockers: a run that waits on something only a person can do says so. While its
+  pull request's CI is held back for approval, the worker's sub-row shows *Blocked* with the
+  waiting runs linked and an *Approve CI* button, the crew panel shows *Needs you*, and the Issues
+  page says "blocked"; the blocker clears once the runs start.
 - [x] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
   without one.
 - [x] 🟧 **F14.15** One deck for every page: Issues, Repositories, Fleet, Settings, the worker form

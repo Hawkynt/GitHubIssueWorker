@@ -517,3 +517,21 @@ def test_the_change_digest_is_a_short_answer_that_follows_the_workers(
     assert client.get("/events").text == before.text
     client.post("/workers/local/pause")
     assert client.get("/events").text != before.text
+
+
+def test_a_run_blocked_on_ci_approval_says_so_and_can_be_approved(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    html = client.get("/workers").text
+    crew = html.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
+    assert "Needs you" in crew and "1 run waits on something only you can do" in crew
+    codex = crew.split('aria-label="codex"', 1)[1].split("class=lane", 1)[0]
+    assert '"flag blocked">Blocked</span> CI (CI) waits for approval to run' in codex
+    assert "https://github.com/acme/billing-cli/actions/runs/9120391" in codex
+    assert 'action="/workers/codex/approve-ci"' in codex
+    assert "blocked: CI (CI) waits for approval to run" in client.get("/").text
+
+    response = client.post("/workers/codex/approve-ci")
+    assert response.status_code == 200 and backend.approved == ["codex"]
+    assert "Needs you" not in client.get("/workers").text
+    assert "has no CI run waiting" in client.post("/workers/codex/approve-ci").text

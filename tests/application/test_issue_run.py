@@ -12,7 +12,7 @@ from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.outcome import Outcome, Question
 from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import AgentRun, RunReport, UsageLimit
-from github_issue_worker.ports.repository import Check
+from github_issue_worker.ports.repository import Check, WaitingRun
 from tests.application.run_fakes import FakeHost, FakeWorkspace, ScriptedAgent
 from tests.fakes import FakeClock, InMemoryClaimStore
 
@@ -80,6 +80,7 @@ class Harness:
     def run(
         self, kind: RunKind = RunKind.FIRST, comments: tuple[Comment, ...] = (), **settings: object
     ) -> Verdict:
+        blocked = settings.pop("blocked", lambda blocker: None)
         return IssueRun(
             host=self.host,
             workspace=self.workspace,
@@ -91,6 +92,7 @@ class Harness:
             sleep=lambda seconds: self.clock.advance(timedelta(seconds=seconds)),
             # The understanding run has its own tests; here it is off unless a test asks for it.
             settings=RunSettings(**{"understand_first": False, **settings}),  # type: ignore[arg-type]
+            blocked=blocked,  # type: ignore[arg-type]
         ).run(self.handle, self.issue, comments, kind)
 
 
@@ -421,3 +423,14 @@ def test_conflict_detected_at_merge_is_checkpointed_before_the_merge_fails(
         h.run()
     checkpoint = h.store.current(42)
     assert checkpoint is not None and checkpoint.merge_conflict
+
+
+def test_ci_waiting_for_approval_is_reported_as_a_blocker_until_it_runs(tmp_path: Path) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
+    h.host.states = ["blocked", "blocked", "clean"]
+    h.host.approvals = [[WaitingRun(7, "CI", "https://x/runs/7")], []]
+    seen: list[str | None] = []
+    run = h.run(blocked=lambda blocker: seen.append(blocker.reason if blocker else None))
+    assert run.kind == "merged"
+    assert seen[0] is not None and "waits for approval" in seen[0] and "CI" in seen[0]
+    assert seen[-1] is None  # cleared once the run started

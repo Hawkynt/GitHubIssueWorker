@@ -195,3 +195,19 @@ def test_sub_issues_are_listed_with_why_they_were_closed() -> None:
 
 def test_the_split_label_is_one_of_the_worker_labels() -> None:
     assert "worker:split" in WORKER_LABELS
+
+
+def test_runs_waiting_for_approval_are_found_and_approved() -> None:
+    gh, api = host(
+        {
+            ("GET", f"repos/{REPO}/actions/runs"): {
+                "workflow_runs": [
+                    {"id": 7, "name": "CI", "html_url": "https://x/runs/7"},
+                ]
+            }
+        }
+    )
+    ((waiting),) = gh.waiting_for_approval("abc")
+    assert (waiting.id, waiting.name, waiting.url) == (7, "CI", "https://x/runs/7")
+    gh.approve_run(7)
+    assert ("POST", f"repos/{REPO}/actions/runs/7/approve", None) in api.calls

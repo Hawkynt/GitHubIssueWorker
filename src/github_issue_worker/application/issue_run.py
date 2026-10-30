@@ -29,7 +29,7 @@ from github_issue_worker.domain.split import (
 from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import AgentRun, RunReport
 from github_issue_worker.ports.clock import Clock
-from github_issue_worker.ports.repository import Check, PullRequest, RepositoryHost
+from github_issue_worker.ports.repository import Blocker, Check, PullRequest, RepositoryHost
 from github_issue_worker.ports.workspace import WorkspacePort
 from github_issue_worker.product import MARKER_PREFIX
 
@@ -116,6 +116,8 @@ class IssueRun:
     settings: RunSettings
     progress: Callable[[str], None] = lambda step: None
     """Told each step the run enters: understand, implement, verify, push, checks, merge."""
+    blocked: Callable[[Blocker | None], None] = lambda blocker: None
+    """Told when the run waits on something only a person can do, and when that is over."""
 
     conflict_changed: Callable[[bool], None] = lambda conflict: None
 
@@ -384,6 +386,12 @@ class IssueRun:
 
     def _await(self, pull: PullRequest, issue: Issue) -> tuple[str, str]:
         """Wait until the pull request can merge, needs a rebase, fails its checks or times out."""
+        try:
+            return self._await_checks(pull)
+        finally:
+            self.blocked(None)
+
+    def _await_checks(self, pull: PullRequest) -> tuple[str, str]:
         deadline = self.clock.now() + self.settings.checks_timeout
         while True:
             current = self.host.pull_request(pull.number)
@@ -409,11 +417,27 @@ class IssueRun:
                 return "ci", "The pull request's checks fail:\n\n" + "\n".join(lines)
             if self.clock.now() >= deadline:
                 return "timeout", ""
+            self._report_approvals(current)
             self.sleep(self.settings.check_interval.total_seconds())
 
     def _conflict(self, conflict: bool) -> None:
         self._handle = self.coordinator.set_merge_conflict(self._handle, conflict)
         self.conflict_changed(conflict)
+
+    def _report_approvals(self, current: PullRequest) -> None:
+        """CI that GitHub holds back for approval would wait silently; say so where it shows."""
+        waiting = self.host.waiting_for_approval(current.head_sha)
+        if not waiting:
+            self.blocked(None)
+            return
+        names = ", ".join(sorted({run.name for run in waiting}))
+        self.blocked(
+            Blocker(
+                reason=f"CI ({names}) waits for approval to run",
+                url=waiting[0].url or current.url,
+                approvals=tuple(run.id for run in waiting),
+            )
+        )
 
     def _merge(
         self, issue: Issue, pull: PullRequest, branch: str, tree: Path, base: str
