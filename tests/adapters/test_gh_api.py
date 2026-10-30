@@ -138,5 +138,5 @@ def test_gh_runs_with_the_account_home_not_a_relocated_one(monkeypatch: pytest.M
     monkeypatch.setenv("HOME", "/home/me/ClaudeCodePortable/profiles/default")
     gh = FakeGh((0, http("200 OK", {}, "{}"), ""))
     api(gh)[0].request("GET", "user")
-    assert gh.environments[0]["HOME"] == "/home/me"
+    assert gh.environments[0]["HOME"] == str(Path("/home/me"))
     assert gh.environments[0]["LC_ALL"] == "C"
