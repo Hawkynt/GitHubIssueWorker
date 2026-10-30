@@ -120,6 +120,11 @@ def _run_commit_through_wired_issue_run(
     prompts: list[str] = []
 
     def fake_execute(adapter: object, run: AgentRun, timeout: float) -> RunReport:
+        if "## This run: understand the issue" in run.prompt:
+            # The understanding run comes first and changes nothing (F4.5).
+            return RunReport(
+                session="s1", outcome=Outcome("done", "Understood.", restatement="Restated.")
+            )
         prompts.append(run.prompt)
         workspace.trees[9] = []
         if len(prompts) == 1:

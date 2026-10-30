@@ -152,7 +152,7 @@ stateDiagram-v2
   Queued --> Triage: claimed by an idle, eligible worker
   Queued --> Unserved: no known worker is eligible
   Unserved --> Queued: an eligible worker appears
-  Triage --> Working: labelled (or already was)
+  Triage --> Working: restated and labelled, restatement posted
   Triage --> NeedsInput: too vague to start
   Working --> NeedsInput: question or design decision
   Working --> Paused: agent hit its usage limit
@@ -205,8 +205,17 @@ What counts as an event:
 
 ## 🧠 How an issue is worked
 
-The manager hands the issue to its worker's agent with a fixed working contract, then checks the
-result itself instead of trusting the report. The contract, in order:
+Issues are often short and not measurable, so a first run starts by **understanding** the issue:
+the agent reads it and the repository, changes nothing, and restates the request in its own words,
+with the goal, what is in and out of scope, acceptance criteria as Given / When / Then scenarios a
+test can check, and its assumptions. The manager posts that restatement as a comment ("How I
+understand this issue") together with the labels, before any code is written. It is what the work
+is then measured against, and a comment correcting it is new input like any other. The issue text
+itself stays as its author wrote it. A request that cannot be restated without guessing becomes a
+question instead.
+
+The manager then hands the issue to its worker's agent with a fixed working contract, and checks
+the result itself instead of trusting the report. The contract, in order:
 
 1. **Spec-driven (SDD).** Read the repository's specification (README, `SPEC.md`, `PRD.md` or
    whatever the repo's `AGENTS.md` names) and decide whether the issue changes specified behaviour.
@@ -737,6 +746,12 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F4.3** An issue that already carries a non-`worker:*` label is not relabelled.
 - [ ] 🟧 **F4.4** Triage may conclude the issue is too vague to start, which goes straight to
   [F8](#f8--asking-for-input) with the missing information named.
+- [ ] 🟥 **F4.5** First and reopen runs start with an understanding run that changes nothing: the
+  agent restates the issue in its own words (goal, scope, measurable Given / When / Then acceptance
+  criteria, assumptions), the manager applies the chosen labels and posts the restatement as a
+  marked comment before any work starts, and every later run's prompt carries it as the agreed
+  understanding. The issue text itself is never edited. A request too vague to restate becomes a
+  question instead (F8). An existing restatement is reused, not posted again.
 
 ### F5 — Workspace
 

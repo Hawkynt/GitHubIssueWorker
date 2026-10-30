@@ -12,12 +12,13 @@ _KINDS: tuple[OutcomeKind, ...] = ("done", "needs-input", "impossible")
 OUTCOME_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["outcome", "summary", "scenarios", "questions", "labels"],
+    "required": ["outcome", "summary", "scenarios", "questions", "labels", "restatement"],
     "properties": {
         "outcome": {"type": "string", "enum": list(_KINDS)},
         "summary": {"type": "string"},
         "scenarios": {"type": "array", "items": {"type": "string"}},
         "labels": {"type": "array", "items": {"type": "string"}},
+        "restatement": {"type": "string"},
         "questions": {
             "type": "array",
             "items": {
@@ -55,6 +56,8 @@ class Outcome:
     questions: tuple[Question, ...] = ()
     labels: tuple[str, ...] = ()
     """Labels the agent chose from the repository's existing set, for an unlabelled issue (F4.1)."""
+    restatement: str = ""
+    """The issue in the agent's own words, measurable (F4.5); asked for by the understanding run."""
 
     @staticmethod
     def parse(text: str) -> Outcome:
@@ -86,5 +89,10 @@ class Outcome:
         scenarios = tuple(str(scenario) for scenario in data.get("scenarios") or [])
         labels = tuple(str(label) for label in data.get("labels") or [])
         return Outcome(
-            kind=kind, summary=summary, scenarios=scenarios, questions=questions, labels=labels
+            kind=kind,
+            summary=summary,
+            scenarios=scenarios,
+            questions=questions,
+            labels=labels,
+            restatement=str(data.get("restatement") or "").strip(),
         )
