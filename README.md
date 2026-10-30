@@ -1078,7 +1078,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   Issues, Repositories and Fleet open with readouts that agree with their rows, change hints stay
   distinct on the deck, nothing animates under reduced motion, a live refresh does not replay the
   boot, and every page fits a 390 px wide screen.
-- [ ] 🟧 **F14.16** The Repositories page's add box completes as you type: owners first, after the
+- [x] 🟧 **F14.16** The Repositories page's add box completes as you type: owners first, after the
   `/` that owner's repositories the account can push to and does not watch yet (case-insensitive
   prefix, alphabetical), by keyboard and mouse. The list comes from `GET /user/repos`, read in the
   background when the UI starts and kept in memory for 10 minutes; a stale, empty or failed read
