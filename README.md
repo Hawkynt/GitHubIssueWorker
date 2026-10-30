@@ -213,17 +213,19 @@ manager, marked remote.
 ![Issues page with local and remote workers and waiting issues](docs/screenshots/issues.png)
 
 **Cockpit.** The crew at work and the long view. Readouts on top: merged today, the last seven days
-with a 30-day trace, all time, median time to merge, merge rate. Each worker is a lane: agent,
-account and model, with a sub-row per instance its account lets run at once: a square per issue,
-coloured by repository, with the issue (its description as tooltip), a track through the six steps
-of a run, its branch, which opens the worktree, and its own log and stop & release. When other
-managers hold issues, a remote row follows with a sub-row for each, its branch linked on GitHub.
-Below:
-a flight log of every run of the last day per worker, issues merged per day by model, agent or
-repository over 30, 90 or 180 days, the model share, the running total of merges, time to merge,
-the busy hours by weekday, the weekly model mix and a ledger of every model used. Every chart has a
-tooltip per mark; the history survives restarts. The deck boots with one animated sequence and
-keeps still for anyone who prefers reduced motion.
+with a 30-day trace, all time, median time to merge, merge rate. Each worker is a lane, tinted with
+the colour of the model it runs: agent, account and model, with a sub-row per instance its account
+lets run at once: a square per issue, coloured by repository, with the issue (its description as
+tooltip), a track through the six steps of a run, its branch, which opens the worktree, and its own
+log and stop & release. When other managers hold issues, a remote row follows with a sub-row for
+each, its branch linked on GitHub. Below: a flight log of every run of the last day per worker,
+issues merged per day by model, agent or repository over 30, 90 or 180 days, the model share, the
+running total of merges per model, time to merge, the busy hours by weekday, the weekly model mix
+and a ledger of every model used. Every model carries one colour through all of it, drawn from its
+maker's hue segment and the model's own name, so `Opus 5` and `Opus 5.5` stay the same hue and a
+new model never repaints an old one. Every chart has a tooltip per mark; the history survives
+restarts. The deck boots with one animated sequence and keeps still for anyone who prefers reduced
+motion.
 
 ![Cockpit with readouts, crew lanes, throughput, model mix and time to merge](docs/screenshots/workers.png)
 
@@ -626,7 +628,7 @@ not a second program: what the UI changes, the manager does, with the same check
 | --- | --- | --- |
 | **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
 | **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), with the box completing the owner and then, after the `/`, that owner's repositories your account can push to and does not watch yet; the list is read in the background and kept in memory for 10 minutes. Edit its per-repository overrides, remove one. |
-| **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. |
+| **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, model colours, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
 | **Issue** | One issue's runs, the journal, the outcome, the log tail, and the claim's history. | Skip it, release it, open the PR. |
 
@@ -635,7 +637,10 @@ sections as panels, and the overview pages (Issues, Repositories, Fleet) open wi
 from what the page lists. The deck boots with one animated sequence, keeps still for anyone who
 prefers reduced motion, and a live refresh never replays it. A link that leads out of the UI, to an issue,
 a branch or a repository on GitHub, opens in a new tab and leaves the UI where it was; the UI's own
-pages open in the same tab.
+pages open in the same tab. A model wears the same colour in every chart and in its worker's lane:
+the hue comes from its maker's segment of the colour wheel — Anthropic orange to yellow, Google
+green, OpenAI blue, every other maker a fixed segment of its own — and within that segment from the
+model's name, never from its version. The segments are settings.
 
 It updates live (server-sent events), needs no build step, and binds to loopback only. Binding to
 another address requires `ui.token`, which every request must then carry, and the UI refuses to save
@@ -1188,6 +1193,17 @@ operational items, demonstrated on a real repository. Commits that implement an 
   progress chip red through refreshes, repair steps and restarts until resolution, independently of
   a gray worker box. Live refresh clears obsolete colours. Status text stays readable in light and
   dark schemes, repository colours keep their meaning, and deterministic demos cover these states.
+- [ ] 🟧 **F14.19** Model colours: every model series wears a colour of its maker's hue segment —
+  `modelColors.anthropic` from orange to yellow, `.google` green, `.openai` blue, and `.other` a
+  segment every unlisted maker keeps its own fixed part of. The hue follows the model's name (`opus`,
+  `sonnet`, `haiku`, `fable`) and never its version: `Claude Opus 5` and `Claude Opus 5.5` keep one
+  hue and differ only in shade, so version updates and quantisations stay separate series in the
+  charts. The colour is a function of the name alone, so a new model never repaints an old one, and
+  it returns in every chart: model share, model mix, throughput split by model, the model ledger, the
+  flight log, time to merge and the running total of merges, which is drawn per model. A crew lane is
+  tinted with the colour of the model its worker runs, or with the default hue of the segment of the
+  maker that agent kind serves while no model is known. Every segment key has a field on the Settings
+  page (F14.8).
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
 - [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
