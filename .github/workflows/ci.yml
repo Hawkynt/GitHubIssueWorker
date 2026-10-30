@@ -60,7 +60,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      # No `gui: true`: the worker is a headless CLI/daemon with no user interface.
+      # Flip `gui: true` on in the pull request that lands the first local-UI page — it makes the
+      # hero image and the screenshot tour required (README, F14.7).
       - uses: Hawkynt/RepositoryTemplate/repo-readme@v1
 
   # Aggregate context: the branch protection requires this one check by name, so required-check

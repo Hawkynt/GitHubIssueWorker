@@ -6,12 +6,14 @@ house standard.
 
 ## What this is
 
-A Python (3.13+) CLI/daemon that watches GitHub repositories the maintainer can push to and works
-their issues end to end: label, branch, implement, commit, pull request, merge, close. It drives
-coding-agent CLIs (`claude`, `codex`, `agy`, any configured command) for the reasoning, and `git` plus
-the GitHub REST/GraphQL API for everything outward-facing. Any number of instances on different
-machines coordinate through compare-and-swap claims on hidden `refs/ghiw/*` refs in the watched
-repositories; there is no server. Package `github-issue-worker`, import name `github_issue_worker`, source under
+A Python (3.13+) CLI/daemon with a local web UI that watches GitHub repositories the maintainer can
+push to and works their issues end to end: label, branch, implement, commit, pull request, merge,
+close. A **manager** (one process per machine) steers several **workers**, each one coding agent
+(`claude`, `codex`, `agy`, `opencode`, any configured command) working at most one issue at a time,
+and does everything outward-facing itself through `git` and the GitHub REST/GraphQL API. Managers on
+different machines coordinate through compare-and-swap claims on hidden `refs/ghiw/*` refs in the
+watched repositories (valid 7 days after the last renewal, free after 8); there is no server. The UI
+is FastAPI + uvicorn on the manager's own event loop, loopback-only by default. Package `github-issue-worker`, import name `github_issue_worker`, source under
 `src/github_issue_worker/` (`domain · application · ports · adapters · cli`), tests under `tests/`.
 
 **The README is a forward-looking specification and the product requirements document** — it is
@@ -148,5 +150,12 @@ cannot, commit the captured expected output with a note saying what produced it.
 - **The canonical section order and the emoji vocabulary live in
   [`repo-readme/README.md`](https://github.com/Hawkynt/RepositoryTemplate/blob/main/repo-readme/README.md),
   and the `repo-readme` action enforces them.** `## 📜 License` is the last heading in the file.
-- No user interface, so no screenshots: the repo does not set `gui: true`.
+- **The local UI is a GUI under the house rules.** Every page has a deterministic demo scenario
+  (`github-issue-worker ui --demo <scenario>`) that renders the real UI code with plausible, varied
+  sample data, and `generate.yml` captures every page as a screenshot on each working-branch push.
+  The pull request that lands the first page adds the hero image and the `## 🖼️ Screenshots` tour
+  and sets `gui: true` on the README check; a later page lands with its scenario and screenshot in
+  the same change.
+- Agents are reached through installations: `path` must always work on its own, and the
+  ClaudeCodePortable / ClaudeLocal presets are optional extras, never a requirement.
 - License is LGPL-3.0-or-later (full `LICENSE`); no per-file license headers in `.py` files.
