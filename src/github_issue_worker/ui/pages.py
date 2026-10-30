@@ -195,7 +195,11 @@ def _lane(worker: WorkerView, now: datetime) -> str:
     who = (
         f"<div class=name>{e(worker.name)}</div>"
         f"<div class=runs>{e(worker.agent)} on account <span class=nowrap>{e(worker.account)}</span></div>"
-        + (f"<div class=model>{e(worker.model)}</div>" if worker.model != "-" else "")
+        + (
+            f"<div class=model>{e(worker.model)}</div>"
+            if worker.model != "-"
+            else "<div class=quiet>model shown after its first run</div>"
+        )
     )
     if worker.state == "working" and worker.issue is not None:
         facts = []

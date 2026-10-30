@@ -52,6 +52,7 @@ def test_the_workers_page_shows_who_works_what_on_which_model_and_step(client: T
     assert "issue/214-retry-uploads-after-a-gateway-timeout" in html
     assert "~/.cache/GitHubIssueWorker/acme/telemetry-gateway/issues/214" in html
     assert "Usage limit" in html and "opencode is not on PATH" in html
+    assert "model shown after its first run" in html  # opencode has never run
 
 
 def test_live_fragments_carry_only_the_changing_part(client: TestClient) -> None:
