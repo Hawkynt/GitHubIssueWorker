@@ -316,6 +316,16 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
 .panel td { border-bottom-color: #172438; }
 .panel td.n, .panel th.n { text-align: right; }
 .panel tr:hover td { background: #ffffff05; }
+.combo { position: relative; min-width: 0; max-width: 100%; }
+.combo [role=listbox] { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px);
+  margin: 0; padding: .25rem; list-style: none; max-height: 16rem; overflow-y: auto;
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px;
+  box-shadow: 0 18px 40px -18px #000c; }
+.combo [role=option] { padding: .35rem .55rem; border-radius: 5px; cursor: pointer; font-size: 14px;
+  overflow-wrap: anywhere; }
+.combo [role=option]:hover, .combo [role=option][aria-selected=true] { background: var(--steel-soft);
+  color: var(--steel); }
+.panel:has(.combo) { z-index: 2; }
 #tip { position: fixed; z-index: 10; pointer-events: none; max-width: 24rem; padding: .4rem .7rem;
   background: #07101cf2; color: var(--ink); border: 1px solid #2a4a74; border-radius: 8px;
   font-size: 12.5px; box-shadow: 0 0 24px #4aa3ff33, 0 10px 30px #000a; backdrop-filter: blur(6px); }
@@ -479,6 +489,95 @@ TIPS = """
 </script>
 """
 """One tooltip for every chart mark that carries ``data-tip``, by pointer and by keyboard."""
+
+SUGGEST = """
+<script>
+(() => {
+  const box = document.getElementById("repository");
+  const list = document.getElementById("repository-list");
+  if (!box || !list) return;
+  let items = [], kind = "owner", active = -1, asked = 0, timer = 0;
+  const value = (item) => (kind === "owner" ? item + "/" : item);
+  const close = () => {
+    list.hidden = true;
+    active = -1;
+    box.setAttribute("aria-expanded", "false");
+    box.removeAttribute("aria-activedescendant");
+  };
+  const render = () => {
+    if (!items.length) { close(); return; }
+    list.replaceChildren(...items.map((item, index) => {
+      const option = document.createElement("li");
+      option.id = "repository-option-" + index;
+      option.dataset.index = index;
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", String(index === active));
+      option.textContent = value(item);
+      return option;
+    }));
+    list.hidden = false;
+    box.setAttribute("aria-expanded", "true");
+    if (active < 0) box.removeAttribute("aria-activedescendant");
+    else {
+      box.setAttribute("aria-activedescendant", "repository-option-" + active);
+      list.children[active].scrollIntoView({ block: "nearest" });
+    }
+  };
+  // The newest question wins: an older answer arriving late is dropped.
+  const ask = async () => {
+    const mine = ++asked;
+    let found;
+    try {
+      const response = await fetch("/repositories/suggest?q=" + encodeURIComponent(box.value));
+      if (!response.ok) return;
+      found = await response.json();
+    } catch { return; }
+    if (mine !== asked || document.activeElement !== box) return;
+    items = found.items;
+    kind = found.kind;
+    active = -1;
+    render();
+  };
+  // An owner completes to "owner/" and goes on to its repositories.
+  const pick = (index) => {
+    const owner = kind === "owner";
+    box.value = value(items[index]);
+    close();
+    if (owner) ask(); else asked++;
+  };
+  box.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(ask, 120); });
+  box.addEventListener("focus", ask);
+  box.addEventListener("blur", () => { asked++; close(); });
+  box.addEventListener("keydown", (event) => {
+    if (list.hidden) {
+      if (event.key === "ArrowDown") { event.preventDefault(); ask(); }
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      active += event.key === "ArrowDown" ? 1 : -1;
+      if (active >= items.length) active = 0;
+      if (active < 0) active = items.length - 1;
+      render();
+    } else if ((event.key === "Enter" || event.key === "Tab") && active >= 0) {
+      event.preventDefault();
+      pick(active);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      asked++;
+      close();
+    }
+  });
+  list.addEventListener("mousedown", (event) => {
+    const option = event.target.closest("[role=option]");
+    if (!option) return;
+    event.preventDefault();
+    pick(Number(option.dataset.index));
+  });
+})();
+</script>
+"""
+"""Completes the add box: owners, then after the slash that owner's repositories (F14.16)."""
 
 PAGES = (
     ("/", "Issues"),
@@ -1054,8 +1153,12 @@ def repositories_page(
         "New issues and comments in it are worked from then on.",
         '<form class=inline method=post action="/repositories/add">'
         "<label for=repository>Repository</label>"
-        '<input id=repository name="repository" placeholder="owner/name or URL" size=36 required>'
-        "<button class=primary>Watch repository</button></form>",
+        "<div class=combo>"
+        '<input id=repository name="repository" placeholder="owner/name or URL" size=36 required '
+        "autocomplete=off role=combobox aria-autocomplete=list aria-expanded=false "
+        "aria-controls=repository-list>"
+        '<ul id=repository-list role=listbox aria-label="Suggestions" hidden></ul></div>'
+        f"<button class=primary>Watch repository</button></form>{SUGGEST}",
         "Watch a repository",
     )
     panels = []

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import threading
+import time
 from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from github_issue_worker.application.history import RunRecord
 from github_issue_worker.application.manager import WorkerSlot
-from github_issue_worker.ui.live import issue_state, worker_model
+from github_issue_worker.ports.github import Response
+from github_issue_worker.ui.live import RuntimeBackend, issue_state, worker_model
 
 
 @pytest.mark.parametrize(
@@ -50,3 +55,29 @@ def test_an_idle_worker_shows_the_model_of_its_last_run() -> None:
     assert worker_model(WorkerSlot("codex", "codex", "plus"), runs) == "-"
     observed = WorkerSlot("local", "claude", "gpu", observed_model="claude-opus-5-5")
     assert worker_model(observed, runs) == "Claude Opus 5.5"
+
+
+def test_the_live_backend_reads_the_pushable_repositories_in_the_background() -> None:
+    # F14.16: the read starts with the UI and nothing waits for it.
+    release = threading.Event()
+
+    class SlowApi:
+        def request(self, method: str, path: str, **_: object) -> Response:
+            release.wait(5)
+            return Response(
+                200,
+                {},
+                [
+                    {"full_name": "Hawkynt/ShiftDiff", "permissions": {"push": True}},
+                    {"full_name": "other/lib", "permissions": {"push": False}},
+                ],
+            )
+
+    runtime = SimpleNamespace(api=SlowApi())
+    backend = RuntimeBackend(runtime, SimpleNamespace(), Path("config.json"), lambda _: [])  # type: ignore[arg-type]
+    assert backend.pushable_repositories() == ()
+    release.set()
+    deadline = time.monotonic() + 2
+    while not backend.pushable_repositories() and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert backend.pushable_repositories() == ("Hawkynt/ShiftDiff",)
