@@ -46,7 +46,9 @@ class FakeHost:
 
     def issue(self, number: int) -> Issue:
         issue = self.issues[number]
-        return replace(issue, state="closed") if number in self.closed else issue
+        if number in self.closed:
+            return replace(issue, state="closed", state_reason="completed")
+        return issue
 
     def open_issues(self) -> list[Issue]:
         return [issue for number, issue in self.issues.items() if number not in self.closed]

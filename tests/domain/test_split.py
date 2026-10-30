@@ -3,17 +3,19 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from github_issue_worker.domain.issue import Actor, Issue
+from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.outcome import SubIssue
 from github_issue_worker.domain.split import (
     SPLIT_LABEL,
     inherited_labels,
+    merged_pull,
     missing_sub_issues,
     parent_of,
     split_finished,
     split_summary,
     sub_issue_body,
 )
+from github_issue_worker.product import MARKER_PREFIX
 
 T0 = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
 CSV = SubIssue("Export CSV", "Add a CSV export.", ("Given rows When exported Then a CSV file",))
@@ -96,3 +98,17 @@ def test_the_summary_lists_every_sub_issue_and_its_pull_request() -> None:
     text = split_summary(children, {40: "https://x/pull/50"})
     assert "#40" in text and "https://x/pull/50" in text
     assert "#41" in text
+
+
+def test_the_merged_pull_request_is_read_from_the_managers_closing_comment() -> None:
+    own = Comment(
+        1,
+        40,
+        Actor("Hawkynt"),
+        f"Merged in https://x/pull/50 (m1).\n\n{MARKER_PREFIX}c -->",
+        T0,
+        T0,
+    )
+    by_hand = Comment(2, 40, Actor("Hawkynt"), "Merged in https://x/pull/99 by hand", T0, T0)
+    assert merged_pull([by_hand, own]) == "https://x/pull/50"
+    assert merged_pull([by_hand]) is None

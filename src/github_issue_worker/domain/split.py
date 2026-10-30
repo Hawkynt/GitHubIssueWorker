@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping
 
-from github_issue_worker.domain.issue import Issue
+from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.domain.outcome import SubIssue
 from github_issue_worker.product import MARKER_PREFIX
 
@@ -19,6 +19,8 @@ SPLIT_STEP = "split"
 INHERITED_PREFIXES = ("agent:", "needs:", "priority:")
 """Labels a sub-issue takes over from its parent: routing and priority."""
 _PARENT = re.compile(re.escape(MARKER_PREFIX) + r"sub-issue of #(\d+) -->")
+_MERGED = re.compile(r"^Merged in (\S+)")
+"""The closing comment a manager posts on an issue it merged."""
 
 
 def sub_issue_body(parent: int, sub: SubIssue) -> str:
@@ -57,6 +59,15 @@ def split_finished(children: Iterable[Issue]) -> bool:
     return bool(children) and all(
         child.state == "closed" and child.state_reason == "completed" for child in children
     )
+
+
+def merged_pull(comments: Iterable[Comment]) -> str | None:
+    """The pull request a manager merged for an issue, read from its own closing comment."""
+    for comment in comments:
+        match = _MERGED.match(comment.body)
+        if comment.is_own_output and match:
+            return match[1]
+    return None
 
 
 def split_summary(children: Iterable[Issue], pulls: Mapping[int, str]) -> str:
