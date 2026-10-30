@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from github_issue_worker.adapters.home import account_home
 from github_issue_worker.adapters.installations import EXECUTABLES
+from github_issue_worker.adapters.workspace import WorkspaceError
 from github_issue_worker.configuration import (
     AccountSettings,
     Configuration,
@@ -207,7 +208,11 @@ def _watch(
             file=sys.stderr,
         )
         return 2
-    manager = runtime.manager()
+    try:
+        manager = runtime.manager()
+    except WorkspaceError as error:
+        print(f"cannot start: {error}", file=sys.stderr)
+        return 2
     for watch in manager.repositories:
         watch.host.ensure_worker_labels()
     stop = threading.Event()

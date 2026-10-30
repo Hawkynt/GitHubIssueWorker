@@ -281,3 +281,23 @@ def test_status_without_watched_repositories_points_to_add(
     assert "no repositories watched; add one with 'github-issue-worker add <owner/repo>'" in (
         capsys.readouterr().out
     )
+
+
+def test_watch_explains_a_missing_git_identity_instead_of_crashing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Seen live: the account home had no global git identity, and watch died with a traceback.
+    from github_issue_worker.adapters.workspace import WorkspaceError
+
+    class NoIdentity(Runtime):
+        def manager(self) -> Manager:
+            raise WorkspaceError("no git identity: set user.name and user.email")
+
+    code = main(
+        ["--config", str(watched_config(tmp_path)), "watch", "--once"],
+        home=tmp_path,
+        runtime_factory=lambda *a: NoIdentity(Api(), Manager()),
+    )
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "no git identity" in err and "Traceback" not in err
