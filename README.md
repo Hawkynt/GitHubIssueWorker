@@ -278,7 +278,7 @@ Every agent is driven through the same contract, so agents are interchangeable m
 | --- | --- | --- | :---: | --- |
 | `claude` | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions` | `--session-id` / `--resume` | `--json-schema` | `rate_limit_event` (`status`, `resetsAt`), `api_error: usage_limit_reached` |
 | `codex` | `codex exec --json --dangerously-bypass-approvals-and-sandbox` | `codex exec resume <id>` | `--output-schema` | `error` / `turn.failed` message text, "try again at …" |
-| `antigravity` | `agy -p --output-format stream-json --dangerously-skip-permissions`, under a pseudo-terminal | `--conversation <uuid>` | — | message and log text |
+| `antigravity` | `agy -p --output-format stream-json --dangerously-skip-permissions`, prompt as a pointer to `.ghiw/prompt.md` | `--conversation <uuid>` | — | message and log text |
 | `opencode` | `opencode run --format json`, model as `provider/model` | `--session <id>` | — | provider error events |
 | `command` | any CLI, from a configured argument template | template-defined | — | configured patterns + exit code |
 | `remote` | a vendor's cloud agent: submit, poll, collect the diff | vendor-defined | — | vendor API |
@@ -296,7 +296,7 @@ and the presets exist for setups that keep agents out of the system:
 | --- | --- | --- |
 | `path` (default) | The executable of the agent kind on `PATH` (`claude`, `codex`, `agy`, `opencode`). | The agent's standard config and login locations. This is every normal installation: npm, the vendors' installers, package managers. |
 | `executable` | An explicit `path`. | Plus any `env` entries you give. |
-| `claudecodeportable` | A `root` (default `~/ClaudeCodePortable`) and a `profile`. Runs the matching launcher (`claude.sh`, `codex.sh`, `antigravity.sh`, or the `.bat` on Windows) non-interactively: `--profile <p> --skip-menu`, agent flags passed through. | Owned by the launcher: `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or the redirected `HOME` of that profile, and on Windows Antigravity's per-profile keyring swap. |
+| `claudecodeportable` | A `root` (default `~/ClaudeCodePortable`) and a `profile`. Resolves the profile's own CLI directly: `npm-global/bin/claude` or `npm-global/bin/codex`, or `.local/bin/agy`, with the portable node first on `PATH`. The interactive launchers are not used, because their menus, first-run installers and banners would land in the agent's output. | The profile's `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or the profile as `HOME` for Antigravity, as the launchers set them. On Windows, Antigravity's per-profile login swap is the launcher's and is not reproduced. |
 | `claudelocal` | A `root` (default `~/ClaudeLocal`), for a `claude` worker. Runs ClaudeLocal's separate Claude Code: `claude.sh --dir <worktree> --prompt - --output-format json` (or `Claude.bat`) with an optional `--model`. | ClaudeLocal's own Claude Code against its local gateway, with its own config and sessions, independent of any other Claude installation. Availability is `claude.sh --status`. Never `--stop` or `--tune`. |
 
 `github-issue-worker workers --detect` looks in all of these places and proposes one worker per agent
@@ -673,11 +673,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 ### F1 — Watched repositories
 
-- [ ] 🟥 **F1.1** `add <repo>` accepts `https://github.com/o/r`, `git@github.com:o/r.git`, `o/r` and
+- [x] 🟥 **F1.1** `add <repo>` accepts `https://github.com/o/r`, `git@github.com:o/r.git`, `o/r` and
   an issue URL, and stores the normalised `owner/repo`.
-- [ ] 🟥 **F1.2** `add` refuses a repository the authenticated account cannot push to
+- [x] 🟥 **F1.2** `add` refuses a repository the authenticated account cannot push to
   (`permissions.push` is false), and says so.
-- [ ] 🟥 **F1.3** `add` creates the `worker:*` labels that do not exist yet.
+- [x] 🟥 **F1.3** `add` creates the `worker:*` labels that do not exist yet.
 - [ ] 🟥 **F1.4** `remove <repo>` and `list` (last poll, state counts, current issues). Removing a
   repository releases this manager's claims in it with a checkpoint.
 - [ ] 🟥 **F1.5** Push access is re-checked on every start and every hour. A repository that lost it
@@ -692,10 +692,10 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F2.2** Classifies events as *opened*, *reopened*, *commented*, *review-commented*,
   *routing-changed* and *labelled-skip*. Pull requests returned by the issues endpoint are not
   treated as issues.
-- [ ] 🟥 **F2.3** Ignores every comment carrying the manager's marker (`<!-- ghiw:… -->`), whichever
+- [x] 🟥 **F2.3** Ignores every comment carrying the manager's marker (`<!-- ghiw:… -->`), whichever
   manager wrote it, so output under your account never triggers any worker.
 - [ ] 🟥 **F2.4** Ignores input from untrusted authors (see Security above) and logs it.
-- [ ] 🟥 **F2.5** First watch of a repository records the current position and queues nothing unless
+- [x] 🟥 **F2.5** First watch of a repository records the current position and queues nothing unless
   `processBacklog` is on.
 - [ ] 🟥 **F2.6** Honours `X-RateLimit-Remaining`/`Reset` and secondary-limit `Retry-After`, and
   backs off instead of failing.
@@ -711,7 +711,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   event first.
 - [ ] 🟥 **F3.2** Progress is mirrored as exactly one `worker:*` label per issue, matching the
   [lifecycle](#-issue-lifecycle). Only the claim holder's manager writes the label of a claimed issue.
-- [ ] 🟥 **F3.3** Local state is written atomically (write-temp-then-rename), so a crash leaves the
+- [x] 🟥 **F3.3** Local state is written atomically (write-temp-then-rename), so a crash leaves the
   old or the new state, never a torn one.
 - [ ] 🟥 **F3.4** Crash recovery: after a restart, a manager resumes each of its workers' claims from
   the claim's last completed step (triage, implement, push, PR, checks, merge, close) and its last
@@ -727,7 +727,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
 ### F4 — Triage
 
 - [ ] 🟥 **F4.1** An issue with no labels gets one or more labels from the repository's existing set,
-  chosen by a tool-less run of the cheapest available worker that can return structured output.
+  chosen by the first run itself: its prompt lists the existing labels and its outcome carries
+  `labels`, so no separate agent call is spent. Labels outside the existing set are dropped.
 - [ ] 🟥 **F4.2** Labels that do not exist are never created unless `createMissingLabels` is on.
 - [ ] 🟥 **F4.3** An issue that already carries a non-`worker:*` label is not relabelled.
 - [ ] 🟧 **F4.4** Triage may conclude the issue is too vague to start, which goes straight to
@@ -740,7 +741,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   freshly fetched base branch, or from the latest checkpoint when continuing.
 - [ ] 🟥 **F5.3** The branch is linked to the issue (GraphQL `createLinkedBranch`), so it shows in the
   issue's *Development* panel.
-- [ ] 🟥 **F5.4** Commits use your git identity and signing configuration. The manager never sets an
+- [x] 🟥 **F5.4** Commits use your git identity and signing configuration. The manager never sets an
   author, committer or e-mail of its own.
 - [ ] 🟥 **F5.5** Clean state after every PR: on merge, unmerged close, release or loss of the claim,
   the worktree and local branch are removed, the remote issue branch is deleted after a merge, the
@@ -780,7 +781,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 ### F7 — Commit, push, pull request, merge, close
 
-- [ ] 🟥 **F7.1** Commit gate on every commit between base and branch head: subject starts with
+- [x] 🟥 **F7.1** Commit gate on every commit between base and branch head: subject starts with
   `+ - * # !`, never with "fix"/"bugfix"/"changed"/"modified", has a body, and contains no AI trace
   (`Co-Authored-By` naming an AI, "Generated with", 🤖, mentions of Claude, Anthropic, Codex, OpenAI,
   Gemini, Antigravity, OpenCode, AI, LLM or agents). A failing commit is sent back for rewording, and
@@ -793,7 +794,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   agent, up to `ciRepairAttempts` times, then ask.
 - [ ] 🟥 **F7.5** When the base moved or conflicts: rebase, re-verify (F6.6), push. Unresolvable
   conflicts go back to the agent.
-- [ ] 🟥 **F7.6** Merges with `mergeMethod` (or the first method the repository allows), passing the
+- [x] 🟥 **F7.6** Merges with `mergeMethod` (or the first method the repository allows), passing the
   expected head `sha`.
 - [ ] 🟥 **F7.7** Merge blocked by a required review: label `worker:awaiting-review`, comment once,
   release the claim. The approval is an event like any other, and whoever claims it merges.
@@ -860,7 +861,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F11.6** Checkpoints to `refs/ghiw/wip/<issue>` after each step, every
   `checkpointInterval`, and before pause or release. Restoring one reproduces the branch commits and
   the uncommitted worktree exactly.
-- [ ] 🟥 **F11.7** `consumedThrough` advances only in the compare-and-swap that ends the run which
+- [x] 🟥 **F11.7** `consumedThrough` advances only in the compare-and-swap that ends the run which
   used the events. Two workers seeing the same comment produce exactly one rework run.
 - [ ] 🟥 **F11.8** No-reservation rule: a claim is attempted only by a worker that holds none, is
   eligible and available, whose account is unlimited, below `stopClaimingAt` and within
@@ -893,11 +894,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F12.3** `claude` adapter: `claude -p --output-format stream-json --verbose
   --dangerously-skip-permissions`, `--session-id`/`--resume`, `--json-schema`, `--max-budget-usd`,
   `--model`, attribution off, deny rules for `git push` and `gh`.
-- [ ] 🟥 **F12.4** `codex` adapter: `codex exec --json --dangerously-bypass-approvals-and-sandbox`,
+- [x] 🟥 **F12.4** `codex` adapter: `codex exec --json --dangerously-bypass-approvals-and-sandbox`,
   `codex exec resume <id>`, `--output-schema`, `--model`.
-- [ ] 🟥 **F12.5** `antigravity` adapter: `agy -p --output-format stream-json
-  --dangerously-skip-permissions`, `--conversation`, run under a pseudo-terminal because `agy -p`
-  can lose its output without a TTY.
+- [x] 🟥 **F12.5** `antigravity` adapter: `agy -p --output-format stream-json
+  --dangerously-skip-permissions`, `--conversation`, the prompt as a pointer to `.ghiw/prompt.md`.
+  With stdin closed, agy 1.4.11 gave complete output without a pseudo-terminal, so none is used.
 - [ ] 🟧 **F12.6** `opencode` adapter: `opencode run --format json`, `--session`, `--model
   provider/model`, with every permission allowed in the run's own configuration, for models behind
   any provider OpenCode supports, local ones included. Tested against a fake replaying captured
@@ -963,12 +964,13 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 ### F15 — Installations and the reference setup
 
-- [ ] 🟥 **F15.1** `path` installation: each agent kind is found on `PATH` with its standard config
+- [x] 🟥 **F15.1** `path` installation: each agent kind is found on `PATH` with its standard config
   location (tested with fake agents on `PATH`, no portable layout present).
-- [ ] 🟥 **F15.2** `executable` installation with explicit path and environment.
-- [ ] 🟥 **F15.3** `claudecodeportable` installation: runs `claude.sh`/`codex.sh`/`antigravity.sh`
-  (`.bat` on Windows) with `--profile <p> --skip-menu` and passes agent flags through. Verified that
-  stdout carries only the agent's output, or the adapter strips the launcher's preamble.
+- [x] 🟥 **F15.2** `executable` installation with explicit path and environment.
+- [x] 🟥 **F15.3** `claudecodeportable` installation: resolves the profile's CLI and environment
+  directly (`npm-global/bin/{claude,codex}` with `CLAUDE_CONFIG_DIR`/`CODEX_HOME`, `.local/bin/agy`
+  with the profile as `HOME`, the portable node first on `PATH`), without the interactive launchers.
+  `~` in the root means the account home, not a relocated one.
 - [ ] 🟥 **F15.4** `claudelocal` installation: `claude.sh --dir <worktree> --prompt - --output-format
   json` with optional `--model`; availability from `--status`; never `--stop` or `--tune`.
 - [ ] 🟥 **F15.5** Reference setup on the maintainer's hardware: one manager with four workers (Claude
