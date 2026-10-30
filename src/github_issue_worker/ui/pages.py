@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from github_issue_worker.adapters.transcript import Entry, transcript
 from github_issue_worker.configuration import (
     AccountSettings,
     Configuration,
@@ -17,7 +18,7 @@ from github_issue_worker.configuration import (
     WorkerSettings,
 )
 from github_issue_worker.ui.forms import HELP, FormField, display, fields_of, is_set, value_at
-from github_issue_worker.ui.model import STEPS, ClaimView, Snapshot, WorkerView
+from github_issue_worker.ui.model import STEPS, ClaimView, IssueView, Snapshot, WorkerView
 
 STYLE = """
 :root {
@@ -75,6 +76,18 @@ h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
 .flag.working { background: var(--steel-soft); color: var(--steel); }
 .actions { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: flex-end; }
 .nowrap { white-space: nowrap; }
+.where { display: block; font-size: 13px; color: var(--muted); }
+.where.local { color: var(--steel); }
+td .actions { justify-content: flex-start; }
+.log { list-style: none; margin: 0; padding: 0; max-width: 56rem; }
+.log li { padding: .55rem 0; border-top: 1px solid var(--rule); }
+.log .tool { font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace; font-size: 13px; }
+.log .tool strong { font-family: system-ui, sans-serif; font-size: 13px; color: var(--steel); margin-right: .5rem; }
+.log pre { margin: .25rem 0 0; padding: .5rem .75rem; background: var(--sheet); border-radius: 4px;
+  white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; max-height: 18rem; overflow: auto; }
+.log .thinking { color: var(--muted); }
+.log .error { color: var(--brick); }
+.log .done { font-weight: 600; }
 .holder { white-space: nowrap; }
 .holder .quiet { display: block; font-size: 13px; }
 a.button { display: inline-block; text-decoration: none; }
@@ -136,7 +149,8 @@ LIVE = """
 """
 
 PAGES = (
-    ("/", "Workers"),
+    ("/", "Issues"),
+    ("/workers", "Workers"),
     ("/repositories", "Repositories"),
     ("/fleet", "Fleet"),
     ("/settings", "Settings"),
@@ -229,13 +243,27 @@ def _lane(worker: WorkerView, now: datetime) -> str:
     else:
         middle = "<span class=quiet>Idle, waiting for an issue.</span>"
 
-    toggle = "resume" if worker.state == "paused" else "pause"
-    actions = (
-        f'<form method=post action="/workers/{e(worker.name)}/{toggle}">'
-        f"<button>{toggle.capitalize()}</button></form>"
-        f'<a class=button href="/workers/{e(worker.name)}">Edit</a>'
-    )
+    actions = _worker_actions(worker) + f'<a class=button href="/workers/{e(worker.name)}">Edit</a>'
+
     return f'<section class=lane aria-label="{e(worker.name)}"><div>{who}</div><div>{middle}</div><div class=actions>{actions}</div></section>'
+
+
+def _worker_actions(worker: WorkerView, with_log: bool = True) -> str:
+    """Log, pause or resume, and stop & release: what can be done to a local worker."""
+    name = e(worker.name)
+    toggle = "resume" if worker.state == "paused" else "pause"
+    actions = []
+    if worker.state == "working" and with_log:
+        actions.append(f'<a class=button href="/workers/{name}/log">Log</a>')
+    actions.append(
+        f'<form method=post action="/workers/{name}/{toggle}"><button>{toggle.capitalize()}</button></form>'
+    )
+    if worker.state == "working":
+        actions.append(
+            f'<form method=post action="/workers/{name}/stop"><button class=danger '
+            f'title="Kill the agent, give the issue back and pause {name}">Stop &amp; release</button></form>'
+        )
+    return "".join(actions)
 
 
 def workers_fragment(snapshot: Snapshot) -> str:
@@ -256,7 +284,7 @@ def workers_page(snapshot: Snapshot, notice: str = "") -> str:
         f"{_notice(notice)}<div id=live>{workers_fragment(snapshot)}</div>"
         '<p><a href="/workers/new">Add a worker</a></p>'
     )
-    return page("Workers", "/", snapshot.manager_id, body, live=True)
+    return page("Workers", "/workers", snapshot.manager_id, body, live=True)
 
 
 # --- repositories --------------------------------------------------------------------------------
@@ -624,3 +652,98 @@ def _problems(problems: Iterable[str]) -> str:
         return ""
     lines = "".join(f"<li>{e(problem)}</li>" for problem in items)
     return f"<div class=problems role=alert><strong>Not saved.</strong><ul>{lines}</ul></div>"
+
+
+# --- issues --------------------------------------------------------------------------------------
+
+
+def _issue_row(issue: IssueView, workers: Mapping[str, WorkerView], now: datetime) -> str:
+    link = (
+        f"<span class=quiet>{e(issue.repository)}</span><br>"
+        f'<a href="https://github.com/{e(issue.repository)}/issues/{issue.number}">'
+        f"#{issue.number} {e(issue.title)}</a>"
+    )
+    if issue.worker:
+        where = "this machine" if issue.local else f"{issue.manager}, remote"
+        model = f" on {e(issue.model)}" if issue.model else ""
+        who = (
+            f"{e(issue.worker)}{model}"
+            f'<span class="where{" local" if issue.local else ""}">{e(where)}</span>'
+        )
+    else:
+        who = "<span class=quiet>nobody</span>"
+    since = f" for {span(now - issue.since)}" if issue.since else ""
+    step = f"{e(issue.step)}{since}" if issue.step else ""
+    worker = workers.get(issue.worker or "") if issue.local else None
+    if worker is not None:
+        actions = f"<div class=actions>{_worker_actions(worker)}</div>"
+    elif issue.worker:
+        actions = '<a href="/fleet">Fleet</a>'
+    else:
+        actions = ""
+    return (
+        f"<tr><td>{link}</td><td>{e(issue.state)}</td><td>{who}</td><td class=nowrap>{step}</td>"
+        f"<td>{actions}</td></tr>"
+    )
+
+
+def issues_fragment(snapshot: Snapshot) -> str:
+    if not snapshot.issues:
+        return (
+            "<p class=empty>No open issue in the watched repositories. "
+            '<a href="/repositories">Watch another repository</a>.</p>'
+        )
+    workers = {worker.name: worker for worker in snapshot.workers}
+    order = sorted(
+        snapshot.issues, key=lambda i: (not i.local, i.worker is None, i.repository, i.number)
+    )
+    rows = "".join(_issue_row(issue, workers, snapshot.now) for issue in order)
+    return (
+        "<table><thead><tr><th>Issue</th><th>State</th><th>Worked by</th><th>Step</th><th></th>"
+        f"</tr></thead><tbody>{rows}</tbody></table>"
+    )
+
+
+def issues_page(snapshot: Snapshot, notice: str = "", problems: Iterable[str] = ()) -> str:
+    here = sum(1 for issue in snapshot.issues if issue.local)
+    elsewhere = sum(1 for issue in snapshot.issues if issue.worker and not issue.local)
+    body = (
+        "<h1>Issues</h1>"
+        f"<p class=lede>{len(snapshot.issues)} open in the watched repositories: {here} worked "
+        f"on this machine, {elsewhere} by other managers. Workers on this machine can be paused, "
+        "stopped or watched.</p>"
+        f"{_notice(notice)}{_problems(problems)}<div id=live>{issues_fragment(snapshot)}</div>"
+    )
+    return page("Issues", "/", snapshot.manager_id, body, live=True)
+
+
+# --- the agent's log -----------------------------------------------------------------------------
+
+
+def _entry(entry: Entry) -> str:
+    if entry.kind == "tool":
+        return f"<li class=tool><strong>{e(entry.title)}</strong>{e(entry.text)}</li>"
+    if entry.kind == "output":
+        return f"<li><pre>{e(entry.text)}</pre></li>"
+    return f'<li class="{entry.kind}">{e(entry.text)}</li>'
+
+
+def log_fragment(text: str | None) -> str:
+    if text is None:
+        return "<p class=empty>This worker has not run yet, so there is no log.</p>"
+    entries = transcript(text)
+    if not entries:
+        return "<p class=empty>The agent has started; its first output appears here.</p>"
+    return f"<ol class=log>{''.join(_entry(entry) for entry in entries)}</ol>"
+
+
+def log_page(snapshot: Snapshot, worker: WorkerView, text: str | None) -> str:
+    about = f" on #{worker.issue} {e(worker.issue_title)}" if worker.issue is not None else ""
+    body = (
+        f"<h1>{e(worker.name)}{about}</h1>"
+        f"<p class=lede>What {e(worker.agent)} on {e(worker.model)} says and does, as it "
+        "happens: messages, the commands and tools it runs, and their output.</p>"
+        f'<div class=actions style="justify-content:flex-start;margin-bottom:1rem">{_worker_actions(worker, with_log=False)}</div>'
+        f"<div id=live>{log_fragment(text)}</div>"
+    )
+    return page(f"Log of {worker.name}", "/workers", snapshot.manager_id, body, live=True)

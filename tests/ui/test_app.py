@@ -38,14 +38,23 @@ def schema_paths(model: type[BaseModel], prefix: str = "") -> set[str]:
 
 
 def test_every_page_renders(client: TestClient) -> None:
-    for path in ("/", "/repositories", "/fleet", "/settings", "/workers/new", "/workers/claude"):
+    for path in (
+        "/",
+        "/workers",
+        "/workers/claude/log",
+        "/repositories",
+        "/fleet",
+        "/settings",
+        "/workers/new",
+        "/workers/claude",
+    ):
         response = client.get(path)
         assert response.status_code == 200, path
         assert "<nav>" in response.text
 
 
 def test_the_workers_page_shows_who_works_what_on_which_model_and_step(client: TestClient) -> None:
-    html = client.get("/").text
+    html = client.get("/workers").text
     assert "Claude Opus 5.5" in html and "GPT 6.1 Sol" in html
     assert "#214 Retry uploads after a gateway timeout" in html
     assert 'class="now" aria-current="step">verify<' in html
@@ -56,7 +65,7 @@ def test_the_workers_page_shows_who_works_what_on_which_model_and_step(client: T
 
 
 def test_live_fragments_carry_only_the_changing_part(client: TestClient) -> None:
-    fragment = client.get("/?fragment=1").text
+    fragment = client.get("/workers?fragment=1").text
     assert "<nav>" not in fragment and "Claude Opus 5.5" in fragment
     assert "laptop-01ab</span>" in client.get("/fleet?fragment=1").text
 
@@ -173,7 +182,7 @@ def test_workers_can_be_added_edited_paused_and_removed(
     assert (edited.priority, edited.model, edited.installation.type) == (4, "gpt-6.1-sol", "path")
 
     client.post("/workers/local/pause")
-    assert "Paused" in client.get("/").text
+    assert "Paused" in client.get("/workers").text
     client.post("/workers/codex-2/remove")
     assert "codex-2" not in {w.name for w in backend.config().workers}
 
@@ -220,3 +229,43 @@ def _settings_form(client: TestClient) -> dict[str, str]:
         chosen = re.search(r'<option value="([^"]*)" selected', select.group(2))
         form[select.group(1)] = chosen.group(1) if chosen else ""
     return form
+
+
+def test_the_issues_page_lists_open_issues_with_their_local_or_remote_worker(
+    client: TestClient,
+) -> None:
+    html = client.get("/").text
+    assert "<h1>Issues</h1>" in html
+    assert "Retry uploads after a gateway timeout" in html  # worked here
+    assert "Buffer metrics while offline" in html  # worked by another manager
+    assert "Export statements as CSV" in html
+    assert "Rename the colour tokens" in html  # nobody on it yet
+    local = html[html.index("Retry uploads") : html.index("Retry uploads") + 1500]
+    assert "this machine" in local and "Claude Opus 5.5" in local and "Stop &amp; release" in local
+    remote = html[html.index("Buffer metrics") : html.index("Buffer metrics") + 1500]
+    assert "laptop-01ab" in remote and "Stop &amp; release" not in remote
+    assert "waiting for your answer" in html
+
+
+def test_stop_and_release_kills_the_agent_and_frees_the_issue(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    response = client.post("/workers/claude/stop", follow_redirects=False)
+    assert response.status_code == 303
+    assert backend.stopped == ["claude"]
+    assert "Paused" in client.get("/workers").text  # it takes nothing new until resumed
+
+
+def test_stopping_an_idle_worker_says_so(client: TestClient) -> None:
+    response = client.post("/workers/local/stop")
+    assert response.status_code == 422 and "not working on an issue" in response.text
+
+
+def test_the_log_page_shows_the_agents_chat(client: TestClient) -> None:
+    html = client.get("/workers/claude/log").text
+    assert "<h1>claude" in html and "#214" in html
+    assert "uploads.py" in html  # a tool call
+    assert "1 failed" in html  # its output
+    assert "Retries now back off" in html  # a message
+    assert "Retries now back off" in client.get("/workers/claude/log?fragment=1").text
+    assert "has not run yet" in client.get("/workers/opencode/log").text

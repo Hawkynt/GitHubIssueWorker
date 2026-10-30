@@ -14,6 +14,7 @@ from github_issue_worker.configuration import Configuration, validate
 from github_issue_worker.ui.model import (
     ActionError,
     ClaimView,
+    IssueView,
     RepositoryView,
     Snapshot,
     WorkerView,
@@ -183,12 +184,124 @@ REPOSITORIES = (
 )
 
 
+ISSUES = (
+    IssueView(
+        "acme/telemetry-gateway",
+        214,
+        "Retry uploads after a gateway timeout",
+        "worked here",
+        "claude",
+        MANAGER,
+        True,
+        "Claude Opus 5.5",
+        "verify",
+        NOW - timedelta(minutes=23),
+    ),
+    IssueView(
+        "acme/telemetry-gateway",
+        219,
+        "Buffer metrics while offline",
+        "paused until the usage limit resets",
+        "claude",
+        "laptop-01ab",
+        False,
+        None,
+        "implement",
+        NOW - timedelta(hours=5),
+    ),
+    IssueView(
+        "acme/telemetry-gateway",
+        221,
+        "Gateway URL should come from the environment",
+        "waiting for your answer",
+    ),
+    IssueView(
+        "acme/billing-cli",
+        88,
+        "Invoices round VAT per line instead of per total",
+        "worked here",
+        "codex",
+        MANAGER,
+        True,
+        "GPT 6.1 Sol",
+        "checks",
+        NOW - timedelta(hours=1, minutes=4),
+    ),
+    IssueView(
+        "acme/billing-cli",
+        91,
+        "Export statements as CSV",
+        "worked elsewhere",
+        "local",
+        "ci-runner-03",
+        False,
+        None,
+        "understand",
+        NOW - timedelta(days=2, hours=3),
+    ),
+    IssueView(
+        "acme/billing-cli", 95, "Show the currency next to every amount", "waiting for review or CI"
+    ),
+    IssueView(
+        "acme/design-tokens", 12, "Rename the colour tokens to their roles", "waiting for a worker"
+    ),
+)
+
+LOG = "\n".join(
+    json.dumps(event)
+    for event in (
+        {"type": "thread.started", "thread_id": "demo"},
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "agent_message",
+                "text": "The restatement asks for retries with backoff on gateway timeouts; "
+                "I start with the failing scenario.",
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "pytest -q tests/test_uploads.py -k timeout",
+                "aggregated_output": "F\n1 failed in 0.21s: test_a_timeout_is_retried_with_backoff",
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "sed -n 40,80p src/telemetry/uploads.py",
+                "aggregated_output": "def upload(batch):\n    return client.post(batch)",
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "agent_message",
+                "text": "Retries now back off 1, 2 and 4 seconds and give up after the configured "
+                "count; the scenario passes.",
+            },
+        },
+        {
+            "type": "item.completed",
+            "item": {
+                "type": "command_execution",
+                "command": "pytest -q",
+                "aggregated_output": "128 passed in 3.40s",
+            },
+        },
+    )
+)
+
+
 class DemoBackend:
     """The demo fleet. Changes are kept in memory for the session, so the UI can be tried out."""
 
     def __init__(self) -> None:
         self._config = validate(json.loads(json.dumps(CONFIG)))
         self._workers = list(WORKERS)
+        self.stopped: list[str] = []
 
     def snapshot(self) -> Snapshot:
         names = {worker.name for worker in self._config.workers}
@@ -204,6 +317,7 @@ class DemoBackend:
                 for name in sorted(repos - {r.name for r in REPOSITORIES})
             ),
             claims=CLAIMS,
+            issues=ISSUES,
         )
 
     def config(self) -> Configuration:
@@ -244,3 +358,14 @@ class DemoBackend:
 
     def release(self, repository: str, issue: int, force: bool) -> None:
         return None
+
+    def stop_worker(self, name: str) -> None:
+        worker = next((w for w in self._workers if w.name == name), None)
+        if worker is None or worker.state != "working":
+            raise ActionError(f"{name} is not working on an issue, so there is nothing to stop")
+        self.stopped.append(name)
+        self.set_worker_enabled(name, False)
+
+    def log(self, name: str) -> str | None:
+        worker = next((w for w in self._workers if w.name == name), None)
+        return LOG if worker is not None and worker.state == "working" else None
