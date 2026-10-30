@@ -50,6 +50,8 @@ jobs:
           python-version: '3.13'
           cache: pip
       - run: pip install -e '.[dev]'
+      # The Settings page's change hints (F14.12) are tested in a real browser.
+      - run: python -m playwright install --with-deps chromium
       # The full battery: every marker, coverage as a reporting metric (not a gate). The e2e tests
       # talk to this repository through gh, which the workflow token authenticates.
       - run: pytest -q --cov=github_issue_worker --cov-report=term

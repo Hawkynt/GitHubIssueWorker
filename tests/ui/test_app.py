@@ -269,3 +269,58 @@ def test_the_log_page_shows_the_agents_chat(client: TestClient) -> None:
     assert "Retries now back off" in html  # a message
     assert "Retries now back off" in client.get("/workers/claude/log?fragment=1").text
     assert "has not run yet" in client.get("/workers/opencode/log").text
+
+
+# --- F14.12: values not yet saved are marked ------------------------------------------------------
+
+
+def _controls(html: str) -> dict[str, str]:
+    """Each named control of the settings form, by name, as its opening tag."""
+    form = html[html.index('action="/settings"') :]
+    return {
+        name.group(1): tag
+        for tag in re.findall(r"<(?:input|select|textarea)[^>]*>", form)
+        if (name := re.search(r'name="([^"]+)"', tag))
+    }
+
+
+def _marked(html: str) -> set[str]:
+    return {
+        name for name, tag in _controls(html).items() if re.search(r'class="[^"]*\bchanged\b', tag)
+    }
+
+
+def test_a_freshly_loaded_settings_page_marks_nothing_as_changed(client: TestClient) -> None:
+    controls = _controls(client.get("/settings").text)
+    assert _marked(client.get("/settings").text) == set()
+    assert {name for name, tag in controls.items() if "data-saved=" not in tag} == set()
+    assert 'data-saved="00:01:00"' in controls["pollInterval"]
+    assert 'data-saved="1"' in controls["accounts[3].maxConcurrentRuns"]
+
+
+def test_the_settings_page_carries_the_script_that_marks_edited_values(
+    client: TestClient,
+) -> None:
+    html = client.get("/settings").text
+    assert "<script>" in html and "data-saved" in html and "changed" in html
+    assert ".changed" in html  # the style that gives a marked value its own background
+
+
+def test_a_refused_save_keeps_the_typed_values_marked_as_not_saved(
+    client: TestClient,
+) -> None:
+    form = _settings_form(client)
+    form["pollInterval"] = "00:02:30"
+    form["fleet.claimValidity"] = "a week"
+    response = client.post("/settings", data=form)
+    assert response.status_code == 422
+    assert _marked(response.text) == {"pollInterval", "fleet.claimValidity"}
+    assert 'class="field error"' in response.text  # the error border stays as well
+
+
+def test_a_successful_save_marks_nothing_as_changed(client: TestClient) -> None:
+    form = _settings_form(client)
+    form["pollInterval"] = "00:02:30"
+    response = client.post("/settings", data=form)
+    assert response.status_code == 200 and "Settings saved" in response.text
+    assert _marked(response.text) == set()
