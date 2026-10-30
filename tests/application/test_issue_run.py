@@ -319,3 +319,33 @@ def test_a_run_stopped_by_the_maintainer_releases_the_issue(tmp_path: Path) -> N
     )
     assert h.host.worker_label[42] == "worker:queued"
     assert h.workspace.pushes == [] and len(h.agent.runs) == 1
+
+
+def test_the_pr_the_squash_commit_and_the_comment_are_change_lines_not_prose(
+    tmp_path: Path,
+) -> None:
+    commit = (
+        "+ retries honour the configured count\n\n"
+        "+ each timeout waits 1, 2 and 4 seconds\n"
+        "* the client logs every retry"
+    )
+    summary = Outcome("done", "A long paragraph of prose about what was done and why.")
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok(summary), commit=commit)])
+    assert h.run().kind == "merged"
+
+    lines = [
+        "+ retries honour the configured count",
+        "+ each timeout waits 1, 2 and 4 seconds",
+        "* the client logs every retry",
+    ]
+    ((_, body),) = h.host.pull_bodies.values()
+    assert all(line in body for line in lines)
+    assert "A long paragraph of prose" not in body
+    assert "Closes #42" in body
+    ((title, message),) = h.host.merge_messages
+    assert title.startswith("+ Retry on timeout") and title.endswith("(#100)")
+    assert message.splitlines() == lines
+    merged_comment = h.host.posted[-1][1]
+    assert (
+        all(line in merged_comment for line in lines) and "paragraph of prose" not in merged_comment
+    )

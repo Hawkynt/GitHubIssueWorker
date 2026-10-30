@@ -177,10 +177,13 @@ class GitHubHost:
             )
         return checks
 
-    def merge(self, number: int, method: str, sha: str) -> str:
-        data = self.api.request(
-            "PUT", self._path(f"pulls/{number}/merge"), body={"merge_method": method, "sha": sha}
-        ).body
+    def merge(self, number: int, method: str, sha: str, title: str = "", message: str = "") -> str:
+        body = {"merge_method": method, "sha": sha}
+        if title:
+            body["commit_title"] = title
+        if message:
+            body["commit_message"] = message
+        data = self.api.request("PUT", self._path(f"pulls/{number}/merge"), body=body).body
         return str(data.get("sha", ""))
 
     def delete_branch(self, branch: str) -> None:

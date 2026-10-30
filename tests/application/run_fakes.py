@@ -28,6 +28,7 @@ class FakeHost:
     """mergeable_state returned by successive pull_request() calls; the last one repeats."""
     check_results: list[list[Check]] = field(default_factory=lambda: [[]])
     merged: list[tuple[int, str, str]] = field(default_factory=list)
+    merge_messages: list[tuple[str, str]] = field(default_factory=list)
     deleted_branches: list[str] = field(default_factory=list)
     closed: list[int] = field(default_factory=list)
     head_of: dict[str, str] = field(default_factory=dict)
@@ -85,8 +86,9 @@ class FakeHost:
     def checks(self, sha: str) -> list[Check]:
         return self.check_results.pop(0) if len(self.check_results) > 1 else self.check_results[0]
 
-    def merge(self, number: int, method: str, sha: str) -> str:
+    def merge(self, number: int, method: str, sha: str, title: str = "", message: str = "") -> str:
         self.merged.append((number, method, sha))
+        self.merge_messages.append((title, message))
         return "merge-sha"
 
     def delete_branch(self, branch: str) -> None:

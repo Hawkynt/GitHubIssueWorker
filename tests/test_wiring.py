@@ -383,3 +383,16 @@ def test_a_changed_configuration_is_applied_without_a_restart(tmp_path: Path) ->
     assert not names["busy"].enabled  # finishes its run, then takes nothing new
     assert (names["kept"].priority, names["kept"].model) == (1, "opus")
     assert not names["new"].available and "does not exist" in names["new"].reason
+
+
+def test_the_prose_limit_reaches_the_commit_gate() -> None:
+    config = parse(
+        json.dumps(
+            {
+                "defaults": {"maxProseLines": 0},
+                "repositories": [{"repository": "o/a"}, {"repository": "o/b", "maxProseLines": 5}],
+            }
+        )
+    )
+    assert repository_run(config, config.repositories[0]).gate.max_prose_lines == 0
+    assert repository_run(config, config.repositories[1]).gate.max_prose_lines == 5

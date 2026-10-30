@@ -15,7 +15,7 @@ from typing import Literal
 
 from github_issue_worker.application.coordinator import ClaimHandle, ClaimLost, Coordinator
 from github_issue_worker.application.prompt import build_prompt
-from github_issue_worker.domain.commit_message import CommitGate
+from github_issue_worker.domain.commit_message import CommitGate, change_lines
 from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.domain.outcome import Outcome
 from github_issue_worker.domain.work import RunKind
@@ -198,7 +198,7 @@ class IssueRun:
             state, detail = self._await(pull, issue)
             if state == "merge":
                 self.progress("merge")
-                return self._merge(issue, pull, branch, outcome)
+                return self._merge(issue, pull, branch, tree, base)
             if state == "rebase":
                 if self.workspace.rebase(tree, base):
                     problem = self._check(tree, base)
@@ -326,16 +326,22 @@ class IssueRun:
     ) -> PullRequest:
         commits = self.workspace.commits(tree, base)
         prefix = commits[0].message[:1] if commits else "*"
-        scenarios = (
-            "\n".join(f"- {scenario}" for scenario in outcome.scenarios) or "- (none listed)"
-        )
-        body = (
-            f"{outcome.summary}\n\n## Scenarios\n\n{scenarios}\n\n## Verification\n\n"
-            "The repository's build and tests pass on this branch, and every commit passed the "
-            f"commit rules.\n\nCloses #{issue.number}"
-        )
+        scenarios = "\n".join(f"- {scenario}" for scenario in outcome.scenarios)
+        body = "\n".join(self._changes(tree, base))
+        if scenarios:
+            body += f"\n\nScenarios:\n{scenarios}"
+        body += f"\n\nCloses #{issue.number}"
+        self._title = f"{prefix} {issue.title}"
         self._handle = self.coordinator.fence(self._handle)
-        return self.host.create_pull_request(branch, base, f"{prefix} {issue.title}", body)
+        return self.host.create_pull_request(branch, base, self._title, body)
+
+    def _changes(self, tree: Path, base: str) -> list[str]:
+        """The branch's change lines, oldest commit first: what the PR, the squash commit and the
+        closing comment say, instead of prose."""
+        found: list[str] = []
+        for commit in self.workspace.commits(tree, base):
+            found += [line for line in change_lines(commit.message) if line not in found]
+        return found
 
     def _await(self, pull: PullRequest, issue: Issue) -> tuple[str, str]:
         """Wait until the pull request can merge, needs a rebase, fails its checks or times out."""
@@ -359,21 +365,24 @@ class IssueRun:
             self.sleep(self.settings.check_interval.total_seconds())
 
     def _merge(
-        self, issue: Issue, pull: PullRequest, branch: str, outcome: Outcome | None
+        self, issue: Issue, pull: PullRequest, branch: str, tree: Path, base: str
     ) -> Verdict:
         current = self.host.pull_request(pull.number)
+        changes = "\n".join(self._changes(tree, base))
+        title = f"{getattr(self, '_title', issue.title)} (#{pull.number})"
         self._handle = self.coordinator.fence(self._handle)
         merge_sha = (
             ""
             if current.merged
-            else self.host.merge(pull.number, self.settings.merge_method, current.head_sha)
+            else self.host.merge(
+                pull.number, self.settings.merge_method, current.head_sha, title, changes
+            )
         )
         self.host.delete_branch(branch)
         if self.host.issue(issue.number).state != "closed":
             self.host.close_issue(issue.number)
-        summary = outcome.summary if outcome else ""
         self.host.comment(
-            issue.number, f"Merged in {current.url} ({merge_sha or 'already merged'}).\n\n{summary}"
+            issue.number, f"Merged in {current.url} ({merge_sha or 'already merged'}).\n\n{changes}"
         )
         self.host.set_worker_label(issue.number, None)
         self.coordinator.complete(self._handle, consumed=self._consumed)

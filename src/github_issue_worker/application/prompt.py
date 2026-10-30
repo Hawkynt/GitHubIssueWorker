@@ -47,9 +47,19 @@ stricter than this text, they win.
 
 - Commit your work in this worktree, one concern per commit. Every subject starts with one of
   `+` (added), `-` (removed), `*` (changed), `#` (bug fixed), `!` (critical todo) and a space,
-  never with "fix", "bugfix", "changed", "modified" or "updated", and every commit has a body after
-  a blank line. No message, comment or file may say or hint that a tool, bot or AI wrote it: no
-  Co-Authored-By lines, no "Generated with", no tool or vendor names.
+  never with "fix", "bugfix", "changed", "modified" or "updated". After a blank line comes a body of
+  change lines, not prose: one short line per change, each starting with one of the same prefixes
+  and a space; a longer change may continue on indented lines. For example:
+
+      + the Settings page marks values that are not yet saved (F14.12)
+
+      + every control carries the value it was loaded with
+      * a refused save keeps the typed values marked
+      # checkboxes get an outline, their background cannot be styled
+
+  Commits with paragraphs of prose are sent back to be rewritten. No message, comment or file may
+  say or hint that a tool, bot or AI wrote it: no Co-Authored-By lines, no "Generated with", no
+  tool or vendor names.
 - Do not push, do not open pull requests, do not use `gh` or the GitHub API. You have no access to
   GitHub here; the manager pushes, opens the pull request and merges after checking your work.
 - Keep `.ghiw/journal.md` up to date while you work: the scenarios, the decisions you took and why,
