@@ -560,6 +560,11 @@ not a second program: what the UI changes, the manager does, with the same check
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
 | **Issue** | One issue's runs, the journal, the outcome, the log tail, and the claim's history. | Skip it, release it, open the PR. |
 
+Every page wears the cockpit's deck: one dark look whatever the system's colour scheme, its
+sections as panels, and the overview pages (Issues, Repositories, Fleet) open with readouts counted
+from what the page lists. The deck boots with one animated sequence, keeps still for anyone who
+prefers reduced motion, and a live refresh never replays it.
+
 It updates live (server-sent events), needs no build step, and binds to loopback only. Binding to
 another address requires `ui.token`, which every request must then carry, and the UI refuses to save
 a non-loopback `ui.bind` without one. The token is never shown again once saved. `--no-ui` turns the
@@ -1068,6 +1073,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
   link to the branch on GitHub. Other managers' workers form a remote row without controls.
 - [x] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
   without one.
+- [ ] 🟧 **F14.15** One deck for every page: Issues, Repositories, Fleet, Settings, the worker form
+  and the Log share the cockpit's dark deck in light and dark schemes, their sections are panels,
+  Issues, Repositories and Fleet open with readouts that agree with their rows, change hints stay
+  distinct on the deck, nothing animates under reduced motion, a live refresh does not replay the
+  boot, and every page fits a 390 px wide screen.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
 - [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
