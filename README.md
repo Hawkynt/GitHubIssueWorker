@@ -595,6 +595,7 @@ first, and a moved UI listener reopens on its new address.
 | `runTimeout` | 2 h | Wall-clock limit of one agent run. |
 | `checksTimeout` | 2 h | How long a mergeable-looking pull request may wait for required checks or a review before it is labelled `worker:awaiting-review` and released. |
 | `build` / `test` | detected | Verification commands. Detected from `AGENTS.md`/`CONTRIBUTING.md`, then from the stack (`*.sln[x]`, `package.json`, `pyproject.toml`, `Cargo.toml`, …). |
+| `forbiddenWords` | agent and vendor names | Case-insensitive whole-word regular-expression fragments the commit gate refuses (`claude`, `anthropic`, `codex`, `openai`, `gemini`, `antigravity`, `opencode`, `llm`, `agents?`). `AI` as a word, `generated with` and 🤖 stay forbidden whatever this list says. |
 
 Local state (poll cursors, ETags, native conversation ids, costs) lives in
 `~/.local/state/GitHubIssueWorker/` (`%LOCALAPPDATA%` on Windows). Clones and worktrees live under
@@ -784,7 +785,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F7.1** Commit gate on every commit between base and branch head: subject starts with
   `+ - * # !`, never with "fix"/"bugfix"/"changed"/"modified", has a body, and contains no AI trace
   (`Co-Authored-By` naming an AI, "Generated with", 🤖, mentions of Claude, Anthropic, Codex, OpenAI,
-  Gemini, Antigravity, OpenCode, AI, LLM or agents). A failing commit is sent back for rewording, and
+  Gemini, Antigravity, OpenCode, AI, LLM or agents; the word list is configurable via `forbiddenWords`,
+  while "AI", "generated with" and 🤖 stay forbidden). A failing commit is sent back for rewording, and
   is never pushed as is.
 - [ ] 🟥 **F7.2** Pushes only the issue branch, always with `--force-with-lease` against the commit
   this worker last pushed. Never pushes the base branch.
