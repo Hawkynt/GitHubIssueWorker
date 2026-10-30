@@ -1,20 +1,20 @@
 {
   "branch": "issue/39-flight-log-priority",
-  "claimedAt": "2026-10-30T19:06:58Z",
+  "claimedAt": "2026-10-30T19:12:45Z",
   "consumedThrough": {
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-06T19:07:56Z",
-  "generation": 1,
+  "expiresAt": "2026-11-06T19:12:45Z",
+  "generation": 2,
   "holder": {
     "manager": "hawky-desktop-96a3",
-    "worker": "codex.2"
+    "worker": "antigravity"
   },
   "issue": 39,
   "pausedUntil": null,
-  "renewedAt": "2026-10-30T19:08:04Z",
-  "state": "released",
+  "renewedAt": "2026-10-30T19:12:45Z",
+  "state": "working",
   "step": "needs-input",
   "takeovers": 0
 }
