@@ -161,6 +161,7 @@ body.deck {
   --paper: #060b14; --sheet: #101a2a; --ink: #e9f0f8; --muted: #8c9cb2; --rule: #20304a;
   --steel: #6fb3e8; --steel-soft: #16304d; --amber: #e0a44a; --amber-soft: #3a2f1c;
   --brick: #e07a6b; --brick-soft: #3b2420; --done: #8fb596; --glow: #4aa3ff;
+  --changed: #3d3714; --changed-rule: #c9a83f;
   color-scheme: dark; background: var(--paper); overflow-x: hidden;
 }
 body.deck::before { content: ""; position: fixed; inset: -20%; z-index: -2; pointer-events: none;
@@ -221,9 +222,26 @@ body.deck h1 { font-size: clamp(1.8rem, 2.6vw, 2.6rem); font-weight: 250; letter
   justify-content: space-between; }
 .panel h2 { margin: 0; font-size: 1.05rem; font-weight: 550; letter-spacing: .01em;
   display: flex; align-items: center; gap: .55rem; }
-.panel h2::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%;
-  background: var(--glow); box-shadow: 0 0 10px var(--glow); }
 .panel .sub { color: var(--muted); font-size: 13px; margin: .15rem 0 .7rem; }
+fieldset.panel { margin: 0; padding: 1.05rem 1.3rem 1.15rem; min-inline-size: 0; }
+fieldset.panel > legend { float: left; width: 100%; padding: 0; margin: 0 0 .5rem; font-size: 1.05rem;
+  font-weight: 550; letter-spacing: .01em; display: flex; align-items: center; gap: .55rem; }
+fieldset.panel > legend + * { clear: both; }
+.panel h2::before, fieldset.panel > legend::before { content: ""; width: .5rem; height: .5rem;
+  border-radius: 50%; flex: none; background: var(--glow); box-shadow: 0 0 10px var(--glow); }
+.panel header form { margin: 0; }
+.panel form.inline { margin: .2rem 0 0; }
+.panel .empty { padding: .5rem 0; }
+form.deck-grid > p { margin: 0; }
+body.deck button, body.deck .button { background: #0c1626; border-color: #253956;
+  transition: border-color .2s, box-shadow .2s; }
+body.deck button:hover, body.deck .button:hover { border-color: var(--steel);
+  box-shadow: 0 0 12px #4aa3ff33; }
+body.deck button.primary { background: linear-gradient(180deg, #2a64a8, #1d4f8a);
+  border-color: #3a78c0; color: #fff; box-shadow: 0 0 16px #4aa3ff44; }
+body.deck button.danger { border-color: #4a2a2a; }
+body.deck button.link { background: none; border: 0; box-shadow: none; }
+input, select, textarea { max-width: 100%; }
 .panel h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 1rem 0 0; }
 .panel .lane:last-child { border-bottom: 0; }
 .panel .lane { border-top-color: #1a2840; }
@@ -365,7 +383,7 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
   @keyframes breathe { 50% { filter: brightness(1.5) drop-shadow(0 0 12px currentColor); } }
   .square:not(.free) { animation: glow 2.6s ease-in-out infinite; }
   @keyframes glow { 50% { box-shadow: 0 0 22px currentColor, 0 0 4px currentColor; } }
-  .panel h2::before { animation: blink 3s ease-in-out infinite; }
+  .panel h2::before, fieldset.panel > legend::before { animation: blink 3s ease-in-out infinite; }
   .status .dot { animation: blink 1.6s ease-in-out infinite; }
   @keyframes blink { 50% { opacity: .35; } }
 }
@@ -431,7 +449,11 @@ LIVE = """
   setInterval(tick, 1000);
   // Refresh in the background: at once when the manager reports a change, and every 15 s anyway.
   let busy = false;
+  // Fresh nodes swapped in while the deck boots would boot again: refresh once it has booted.
+  let waiting = false;
+  document.addEventListener("booted", () => { if (waiting) { waiting = false; refresh(); } });
   const refresh = async () => {
+    if (document.body.classList.contains("boot")) { waiting = true; return; }
     if (busy || document.hidden || live.contains(document.activeElement)) return;
     busy = true;
     try {
@@ -493,7 +515,10 @@ TIPS = """
       requestAnimationFrame(tick);
     }
   }
-  setTimeout(() => document.body.classList.remove("boot"), 3200);
+  setTimeout(() => {
+    document.body.classList.remove("boot");
+    document.dispatchEvent(new Event("booted"));
+  }, still ? 0 : 3200);
   // A switch redraws only its own panel: fetch the view, swap that panel, keep the URL in step.
   document.addEventListener("click", async (event) => {
     const link = event.target.closest && event.target.closest(".switch a");
@@ -566,9 +591,7 @@ def when(moment: datetime, now: datetime) -> str:
     return f"{moment:%Y-%m-%d %H:%M} UTC ({relative})"
 
 
-def page(
-    title: str, path: str, snapshot_id: str, body: str, live: bool = False, deck: bool = False
-) -> str:
+def page(title: str, path: str, snapshot_id: str, body: str, live: bool = False) -> str:
     links = "".join(
         f'<a href="{href}"{" aria-current=page" if href == path else ""}>{name}</a>'
         for href, name in PAGES
@@ -577,10 +600,10 @@ def page(
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{e(title)}: GitHubIssueWorker</title><style>{STYLE}</style></head>"
-        + ("<body class='deck boot'>" if deck else "<body>")
-        + f"<div class=frame><nav><div class=who>GitHubIssueWorker</div>"
+        + "<body class='deck boot'><div class=frame>"
+        f"<nav><div class=who>GitHubIssueWorker</div>"
         f"<div class=id>manager {e(snapshot_id)}</div>{links}</nav>"
-        f"<main>{body}</main></div>{LIVE if live else ''}{TIPS if deck else ''}</body></html>"
+        f"<main>{body}</main></div>{LIVE if live else ''}{TIPS}</body></html>"
     )
 
 
@@ -842,24 +865,45 @@ def _series_table(
     )
 
 
+def _count(value: int) -> str:
+    """A readout's number, which counts up from zero while the deck boots."""
+    return f"<b data-count={value}>{value}</b>"
+
+
+def _readout_row(cells: Iterable[tuple[str, str, str]]) -> str:
+    """The deck's top row: one tile per label, value and note."""
+    return (
+        '<section class=readouts aria-label="Readouts">'
+        + "".join(
+            f"<div class=readout style=--i:{index}><span>{e(label)}</span>{value}{note}</div>"
+            for index, (label, value, note) in enumerate(cells)
+        )
+        + "</section>"
+    )
+
+
+def _panel(title: str, sub: str, content: str, label: str, tools: str = "") -> str:
+    """A full-width deck panel; ``title``, ``sub`` and ``tools`` are markup, ``label`` is text."""
+    return (
+        f'<section class="panel wide" aria-label="{e(label)}"><header><h2>{title}</h2>{tools}'
+        f"</header><p class=sub>{sub}</p>{content}</section>"
+    )
+
+
 def _readouts(history: list[RunRecord], now: datetime) -> str:
     numbers = kpis(history, now)
     average = sum(numbers.last_30_days) / 30
     median = span(numbers.median_resolve) if numbers.median_resolve is not None else "-"
     since = f"since {history[0].started:%b %d, %Y}" if history else "no run finished yet"
-
-    def count(value: int) -> str:
-        return f"<b data-count={value}>{value}</b>"
-
     share = (
         f"<b data-count={round(numbers.merge_share * 100)} data-suffix=%>{numbers.merge_share:.0%}</b>"
         if numbers.merge_share is not None
         else "<b>-</b>"
     )
     cells = (
-        ("Merged today", count(numbers.today), f"<small>{average:.1f} a day over 30 days</small>"),
-        ("Last 7 days", count(numbers.week), sparkline(numbers.last_30_days)),
-        ("All time", count(numbers.total), f"<small>{since}</small>"),
+        ("Merged today", _count(numbers.today), f"<small>{average:.1f} a day over 30 days</small>"),
+        ("Last 7 days", _count(numbers.week), sparkline(numbers.last_30_days)),
+        ("All time", _count(numbers.total), f"<small>{since}</small>"),
         ("Median time to merge", f"<b>{e(median)}</b>", "<small>first run to merge</small>"),
         (
             "Merge rate",
@@ -867,14 +911,7 @@ def _readouts(history: list[RunRecord], now: datetime) -> str:
             "<small>merged among merged and failed</small>",
         ),
     )
-    return (
-        '<section class=readouts aria-label="Readouts">'
-        + "".join(
-            f"<div class=readout style=--i:{index}><span>{label}</span>{value}{note}</div>"
-            for index, (label, value, note) in enumerate(cells)
-        )
-        + "</section>"
-    )
+    return _readout_row(cells)
 
 
 def _flight_log(snapshot: Snapshot, history: list[RunRecord]) -> str:
@@ -1102,7 +1139,7 @@ def cockpit_page(
         "kept across restarts in its state directory.</p>"
         f"{_notice(notice)}<div id=live>{cockpit_fragment(snapshot, history, view)}</div>"
     )
-    return page("Cockpit", "/workers", snapshot.manager_id, body, live=True, deck=True)
+    return page("Cockpit", "/workers", snapshot.manager_id, body, live=True)
 
 
 # --- repositories --------------------------------------------------------------------------------
@@ -1111,36 +1148,67 @@ def cockpit_page(
 def repositories_page(
     snapshot: Snapshot, config: Configuration, notice: str = "", problems: Iterable[str] = ()
 ) -> str:
-    rows = []
-    for repository in snapshot.repositories:
+    watched = snapshot.repositories
+    readouts = _readout_row(
+        (
+            ("Watched", _count(len(watched)), "<small>repositories you can push to</small>"),
+            (
+                "Polled",
+                _count(sum(1 for repository in watched if repository.watching_since)),
+                "<small>at least once</small>",
+            ),
+            (
+                "Issues in progress",
+                _count(sum(sum(repository.counts.values()) for repository in watched)),
+                "<small>across the watch list</small>",
+            ),
+            (
+                "Claimed here",
+                _count(sum(1 for claim in snapshot.claims if claim.mine)),
+                "<small>by workers of this machine</small>",
+            ),
+        )
+    )
+    add = _panel(
+        "Watch a repository",
+        "New issues and comments in it are worked from then on.",
+        '<form class=inline method=post action="/repositories/add">'
+        "<label for=repository>Repository</label>"
+        '<input id=repository name="repository" placeholder="owner/name or URL" size=36 required>'
+        "<button class=primary>Watch repository</button></form>",
+        "Watch a repository",
+    )
+    panels = []
+    for repository in watched:
         counts = ", ".join(f"{count} {name}" for name, count in sorted(repository.counts.items()))
         since = repository.watching_since
         overrides = next(r for r in config.repositories if r.repository == repository.name)
-        rows.append(
-            f'<tr><td><a href="https://github.com/{e(repository.name)}">{e(repository.name)}</a>'
-            f"{_override_form(overrides, config.defaults)}</td>"
-            f"<td>{e(when(since, snapshot.now)) if since else 'not polled yet'}</td>"
-            f"<td>{e(counts) or '<span class=quiet>no active issues</span>'}</td>"
-            f'<td><form method=post action="/repositories/remove">'
+        stop = (
+            '<form method=post action="/repositories/remove">'
             f'<input type=hidden name="repository" value="{e(repository.name)}">'
-            f"<button class=danger>Stop watching</button></form></td></tr>"
+            "<button class=danger>Stop watching</button></form>"
         )
-    table = (
-        "<table><thead><tr><th>Repository</th><th>Watching since</th><th>Issues</th><th></th>"
-        f"</tr></thead><tbody>{''.join(rows)}</tbody></table>"
-        if rows
-        else "<p class=empty>No repository is watched yet. Add one you can push to.</p>"
+        panels.append(
+            _panel(
+                f'<a href="https://github.com/{e(repository.name)}">{e(repository.name)}</a>',
+                f"{'Watching since ' + e(when(since, snapshot.now)) if since else 'Not polled yet'}"
+                f"; {e(counts) or 'no active issues'}.",
+                _override_form(overrides, config.defaults),
+                repository.name,
+                stop,
+            )
+        )
+    listed = "".join(panels) or _panel(
+        "Watched",
+        "Nothing yet.",
+        "<p class=empty>No repository is watched yet. Add one you can push to.</p>",
+        "Watched",
     )
     body = (
         "<h1>Repositories</h1>"
         "<p class=lede>New issues and comments in these repositories are worked. A repository "
         "is only added when your account can push to it.</p>"
-        f"{_notice(notice)}{_problems(problems)}"
-        '<form class=inline method=post action="/repositories/add">'
-        "<label for=repository>Repository</label>"
-        '<input id=repository name="repository" placeholder="owner/name or URL" size=36 required>'
-        "<button class=primary>Watch repository</button></form>"
-        f"{table}"
+        f"{_notice(notice)}{_problems(problems)}{readouts}<div class=deck-grid>{add}{listed}</div>"
     )
     return page("Repositories", "/repositories", snapshot.manager_id, body)
 
@@ -1203,24 +1271,47 @@ def _claim_row(claim: ClaimView, now: datetime) -> str:
 
 
 def fleet_fragment(snapshot: Snapshot) -> str:
-    return _clock(snapshot.now) + _fleet_fragment(snapshot)
-
-
-def _fleet_fragment(snapshot: Snapshot) -> str:
-    if not snapshot.claims:
-        return "<p class=empty>No issue is claimed right now, by this or any other manager.</p>"
+    claims = snapshot.claims
+    repositories = sorted({claim.repository for claim in claims})
+    others = {claim.holder.rpartition("/")[0] for claim in claims if not claim.mine}
+    readouts = _readout_row(
+        (
+            ("Claims", _count(len(claims)), f"<small>in {len(repositories)} repositories</small>"),
+            (
+                "Held here",
+                _count(sum(1 for claim in claims if claim.mine)),
+                "<small>by workers of this machine</small>",
+            ),
+            ("Other managers", _count(len(others)), "<small>holding the rest</small>"),
+            (
+                "Paused",
+                _count(sum(1 for claim in claims if claim.paused_until)),
+                "<small>until a usage limit resets</small>",
+            ),
+        )
+    )
     parts = []
-    for repository in sorted({claim.repository for claim in snapshot.claims}):
-        claims = sorted(
-            (c for c in snapshot.claims if c.repository == repository), key=lambda c: c.issue
-        )
-        rows = "".join(_claim_row(claim, snapshot.now) for claim in claims)
+    for repository in repositories:
+        held = sorted((c for c in claims if c.repository == repository), key=lambda c: c.issue)
+        rows = "".join(_claim_row(claim, snapshot.now) for claim in held)
+        mine = sum(1 for claim in held if claim.mine)
         parts.append(
-            f"<h2>{e(repository)}</h2><table><thead><tr><th>Issue</th><th>Held by</th>"
-            "<th>State</th><th>Step</th><th>Renewed</th><th>Expires</th><th>Branch</th><th></th>"
-            f"</tr></thead><tbody>{rows}</tbody></table>"
+            _panel(
+                e(repository),
+                f"{len(held)} claimed, {mine} of them by this manager.",
+                "<div class=scroll><table><thead><tr><th>Issue</th><th>Held by</th>"
+                "<th>State</th><th>Step</th><th>Renewed</th><th>Expires</th><th>Branch</th>"
+                f"<th></th></tr></thead><tbody>{rows}</tbody></table></div>",
+                repository,
+            )
         )
-    return "".join(parts)
+    listed = "".join(parts) or _panel(
+        "Claims",
+        "Nothing is held.",
+        "<p class=empty>No issue is claimed right now, by this or any other manager.</p>",
+        "Claims",
+    )
+    return _clock(snapshot.now) + f"{readouts}<div class=deck-grid>{listed}</div>"
 
 
 def fleet_page(snapshot: Snapshot, notice: str = "", problems: Iterable[str] = ()) -> str:
@@ -1346,7 +1437,7 @@ def settings_page(
             )
         )
     body = "".join(
-        f"<fieldset><legend>{e(title)}</legend>{''.join(inputs)}</fieldset>"
+        f'<fieldset class="panel wide"><legend>{e(title)}</legend>{"".join(inputs)}</fieldset>'
         for title, inputs in groups.items()
         if inputs
     )
@@ -1357,7 +1448,7 @@ def settings_page(
         "and applies the change without a restart. Workers and repositories have their own pages. "
         "A value you changed but did not save yet is highlighted."
         f"</p>{_notice(notice)}{_problems(problems)}"
-        f'<form method=post action="/settings" data-unsaved>{body}{accounts}'
+        f'<form class=deck-grid method=post action="/settings" data-unsaved>{body}{accounts}'
         f"<p><button class=primary>Save settings</button></p></form>{UNSAVED}"
     )
     return page("Settings", "/settings", snapshot_id, page_body)
@@ -1380,11 +1471,11 @@ def _accounts(config: Configuration) -> str:
             + "</tr>"
         )
     return (
-        "<fieldset><legend>Accounts</legend>"
+        '<fieldset class="panel wide"><legend>Accounts</legend>'
         "<p class=quiet>What workers bill against. Usage limits are tracked per account; a local "
         "model that serves one request at a time gets 1 run at once.</p>"
-        "<table><thead><tr><th>Name</th><th>Runs at once</th><th></th></tr></thead>"
-        f"<tbody>{''.join(rows)}</tbody></table></fieldset>"
+        "<div class=scroll><table><thead><tr><th>Name</th><th>Runs at once</th><th></th></tr>"
+        f"</thead><tbody>{''.join(rows)}</tbody></table></div></fieldset>"
     )
 
 
@@ -1460,10 +1551,12 @@ def worker_page(
             "<button>Add</button></form></td></tr>"
             for index, item in enumerate(detected)
         )
-        found = (
-            "<h2>Found on this machine</h2><table><thead><tr><th>Name</th><th>Agent</th>"
-            f"<th>Installation</th><th></th></tr></thead><tbody>{rows}</tbody></table>"
-            "<h2>Or describe one</h2>"
+        found = _panel(
+            "Found on this machine",
+            "Add one as it is, or describe one below.",
+            "<div class=scroll><table><thead><tr><th>Name</th><th>Agent</th>"
+            f"<th>Installation</th><th></th></tr></thead><tbody>{rows}</tbody></table></div>",
+            "Found on this machine",
         )
     remove = (
         f'<form method=post action="/workers/{e(worker.name)}/remove"><button class=danger>'
@@ -1473,11 +1566,11 @@ def worker_page(
         else ""
     )
     body = (
-        f"<h1>{e(title)}</h1>{_problems(problems)}{found}"
-        f'<form method=post action="{action}"><fieldset><legend>Agent</legend>{"".join(inputs)}</fieldset>'
-        f"<fieldset><legend>Installation</legend>{''.join(install)}</fieldset>"
-        "<p><button class=primary>Save worker</button></p></form>"
-        f"{remove}"
+        f"<h1>{e(title)}</h1>{_problems(problems)}"
+        f'<div class=deck-grid>{found}<form class=deck-grid method=post action="{action}">'
+        f'<fieldset class="panel wide"><legend>Agent</legend>{"".join(inputs)}</fieldset>'
+        f'<fieldset class="panel wide"><legend>Installation</legend>{"".join(install)}</fieldset>'
+        f"<p><button class=primary>Save worker</button></p></form>{remove}</div>"
     )
     return page(title, "/", snapshot_id, body)
 
@@ -1528,34 +1621,56 @@ def _issue_row(issue: IssueView, workers: Mapping[str, WorkerView], now: datetim
 
 
 def issues_fragment(snapshot: Snapshot) -> str:
-    return _clock(snapshot.now) + _issues_fragment(snapshot)
-
-
-def _issues_fragment(snapshot: Snapshot) -> str:
-    if not snapshot.issues:
-        return (
+    issues = snapshot.issues
+    readouts = _readout_row(
+        (
+            ("Open", _count(len(issues)), "<small>in the watched repositories</small>"),
+            (
+                "Worked here",
+                _count(sum(1 for issue in issues if issue.local)),
+                "<small>by workers of this machine</small>",
+            ),
+            (
+                "Worked elsewhere",
+                _count(sum(1 for issue in issues if issue.worker and not issue.local)),
+                "<small>by other managers</small>",
+            ),
+            (
+                "Waiting",
+                _count(sum(1 for issue in issues if not issue.worker)),
+                "<small>for a worker, an answer or a review</small>",
+            ),
+        )
+    )
+    if not issues:
+        listed = (
             "<p class=empty>No open issue in the watched repositories. "
             '<a href="/repositories">Watch another repository</a>.</p>'
         )
-    workers = {worker.name: worker for worker in snapshot.workers}
-    order = sorted(
-        snapshot.issues, key=lambda i: (not i.local, i.worker is None, i.repository, i.number)
+    else:
+        workers = {worker.name: worker for worker in snapshot.workers}
+        order = sorted(
+            issues, key=lambda i: (not i.local, i.worker is None, i.repository, i.number)
+        )
+        rows = "".join(_issue_row(issue, workers, snapshot.now) for issue in order)
+        listed = (
+            "<div class=scroll><table><thead><tr><th>Issue</th><th>State</th><th>Worked by</th>"
+            f"<th>Step</th><th></th></tr></thead><tbody>{rows}</tbody></table></div>"
+        )
+    board = _panel(
+        "Open issues",
+        "Worked on this machine first, then by other managers, then the ones nobody works yet.",
+        listed,
+        "Open issues",
     )
-    rows = "".join(_issue_row(issue, workers, snapshot.now) for issue in order)
-    return (
-        "<table><thead><tr><th>Issue</th><th>State</th><th>Worked by</th><th>Step</th><th></th>"
-        f"</tr></thead><tbody>{rows}</tbody></table>"
-    )
+    return _clock(snapshot.now) + f"{readouts}<div class=deck-grid>{board}</div>"
 
 
 def issues_page(snapshot: Snapshot, notice: str = "", problems: Iterable[str] = ()) -> str:
-    here = sum(1 for issue in snapshot.issues if issue.local)
-    elsewhere = sum(1 for issue in snapshot.issues if issue.worker and not issue.local)
     body = (
         "<h1>Issues</h1>"
-        f"<p class=lede>{len(snapshot.issues)} open in the watched repositories: {here} worked "
-        f"on this machine, {elsewhere} by other managers. Workers on this machine can be paused, "
-        "stopped or watched.</p>"
+        "<p class=lede>Every open issue in the watched repositories, what is happening with it "
+        "and who works it. Workers on this machine can be paused, stopped or watched.</p>"
         f"{_notice(notice)}{_problems(problems)}<div id=live>{issues_fragment(snapshot)}</div>"
     )
     return page("Issues", "/", snapshot.manager_id, body, live=True)
@@ -1574,11 +1689,14 @@ def _entry(entry: Entry) -> str:
 
 def log_fragment(text: str | None) -> str:
     if text is None:
-        return "<p class=empty>This worker has not run yet, so there is no log.</p>"
-    entries = transcript(text)
-    if not entries:
-        return "<p class=empty>The agent has started; its first output appears here.</p>"
-    return f"<ol class=log>{''.join(_entry(entry) for entry in entries)}</ol>"
+        content = "<p class=empty>This worker has not run yet, so there is no log.</p>"
+    elif not (entries := transcript(text)):
+        content = "<p class=empty>The agent has started; its first output appears here.</p>"
+    else:
+        content = f"<ol class=log>{''.join(_entry(entry) for entry in entries)}</ol>"
+    return _panel(
+        "Transcript", "Messages, commands and their output, oldest first.", content, "Transcript"
+    )
 
 
 def log_page(snapshot: Snapshot, worker: WorkerView, text: str | None) -> str:
