@@ -206,6 +206,7 @@ class Runtime:
                 checks_timeout=timedelta(seconds=run.checks_timeout),
                 gate=run.gate,
             ),
+            progress=lambda step: setattr(slot, "step", step),
         ).run(handle, issue, comments, kind)
 
     def _observe(self, slot: WorkerSlot, report: RunReport) -> RunReport:

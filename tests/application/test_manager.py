@@ -273,3 +273,27 @@ def test_manager_marker_comments_are_not_logged_as_untrusted(
             f.manager.tick()
     assert caplog.messages == []
     assert len(f.runs) == 1
+
+
+def test_a_paused_worker_claims_nothing() -> None:
+    f = Fixture([slot("claude", enabled=False), slot("codex", "codex")])
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert f.runs == [Recorded("codex", 1, RunKind.FIRST)]
+
+
+def test_a_running_worker_shows_its_issue_and_start_time() -> None:
+    seen: list[tuple[object, ...]] = []
+
+    def run_issue(watch, slot, handle, issue, comments, kind):  # type: ignore[no-untyped-def]
+        seen.append((slot.current, slot.issue_title, slot.started_at, slot.branch))
+        f.coordinator.complete(handle)
+        return Verdict("merged")
+
+    f = Fixture([slot("claude")])
+    f.manager.run_issue = run_issue
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert seen == [(("Hawkynt/ShiftDiff", 1), "Issue 1", T0, "issue/1-issue-1")]
+    worker = f.manager.workers[0]
+    assert worker.current is None and worker.step is None and worker.issue_title is None

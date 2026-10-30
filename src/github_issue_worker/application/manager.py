@@ -49,6 +49,12 @@ class WorkerSlot:
     reason: str = ""
     busy: bool = False
     current: tuple[str, int] | None = None
+    enabled: bool = True
+    """False while paused from the UI: the worker finishes nothing new and claims nothing."""
+    step: str | None = None
+    issue_title: str | None = None
+    started_at: datetime | None = None
+    branch: str | None = None
 
 
 @dataclass
@@ -236,7 +242,7 @@ class Manager:
     # --- workers -------------------------------------------------------------------------------
 
     def _serves(self, slot: WorkerSlot, issue: Issue) -> bool:
-        if not slot.available:
+        if not slot.available or not slot.enabled:
             return False
         for label in issue.labels:
             if label.startswith("agent:") and label.removeprefix("agent:") != slot.agent:
@@ -265,6 +271,10 @@ class Manager:
     ) -> None:
         slot.busy = True
         slot.current = (watch.name, issue.number)
+        slot.issue_title = issue.title
+        slot.started_at = self.clock.now()
+        slot.branch = handle.claim.branch
+        slot.step = None
         self._own[(watch.name, issue.number)] = slot.name
         self._labelled.pop((watch.name, issue.number), None)
         log.info(
@@ -297,6 +307,10 @@ class Manager:
                         self._own.pop((watch.name, issue.number), None)
                     slot.busy = False
                     slot.current = None
+                    slot.issue_title = None
+                    slot.started_at = None
+                    slot.branch = None
+                    slot.step = None
                 log.info(
                     "%s#%d: %s by %s on %s %s",
                     watch.name,
