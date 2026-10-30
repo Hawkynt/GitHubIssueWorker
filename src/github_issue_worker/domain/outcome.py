@@ -12,11 +12,12 @@ _KINDS: tuple[OutcomeKind, ...] = ("done", "needs-input", "impossible")
 OUTCOME_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["outcome", "summary", "scenarios", "questions"],
+    "required": ["outcome", "summary", "scenarios", "questions", "labels"],
     "properties": {
         "outcome": {"type": "string", "enum": list(_KINDS)},
         "summary": {"type": "string"},
         "scenarios": {"type": "array", "items": {"type": "string"}},
+        "labels": {"type": "array", "items": {"type": "string"}},
         "questions": {
             "type": "array",
             "items": {
@@ -52,6 +53,8 @@ class Outcome:
     summary: str
     scenarios: tuple[str, ...] = ()
     questions: tuple[Question, ...] = ()
+    labels: tuple[str, ...] = ()
+    """Labels the agent chose from the repository's existing set, for an unlabelled issue (F4.1)."""
 
     @staticmethod
     def parse(text: str) -> Outcome:
@@ -81,4 +84,7 @@ class Outcome:
             raise OutcomeError("a needs-input outcome must ask at least one question")
 
         scenarios = tuple(str(scenario) for scenario in data.get("scenarios") or [])
-        return Outcome(kind=kind, summary=summary, scenarios=scenarios, questions=questions)
+        labels = tuple(str(label) for label in data.get("labels") or [])
+        return Outcome(
+            kind=kind, summary=summary, scenarios=scenarios, questions=questions, labels=labels
+        )

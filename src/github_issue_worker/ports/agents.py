@@ -15,6 +15,7 @@ from typing import Protocol
 from github_issue_worker.domain.outcome import Outcome
 
 OUTCOME_FILE = Path(".ghiw") / "outcome.json"
+PROMPT_FILE = Path(".ghiw") / "prompt.md"
 JOURNAL_FILE = Path(".ghiw") / "journal.md"
 
 
@@ -55,6 +56,8 @@ class RunReport:
     limit: UsageLimit | None = None
     usage: TokenUsage | None = None
     error: str | None = None
+    utilization: float | None = None
+    """The share of the account's current usage window that is used up, when the agent says."""
 
 
 class AgentAdapter(Protocol):

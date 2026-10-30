@@ -6,11 +6,18 @@ import json
 from pathlib import Path
 
 from github_issue_worker.domain.outcome import OUTCOME_SCHEMA, Outcome, OutcomeError
-from github_issue_worker.ports.agents import OUTCOME_FILE
+from github_issue_worker.ports.agents import OUTCOME_FILE, PROMPT_FILE, AgentRun
 
 
-def prepare_outcome(worktree: Path) -> tuple[Path, Path]:
-    """Remove a previous run's outcome and write the schema. Returns (outcome, schema) paths."""
+def prepare(run: AgentRun) -> tuple[Path, Path]:
+    """Write the prompt file and the outcome schema, and remove a previous run's outcome.
+
+    Returns the outcome and schema paths. Every agent gets its prompt as ``.ghiw/prompt.md``: those
+    that read stdin get the same text there, the others a pointer to the file.
+    """
+    worktree = run.worktree
+    (worktree / PROMPT_FILE).parent.mkdir(parents=True, exist_ok=True)
+    (worktree / PROMPT_FILE).write_text(run.prompt, encoding="utf-8")
     outcome = worktree / OUTCOME_FILE
     outcome.parent.mkdir(parents=True, exist_ok=True)
     outcome.unlink(missing_ok=True)

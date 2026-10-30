@@ -21,7 +21,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta, tzinfo
 from typing import Any
 
-from github_issue_worker.adapters.agents import prepare_outcome, read_outcome
+from github_issue_worker.adapters.agents import prepare, read_outcome
 from github_issue_worker.ports.agents import (
     AgentRun,
     Invocation,
@@ -45,13 +45,15 @@ class CodexAdapter:
         executable: str = "codex",
         timezone: tzinfo | None = None,
         now: Callable[[], datetime] | None = None,
+        env: dict[str, str] | None = None,
     ) -> None:
         self._executable = executable
+        self._env = env or {}
         self._now = now or (lambda: datetime.now(timezone).astimezone())
         self._timezone = timezone
 
     def invocation(self, run: AgentRun) -> Invocation:
-        outcome, schema = prepare_outcome(run.worktree)
+        outcome, schema = prepare(run)
         argv = [self._executable, "exec"]
         if run.session:
             argv += ["resume", run.session]
@@ -67,7 +69,7 @@ class CodexAdapter:
         if run.model:
             argv += ["-m", run.model]
         argv.append("-")
-        return Invocation(argv=argv, cwd=run.worktree, stdin=run.prompt)
+        return Invocation(argv=argv, cwd=run.worktree, stdin=run.prompt, env=self._env)
 
     def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
         session: str | None = None
