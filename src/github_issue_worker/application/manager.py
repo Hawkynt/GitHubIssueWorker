@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
+from github_issue_worker.application.history import RunRecord
 from github_issue_worker.application.issue_run import Verdict
 from github_issue_worker.application.poller import PollResult, PollState
 from github_issue_worker.domain.claim import ClaimState, Holder
@@ -96,6 +97,8 @@ class Manager:
     trusted_users: tuple[str, ...]
     run_issue: RunIssue
     spawn: Callable[[Callable[[], None]], None]
+    on_finished: Callable[[RunRecord], None] | None = None
+    """Told about every finished run, for the long-term history the cockpit draws."""
     _lock: threading.RLock = field(default_factory=threading.RLock)
     _known: dict[tuple[str, int], Issue] = field(default_factory=dict)
     _pending: dict[str, set[int]] = field(default_factory=dict)
@@ -291,6 +294,8 @@ class Manager:
             else "its default model",
         )
 
+        started = self.clock.now()
+
         def job() -> None:
             verdict = Verdict("failed", detail="the run crashed")
             crashed = False
@@ -314,6 +319,9 @@ class Manager:
                     slot.started_at = None
                     slot.branch = None
                     slot.step = None
+                self._record(
+                    watch, slot, issue, kind, "crashed" if crashed else verdict.kind, started
+                )
                 log.info(
                     "%s#%d: %s by %s on %s %s",
                     watch.name,
@@ -327,6 +335,36 @@ class Manager:
                 )
 
         self.spawn(job)
+
+    def _record(
+        self,
+        watch: RepositoryWatch,
+        slot: WorkerSlot,
+        issue: Issue,
+        kind: RunKind,
+        verdict: str,
+        started: datetime,
+    ) -> None:
+        if self.on_finished is None:
+            return
+        known = slot.observed_model or slot.model
+        try:
+            self.on_finished(
+                RunRecord(
+                    repository=watch.name,
+                    issue=issue.number,
+                    worker=slot.name,
+                    agent=slot.agent,
+                    model=display_model(known) if known else "unknown model",
+                    kind=kind.value,
+                    verdict=verdict,
+                    started=started,
+                    finished=self.clock.now(),
+                    issue_started=started,
+                )
+            )
+        except Exception:
+            log.exception("%s#%d: the run could not be recorded", watch.name, issue.number)
 
     def _label(self, watch: RepositoryWatch, number: int, label: str) -> None:
         if self._labelled.get((watch.name, number)) != label:
