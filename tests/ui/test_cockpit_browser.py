@@ -1,0 +1,42 @@
+"""The cockpit in a real browser: a chart's switches redraw only that chart (F14.13)."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+import pytest
+from playwright.sync_api import Browser, sync_playwright
+
+from github_issue_worker.ui.demo import DemoBackend
+from github_issue_worker.ui.server import UiServer, free_port
+
+pytestmark = pytest.mark.os_integration  # needs a browser installed on the host
+
+
+@pytest.fixture(scope="module")
+def server() -> Iterator[UiServer]:
+    running = UiServer(DemoBackend(), "127.0.0.1", free_port())
+    assert running.start()
+    yield running
+    running.stop()
+
+
+@pytest.fixture(scope="module")
+def browser() -> Iterator[Browser]:
+    with sync_playwright() as playwright:
+        launched = playwright.chromium.launch()
+        yield launched
+        launched.close()
+
+
+def test_a_switch_redraws_only_its_own_chart(browser: Browser, server: UiServer) -> None:
+    page = browser.new_page(reduced_motion="reduce")
+    page.goto(server.url + "/workers")
+    page.evaluate("window.untouched = true")  # gone if the page reloads
+    page.click("#throughput .switch a:text-is('Agent')")
+    page.wait_for_selector("#throughput .switch a[aria-current]:text-is('Agent')")
+    legend = page.inner_text("#throughput .legend")
+    assert "antigravity" in legend and "Claude Opus 5.5" not in legend
+    assert page.evaluate("window.untouched") is True
+    assert page.url.endswith("?by=agent&days=30&time=model")
+    assert "Claude Opus 5.5" in page.inner_text("#time")  # the other chart kept its split

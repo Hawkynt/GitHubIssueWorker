@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol
 
+from github_issue_worker.application.history import RunRecord
 from github_issue_worker.configuration import Configuration
 
 STEPS = ("understand", "implement", "verify", "push", "checks", "merge")
@@ -75,6 +76,8 @@ class IssueView:
     model: str | None = None
     step: str | None = None
     since: datetime | None = None
+    body: str = ""
+    """The issue's description, shown as the tooltip of its title."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +116,17 @@ class Backend(Protocol):
 
         Raises `ActionError` when the worker is not working on an issue.
         """
+        ...
+
+    def open_worktree(self, name: str) -> None:
+        """Show the worktree of the worker's issue in the file manager of this machine.
+
+        Raises `ActionError` when the worker is not working on an issue.
+        """
+        ...
+
+    def history(self) -> list[RunRecord]:
+        """Every finished run this manager remembers, oldest first, for the cockpit."""
         ...
 
     def log(self, name: str) -> str | None:

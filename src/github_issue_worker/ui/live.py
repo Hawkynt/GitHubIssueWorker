@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -12,6 +14,7 @@ from pathlib import Path
 from github_issue_worker.adapters.process import terminate
 from github_issue_worker.application.coordinator import ClaimHandle
 from github_issue_worker.application.github_host import GitHubHost
+from github_issue_worker.application.history import RunRecord
 from github_issue_worker.application.manager import Manager, WorkerSlot
 from github_issue_worker.configuration import ClaudeLocalInstallation, Configuration, save
 from github_issue_worker.domain.issue import Issue
@@ -64,6 +67,26 @@ def issue_state(labels: frozenset[str], claim_state: str | None, local: bool) ->
     return "not picked up"
 
 
+def worker_model(slot: WorkerSlot, history: list[RunRecord]) -> str:
+    """What this run reported, else what is configured, else the model of its last finished run."""
+    known = slot.observed_model or slot.model
+    if known:
+        return display_model(known)
+    return next((r.model for r in reversed(history) if r.worker == slot.name), "-")
+
+
+def open_folder(path: Path) -> None:
+    """Hand a folder to the platform's file manager, without waiting for it."""
+    opener = {"win32": "explorer", "darwin": "open"}.get(sys.platform, "xdg-open")
+    subprocess.Popen(
+        [opener, str(path)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
 class RuntimeBackend:
     def __init__(
         self,
@@ -78,6 +101,8 @@ class RuntimeBackend:
         self._detect = detect
         self._claims: tuple[ClaimView, ...] = ()
         self._open: dict[str, list[Issue]] = {}
+        self._history: list[RunRecord] = []
+        self._history_at = 0.0
         self._claims_at = 0.0
         self._refreshing = threading.Lock()
 
@@ -134,6 +159,7 @@ class RuntimeBackend:
                         model=display_model(known) if known else None,
                         step=(slot.step if slot else claim.step if claim else None),
                         since=slot.started_at if slot else claim.renewed if claim else None,
+                        body=issue.body,
                     )
                 )
         return tuple(found)
@@ -142,8 +168,7 @@ class RuntimeBackend:
         settings = next((w for w in self._runtime.config.workers if w.name == slot.name), None)
         local = settings is not None and isinstance(settings.installation, ClaudeLocalInstallation)
         agent = "ClaudeLocal" if local else AGENT_NAMES.get(slot.agent, slot.agent)
-        known = slot.observed_model or slot.model
-        model = display_model(known) if known else "-"
+        model = worker_model(slot, self.history())
         limited = self._runtime.state.limited_until(slot.account)
         state: WorkerState
         if not slot.available:
@@ -261,6 +286,21 @@ class RuntimeBackend:
                 "waiting for checks), so it finishes this issue and then takes nothing new"
             )
         self._claims_at = 0.0
+
+    def open_worktree(self, name: str) -> None:
+        worker = next((w for w in self.snapshot().workers if w.name == name), None)
+        if worker is None or worker.worktree is None:
+            raise ActionError(f"{name} is not working on an issue, so it has no worktree to open")
+        path = Path(worker.worktree)
+        if not path.is_dir():
+            raise ActionError(f"the worktree {path} does not exist (yet)")
+        open_folder(path)
+
+    def history(self) -> list[RunRecord]:
+        if time.monotonic() - self._history_at > CLAIM_REFRESH:
+            self._history = self._runtime.history.load()
+            self._history_at = time.monotonic()
+        return self._history
 
     def log(self, name: str) -> str | None:
         slot = next((s for s in self._manager.workers if s.name == name), None)

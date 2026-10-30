@@ -324,3 +324,90 @@ def test_a_successful_save_marks_nothing_as_changed(client: TestClient) -> None:
     response = client.post("/settings", data=form)
     assert response.status_code == 200 and "Settings saved" in response.text
     assert _marked(response.text) == set()
+
+
+def test_the_cockpit_reads_out_the_long_term_numbers(client: TestClient) -> None:
+    html = client.get("/workers").text
+    assert "<h1>Cockpit</h1>" in html and ">Cockpit</a>" in html
+    for readout in (
+        "Merged today",
+        "Last 7 days",
+        "All time",
+        "Median time to merge",
+        "Merge rate",
+    ):
+        assert readout in html, readout
+    assert html.count('class="seg s') > 30  # the throughput and model-mix columns
+    assert 'class="bar"' in html  # time to merge
+    assert "Qwen3.8 Flash Next IQ3_S" in html and "Gemini 4 Argon (Medium)" in html
+    assert html.count("<table") >= 4  # every chart can be read as a table
+
+
+def test_the_cockpit_splits_by_model_agent_or_repository(client: TestClient) -> None:
+    by_agent = client.get("/workers?by=agent&time=repository").text
+    assert "aria-current=true>Agent<" in by_agent
+    legend = (
+        by_agent.split('id="throughput"', 1)[1].split('class="legend"', 1)[1].split("</ul>", 1)[0]
+    )
+    assert "antigravity" in legend and "Claude Opus 5.5" not in legend
+    assert "acme/billing-cli" in by_agent.split('id="time"', 1)[1]
+    assert client.get("/workers?by=nonsense").status_code == 422
+
+
+def test_an_entitys_colour_survives_a_change_of_view(client: TestClient) -> None:
+    def slot(html: str, name: str) -> str:
+        found = re.search(rf'<li><i class="key (s\d)"></i>{re.escape(name)}<', html)
+        assert found, name
+        return found.group(1)
+
+    month = client.get("/workers").text
+    quarter = client.get("/workers?days=90").text
+    assert slot(month, "GPT 6.1 Sol") == slot(quarter, "GPT 6.1 Sol")
+
+
+def test_the_cockpit_fragment_keeps_the_chosen_view(client: TestClient) -> None:
+    fragment = client.get("/workers?fragment=1&by=repository").text
+    assert "<nav>" not in fragment and "acme/design-tokens" in fragment
+    assert "Claude Opus 5.5" in fragment  # the crew lanes stay live too
+
+
+def _square(html: str, repository: str) -> str:
+    found = re.search(rf'<li><i class="key (s\d)"></i>{re.escape(repository)}<', html)
+    assert found, repository
+    return found.group(1)
+
+
+def test_the_crew_shows_each_issue_as_a_square_coloured_by_its_repository(
+    client: TestClient,
+) -> None:
+    html = client.get("/workers").text
+    crew = html.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
+    gateway = _square(crew, "acme/telemetry-gateway")
+    assert f'<i class="square {gateway}"' in crew.split("#214", 1)[0].rsplit("class=run", 1)[1]
+    assert 'href="https://github.com/acme/telemetry-gateway/issues/214"' in crew
+    assert 'data-tip="Uploads to the gateway fail' in crew  # the description as tooltip
+    assert 'action="/workers/claude/open"' in crew  # the worktree, named like its branch
+    assert ">issue/214-retry-uploads-after-a-gateway-timeout<" in crew
+
+
+def test_remote_workers_get_their_own_row_with_github_branch_links_and_no_controls(
+    client: TestClient,
+) -> None:
+    crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
+    remote = crew.split("<h3>Remote</h3>", 1)[1]
+    assert "laptop-01ab" in remote and "ci-runner-03" in remote
+    assert "#219 Buffer metrics while offline" in remote
+    assert (
+        'href="https://github.com/acme/telemetry-gateway/tree/issue/219-buffer-metrics-while-offline"'
+        in remote
+    )
+    assert "<button" not in remote and "/open" not in remote
+    assert f'<i class="square {_square(crew, "acme/billing-cli")}"' in remote  # same colour
+
+
+def test_opening_a_worktree_hands_it_to_the_file_manager(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    response = client.post("/workers/claude/open", headers={"referer": "http://testserver/workers"})
+    assert response.status_code == 200 and backend.opened == ["claude"]
+    assert "is not working on an issue" in client.post("/workers/local/open").text

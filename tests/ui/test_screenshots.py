@@ -20,12 +20,12 @@ def _captured() -> set[str]:
     return {name for name, _path, _whole in SCREENSHOTS}
 
 
-def test_the_hero_image_is_the_workers_page() -> None:
+def test_the_hero_image_is_the_cockpit() -> None:
     hero = IMAGE.search(README.read_text(encoding="utf-8"))
     assert hero is not None
     alt, name = hero.groups()
     assert name == "workers.png"
-    assert "Workers page" in alt
+    assert "cockpit" in alt
 
 
 def test_the_readme_shows_exactly_the_captured_pages() -> None:

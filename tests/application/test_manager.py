@@ -297,3 +297,22 @@ def test_a_running_worker_shows_its_issue_and_start_time() -> None:
     assert seen == [(("Hawkynt/ShiftDiff", 1), "Issue 1", T0, "issue/1-issue-1")]
     worker = f.manager.workers[0]
     assert worker.current is None and worker.step is None and worker.issue_title is None
+
+
+def test_every_finished_run_is_recorded_for_the_cockpit() -> None:
+    from github_issue_worker.application.history import RunRecord
+
+    recorded: list[RunRecord] = []
+    f = Fixture([slot("claude", observed_model="claude-opus-5-5")], verdicts=[Verdict("merged")])
+    f.manager.on_finished = recorded.append
+    f.new_issues(issue(1))
+    f.manager.tick()
+    (run,) = recorded
+    assert (run.repository, run.issue, run.worker, run.agent) == (
+        "Hawkynt/ShiftDiff",
+        1,
+        "claude",
+        "claude",
+    )
+    assert (run.model, run.kind, run.verdict) == ("Claude Opus 5.5", "first", "merged")
+    assert run.started == T0 and run.finished == T0

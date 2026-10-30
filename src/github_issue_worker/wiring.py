@@ -7,7 +7,7 @@ import socket
 import threading
 import time
 from collections.abc import Iterator, MutableMapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from pathlib import Path
 
@@ -24,6 +24,7 @@ from github_issue_worker.adapters.verifier import Verifier
 from github_issue_worker.adapters.workspace import Workspace
 from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.github_host import GitHubHost
+from github_issue_worker.application.history import HistoryStore, RunRecord
 from github_issue_worker.application.issue_run import IssueRun, RunSettings, RunStopped, Verdict
 from github_issue_worker.application.manager import Manager, RepositoryWatch, WorkerSlot
 from github_issue_worker.application.poller import Poller, PollState
@@ -303,6 +304,16 @@ class Runtime:
                 slot.available, slot.reason = False, str(unavailable)
         manager.workers = self.slots
 
+    @property
+    def history(self) -> HistoryStore:
+        return HistoryStore(self.state_path.parent / "history.jsonl")
+
+    def record(self, run: RunRecord) -> None:
+        """Keep a finished run, dated from the issue's first run since its last merge."""
+        history = self.history
+        started = history.issue_started(run.repository, run.issue, run.started)
+        history.append(replace(run, issue_started=started))
+
     def manager(self) -> Manager:
         for settings in self.config.repositories:
             self.watch(settings)
@@ -318,6 +329,7 @@ class Runtime:
             trusted_users=tuple(self.config.trusted_users),
             run_issue=self.run_issue,
             spawn=lambda job: threading.Thread(target=job, daemon=True).start(),
+            on_finished=self.record,
         )
 
 

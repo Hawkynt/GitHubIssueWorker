@@ -6,12 +6,13 @@ import asyncio
 import hashlib
 import secrets
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Annotated, Any
 from urllib.parse import parse_qsl
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 
+from github_issue_worker.application.history import SplitBy
 from github_issue_worker.cli import normalize_repository
 from github_issue_worker.configuration import (
     Configuration,
@@ -81,11 +82,18 @@ def create_app(backend: Backend) -> FastAPI:
         return pages.issues_page(snapshot, notice)
 
     @app.get("/workers", response_class=HTMLResponse)
-    def workers(fragment: int = 0, notice: str = "") -> str:
+    def workers(
+        fragment: int = 0,
+        notice: str = "",
+        by: SplitBy = "model",
+        days: Annotated[int, Query(ge=7, le=366)] = 30,
+        time: SplitBy = "model",
+    ) -> str:
         snapshot = backend.snapshot()
+        view = pages.CockpitView(by=by, days=days, time=time)
         if fragment:
-            return pages.workers_fragment(snapshot)
-        return pages.workers_page(snapshot, notice)
+            return pages.cockpit_fragment(snapshot, backend.history(), view)
+        return pages.cockpit_page(snapshot, backend.history(), view, notice)
 
     @app.get("/repositories", response_class=HTMLResponse)
     def repositories(notice: str = "") -> str:
@@ -349,6 +357,14 @@ def create_app(backend: Backend) -> FastAPI:
             came_from(request),
             f"{name} was stopped and is paused; its issue is free for other workers.",
         )
+
+    @app.post("/workers/{name}/open", response_class=HTMLResponse, response_model=None)
+    def open_worktree(name: str, request: Request) -> Any:
+        try:
+            backend.open_worktree(name)
+        except ActionError as error:
+            return back(came_from(request), str(error))
+        return back(came_from(request), f"The worktree of {name} is open in the file manager.")
 
     @app.get("/workers/{name}/log", response_class=HTMLResponse, response_model=None)
     def worker_log(name: str, fragment: int = 0) -> Any:

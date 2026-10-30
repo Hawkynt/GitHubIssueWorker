@@ -22,7 +22,7 @@
 > (Claude, Codex, Antigravity, OpenCode, local or cloud) share the work without doing anything twice
 > or leaving an issue stranded.
 
-![The Workers page: each worker's agent, model, issue and step at a glance](docs/screenshots/workers.png)
+![The cockpit: readouts, crew lanes with their issues, and the long-term charts](docs/screenshots/workers.png)
 
 ## 🧭 Vision
 
@@ -163,11 +163,18 @@ manager, marked remote.
 
 ![Issues page with local and remote workers and waiting issues](docs/screenshots/issues.png)
 
-**Workers.** Each worker is a lane: the agent, the account it bills against and the model it runs
-on; the issue it works, linked; a track through the six steps of a run; branch, worktree and time.
-Limited and unavailable workers say why.
+**Cockpit.** The crew at work and the long view. Readouts on top: merged today, the last seven days
+with a 30-day trace, all time, median time to merge, merge rate. Each worker is a lane: agent,
+account and model, and a square per issue it holds, coloured by repository, with the issue (its
+description as tooltip), a track through the six steps of a run, and its branch, which opens the
+worktree. Other managers' workers follow in a remote row, their branches linked on GitHub. Below:
+a flight log of every run of the last day per worker, issues merged per day by model, agent or
+repository over 30, 90 or 180 days, the model share, the running total of merges, time to merge,
+the busy hours by weekday, the weekly model mix and a ledger of every model used. Every chart has a
+tooltip per mark; the history survives restarts. The deck boots with one animated sequence and
+keeps still for anyone who prefers reduced motion.
 
-![Workers page with five workers in different states](docs/screenshots/workers.png)
+![Cockpit with readouts, crew lanes, throughput, model mix and time to merge](docs/screenshots/workers.png)
 
 **Log.** What a local agent says and does while it works: its messages, the commands and tools it
 runs, and their output, refreshed as it goes.
@@ -547,7 +554,7 @@ not a second program: what the UI changes, the manager does, with the same check
 
 | Page | Shows | Lets you |
 | --- | --- | --- |
-| **Workers** | Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
+| **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
 | **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), edit its per-repository overrides, remove one. |
 | **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
@@ -1046,6 +1053,19 @@ operational items, demonstrated on a real repository. Commits that implement an 
   page loaded has a background of its own, distinct from errors and notices, in light and dark; it
   clears when the value is edited back, and a save refused by validation keeps the typed values
   marked. Tested in a real browser.
+- [x] 🟧 **F14.13** Cockpit: every finished run is appended to `history.jsonl` in the state
+  directory and survives restarts and damaged lines. Readouts (merged today, last 7 days with a
+  30-day trace, all time, median time from first run to merge, merge rate), issues merged per day
+  split by model, agent or repository over 30/90/180 days, runs per model per week over 26 weeks,
+  time to merge by model, agent or repository, a model ledger (runs, merged, median time, first
+  and last use), a 24-hour flight log of runs per worker with the running ones live, the model share
+  as a ring, the running total of merges, and finished runs per weekday and hour. Colour follows the entity across views, a ninth series folds into "Other", every
+  chart has a per-mark tooltip and a table view, the grid reflows down to phone width, and it
+  refreshes live without losing the chosen view.
+- [x] 🟧 **F14.14** Crew squares: each issue a worker holds is a square coloured by its repository
+  (the same colour for every worker, local or remote), with the issue linked and its description as
+  tooltip, and its branch: locally a button that opens the worktree in the file manager, remotely a
+  link to the branch on GitHub. Other managers' workers form a remote row without controls.
 - [x] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
   without one.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
@@ -1054,7 +1074,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F14.7** Demo mode `ui --demo <scenario>` renders every page through the real UI code with
   deterministic sample data (several workers of every agent kind, limited and paused accounts,
   claims from other managers). `generate.yml` captures each page, commits changed screenshots and
-  reruns CI on that commit for an open pull request; the hero image is the Workers page. The same
+  reruns CI on that commit for an open pull request; the hero image is the cockpit. The same
   pull request adds the hero image and `## 🖼️ Screenshots` and sets `gui: true`.
 
 ### F15 — Installations and the reference setup

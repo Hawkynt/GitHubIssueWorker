@@ -2,20 +2,44 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from datetime import datetime, timedelta
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from html import escape
 from typing import Any
 
 from pydantic import BaseModel
 
 from github_issue_worker.adapters.transcript import Entry, transcript
+from github_issue_worker.application.history import (
+    RunRecord,
+    SplitBy,
+    activity,
+    cumulative_merged,
+    daily_merged,
+    kpis,
+    model_ledger,
+    resolve_times,
+    weekly_mix,
+)
 from github_issue_worker.configuration import (
     AccountSettings,
     Configuration,
     DefaultsSettings,
     RepositorySettings,
     WorkerSettings,
+)
+from github_issue_worker.ui.charts import (
+    Span,
+    area_line,
+    color_slots,
+    donut,
+    heatmap,
+    horizontal_bars,
+    ring_gauge,
+    sparkline,
+    stacked_columns,
+    timeline,
 )
 from github_issue_worker.ui.forms import HELP, FormField, display, fields_of, is_set, value_at
 from github_issue_worker.ui.model import STEPS, ClaimView, IssueView, Snapshot, WorkerView
@@ -132,6 +156,200 @@ summary { cursor: pointer; color: var(--steel); white-space: nowrap; }
   .actions { justify-content: flex-start; }
   .field { grid-template-columns: 1fr; }
 }
+body.deck {
+  --paper: #060b14; --sheet: #101a2a; --ink: #e9f0f8; --muted: #8c9cb2; --rule: #20304a;
+  --steel: #6fb3e8; --steel-soft: #16304d; --amber: #e0a44a; --amber-soft: #3a2f1c;
+  --brick: #e07a6b; --brick-soft: #3b2420; --done: #8fb596; --glow: #4aa3ff;
+  color-scheme: dark; background: var(--paper); overflow-x: hidden;
+}
+body.deck::before { content: ""; position: fixed; inset: -20%; z-index: -2; pointer-events: none;
+  background:
+    radial-gradient(40% 35% at 25% 20%, #1d4f8a55, transparent 70%),
+    radial-gradient(35% 30% at 80% 10%, #6a3fa344, transparent 70%),
+    radial-gradient(45% 40% at 60% 90%, #0f6b5a33, transparent 70%);
+  filter: blur(30px); }
+body.deck::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(#ffffff07 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff07 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 0%, #000 30%, transparent 85%); }
+body.deck main { max-width: 118rem; }
+body.deck nav { background: #050a12d0; backdrop-filter: blur(12px); border-right-color: #1a2840; }
+body.deck nav a[aria-current="page"] { background: linear-gradient(90deg, #1d4f8a, #16304d00);
+  color: #fff; box-shadow: inset 2px 0 0 var(--glow); }
+body.deck h1 { font-size: clamp(1.8rem, 2.6vw, 2.6rem); font-weight: 250; letter-spacing: .02em;
+  background: linear-gradient(90deg, #ffffff, #8cc6ff 60%, #b39bff); -webkit-background-clip: text;
+  background-clip: text; color: transparent; }
+.readouts { display: grid; gap: .9rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); }
+.readout, .panel { position: relative; min-width: 0; border-radius: 14px;
+  background: linear-gradient(180deg, #13203599, #0c152499); backdrop-filter: blur(10px);
+  border: 1px solid var(--rule);
+  box-shadow: inset 0 1px 0 #ffffff0d, 0 24px 60px -30px #000c; }
+.readout::before, .panel::before { content: ""; position: absolute; top: -1px; left: -1px;
+  width: 18px; height: 18px; border-top: 2px solid var(--glow); border-left: 2px solid var(--glow);
+  border-top-left-radius: 14px; opacity: .8; pointer-events: none; }
+.readout::after, .panel::after { content: ""; position: absolute; bottom: -1px; right: -1px;
+  width: 18px; height: 18px; border-bottom: 2px solid #b39bff; border-right: 2px solid #b39bff;
+  border-bottom-right-radius: 14px; opacity: .6; pointer-events: none; }
+.readout { padding: 1rem 1.2rem 1.1rem; overflow: hidden; }
+.readout span { display: block; color: var(--muted); font-size: 13px; }
+.readout b { display: block; font-weight: 200; font-size: clamp(2.2rem, 3.4vw, 3.3rem);
+  line-height: 1.1; letter-spacing: -.03em; font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #ffffff, #9fd0ff); -webkit-background-clip: text;
+  background-clip: text; color: transparent; filter: drop-shadow(0 0 18px #4aa3ff66); }
+.readout small { color: var(--muted); font-size: 12.5px; }
+.readout .spark { display: block; width: 100%; max-width: 13rem; height: 2.1rem; margin-top: .2rem; }
+.spark path { fill: none; stroke: var(--glow); stroke-width: 2; stroke-linejoin: round;
+  filter: drop-shadow(0 0 4px #4aa3ff); }
+.gauged { position: relative; display: flex; align-items: center; gap: .8rem; }
+.gauge { width: 4.6rem; height: 4.6rem; flex: none; }
+.gauge-track { fill: none; stroke: #1c2a40; stroke-width: 9; }
+.gauge-fill { fill: none; stroke: var(--glow); stroke-width: 9;
+  stroke-linecap: round; filter: drop-shadow(0 0 6px #4aa3ffaa); }
+.deck-grid { display: grid; gap: .9rem; margin-top: .9rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); }
+.panel { padding: 1.05rem 1.3rem 1.15rem; }
+.panel.wide { grid-column: 1 / -1; }
+.panel header { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center;
+  justify-content: space-between; }
+.panel h2 { margin: 0; font-size: 1.05rem; font-weight: 550; letter-spacing: .01em;
+  display: flex; align-items: center; gap: .55rem; }
+.panel h2::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%;
+  background: var(--glow); box-shadow: 0 0 10px var(--glow); }
+.panel .sub { color: var(--muted); font-size: 13px; margin: .15rem 0 .7rem; }
+.panel h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 1rem 0 0; }
+.panel .lane:last-child { border-bottom: 0; }
+.panel .lane { border-top-color: #1a2840; }
+.stack { display: grid; gap: .6rem; }
+.run { display: grid; grid-template-columns: 1.1rem 1fr; gap: .7rem; align-items: start; }
+.square { display: block; width: 1.1rem; height: 1.1rem; border-radius: 4px; margin-top: .2rem;
+  box-shadow: 0 0 14px currentColor; color: transparent; }
+.square.free { border: 1.5px dashed #2a3c58; box-shadow: none; }
+.square.s1 { color: #3987e599; } .square.s2 { color: #d9592699; } .square.s3 { color: #199e7099; }
+.square.s4 { color: #c9850099; } .square.s5 { color: #d5518199; } .square.s6 { color: #00830099; }
+.square.s7 { color: #9085e999; } .square.s8 { color: #e6676799; }
+form.open { display: inline; }
+button.link { background: none; border: 0; padding: 0; color: var(--steel); cursor: pointer;
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace; font-size: 13px;
+  text-decoration: underline; }
+.switches { display: flex; flex-wrap: wrap; gap: .5rem; }
+.switch { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden;
+  background: #0a1220; }
+.switch a { padding: .25rem .75rem; font-size: 13px; color: var(--muted); text-decoration: none;
+  transition: background .2s, color .2s; }
+.switch a + a { border-left: 1px solid var(--rule); }
+.switch a:hover { color: var(--ink); }
+.switch a[aria-current] { background: linear-gradient(180deg, #2a64a8, #1d4f8a); color: #fff;
+  box-shadow: 0 0 16px #4aa3ff55; }
+svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .grid { stroke: #1b2a42; stroke-width: 1; }
+.chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .row-name { fill: var(--ink); font-size: 12.5px; }
+.chart .row-value { fill: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.chart .bar { fill: #3987e5; filter: drop-shadow(0 0 5px #3987e588); }
+.chart .hit { fill: transparent; cursor: crosshair; }
+.chart .hit:hover, .chart .hit:focus { fill: #ffffff0f; outline: none; }
+.chart .seg, .chart .bar, .chart .arc, .chart .run-bar, .chart .cell { transition: filter .2s; }
+.chart .arc:hover, .chart .arc:focus, .chart .run-bar:hover, .chart .run-bar:focus,
+.chart .cell:hover { filter: brightness(1.35) drop-shadow(0 0 8px currentColor); outline: none; }
+.s1 { fill: #3987e5; background: #3987e5; color: #3987e5; }
+.s2 { fill: #d95926; background: #d95926; color: #d95926; }
+.s3 { fill: #199e70; background: #199e70; color: #199e70; }
+.s4 { fill: #c98500; background: #c98500; color: #c98500; }
+.s5 { fill: #d55181; background: #d55181; color: #d55181; }
+.s6 { fill: #008300; background: #008300; color: #008300; }
+.s7 { fill: #9085e9; background: #9085e9; color: #9085e9; }
+.s8 { fill: #e66767; background: #e66767; color: #e66767; }
+.s0 { fill: #66758a; background: #66758a; color: #66758a; }
+.square.s1, .square.s2, .square.s3, .square.s4, .square.s5, .square.s6, .square.s7,
+.square.s8 { background: currentColor; }
+.donut { max-width: 15rem; margin: 0 auto; }
+.donut-track { fill: none; stroke: #121d2e; stroke-width: 32; }
+.donut-value { fill: var(--ink); font-size: 40px; font-weight: 200; font-variant-numeric: tabular-nums; }
+.donut-caption { fill: var(--muted); font-size: 12px; }
+.share { display: grid; grid-template-columns: minmax(10rem, 15rem) 1fr; gap: 1.2rem;
+  align-items: center; }
+.legend.tall { flex-direction: column; flex-wrap: nowrap; gap: .45rem; }
+.legend.tall li { display: flex; align-items: center; }
+.legend.tall b { margin-left: auto; padding-left: 1rem; color: var(--ink); font-weight: 500;
+  font-variant-numeric: tabular-nums; }
+.area-fill { fill: url(#glow); }
+.area-line { fill: none; stroke: #6fb8ff; stroke-width: 2.2; stroke-linejoin: round;
+  filter: drop-shadow(0 0 6px #4aa3ff); }
+.chart .dot { fill: transparent; }
+.chart .dot:hover, .chart .dot:focus { fill: #6fb8ff; }
+.head { fill: #fff; filter: drop-shadow(0 0 6px #6fb8ff); }
+.head-pulse { fill: none; stroke: #6fb8ff; stroke-width: 2; transform-box: fill-box;
+  transform-origin: center; opacity: 0; }
+.timeline .lane-rule { stroke: #16233a; stroke-width: 16; stroke-linecap: round; }
+.timeline .now { stroke: #b39bff; stroke-width: 1.5; stroke-dasharray: 3 4; }
+.run-bar { filter: drop-shadow(0 0 5px currentColor); }
+.heat .cell { fill: #1a2638; }
+.heat .cell.on { fill: #4aa3ff; fill-opacity: var(--level); }
+.empty-plot .empty-text { fill: var(--muted); font-size: 14px; letter-spacing: .02em; }
+.legend { list-style: none; display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; padding: 0;
+  margin: 0 0 .6rem; font-size: 13px; color: var(--muted); }
+.key { display: inline-block; width: .7rem; height: .7rem; border-radius: 3px; margin-right: .45rem;
+  vertical-align: -1px; box-shadow: 0 0 8px currentColor; }
+.scroll { overflow-x: auto; }
+.panel table { font-size: 13px; font-variant-numeric: tabular-nums; }
+.panel th { border-bottom-color: #22324a; }
+.panel td { border-bottom-color: #172438; }
+.panel td.n, .panel th.n { text-align: right; }
+.panel tr:hover td { background: #ffffff05; }
+#tip { position: fixed; z-index: 10; pointer-events: none; max-width: 24rem; padding: .4rem .7rem;
+  background: #07101cf2; color: var(--ink); border: 1px solid #2a4a74; border-radius: 8px;
+  font-size: 12.5px; box-shadow: 0 0 24px #4aa3ff33, 0 10px 30px #000a; backdrop-filter: blur(6px); }
+@media (max-width: 760px) { .share { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: no-preference) {
+  body.deck::before { animation: aurora 38s ease-in-out infinite alternate; }
+  @keyframes aurora { 50% { transform: translate(4%, 3%) rotate(6deg) scale(1.08); }
+    100% { transform: translate(-3%, 2%) rotate(-4deg) scale(1.04); } }
+  body.boot .readout, body.boot .panel { animation: materialise .9s cubic-bezier(.2, .8, .2, 1) both;
+    animation-delay: calc(var(--i, 0) * 90ms); }
+  body.boot .deck-grid > :nth-child(1) { --i: 4; } body.boot .deck-grid > :nth-child(2) { --i: 5; }
+  body.boot .deck-grid > :nth-child(3) { --i: 6; } body.boot .deck-grid > :nth-child(4) { --i: 7; }
+  body.boot .deck-grid > :nth-child(5) { --i: 7.5; } body.boot .deck-grid > :nth-child(6) { --i: 8; }
+  body.boot .deck-grid > :nth-child(7) { --i: 8.5; } body.boot .deck-grid > :nth-child(n+8) { --i: 9; }
+  @keyframes materialise { from { opacity: 0; transform: translateY(18px) scale(.985);
+    filter: blur(6px); } }
+  body.boot .readouts::after { content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: linear-gradient(90deg, transparent, #6fb8ff22, transparent); width: 30%;
+    animation: sweep 1.6s .2s ease-out both; }
+  @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(400%);
+    opacity: 0; } }
+  .boot .chart .seg { transform-box: fill-box; transform-origin: bottom;
+    animation: rise .8s cubic-bezier(.2, .8, .2, 1) both;
+    animation-delay: calc(.5s + var(--i, 0) * 16ms); }
+  .boot .chart .bar, .boot .chart .run-bar { transform-box: fill-box; transform-origin: left;
+    animation: reach .9s cubic-bezier(.2, .8, .2, 1) both;
+    animation-delay: calc(.6s + var(--i, 0) * 60ms); }
+  .boot .chart .arc { transform-box: view-box; transform-origin: center;
+    animation: unfold 1s cubic-bezier(.2, .8, .2, 1) both;
+    animation-delay: calc(.6s + var(--i, 0) * 110ms); }
+  .boot .chart .cell { animation: appear .5s ease-out both;
+    animation-delay: calc(.6s + var(--i, 0) * 4ms); }
+  .boot .area-line { stroke-dasharray: 1; animation: draw 1.8s .6s ease-in-out both; }
+  .boot .area-fill { animation: appear 1.2s 1.4s ease-out both; }
+  .boot .gauge-fill { animation: fill 1.6s .5s cubic-bezier(.3, .7, .2, 1) both; }
+  .boot .spark path { stroke-dasharray: 600; animation: spark 1.6s .4s ease-out both; }
+  @keyframes rise { from { transform: scaleY(0); } }
+  @keyframes reach { from { transform: scaleX(0); } }
+  @keyframes unfold { from { transform: rotate(-40deg) scale(.6); opacity: 0; } }
+  @keyframes appear { from { opacity: 0; } }
+  @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+  @keyframes fill { from { stroke-dasharray: 0 var(--length); } }
+  @keyframes spark { from { stroke-dashoffset: 600; } to { stroke-dashoffset: 0; } }
+  .head-pulse { animation: ping 2.4s ease-out infinite; }
+  @keyframes ping { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(4); } }
+  .run-bar.live { animation: breathe 1.8s ease-in-out infinite; }
+  @keyframes breathe { 50% { filter: brightness(1.5) drop-shadow(0 0 12px currentColor); } }
+  .square:not(.free) { animation: glow 2.6s ease-in-out infinite; }
+  @keyframes glow { 50% { box-shadow: 0 0 22px currentColor, 0 0 4px currentColor; } }
+  .panel h2::before { animation: blink 3s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+}
 @media (prefers-reduced-motion: no-preference) {
   .track span.now { animation: beat 2.4s ease-in-out infinite; }
   @keyframes beat { 50% { border-top-color: var(--steel-soft); } }
@@ -165,16 +383,78 @@ LIVE = """
   const events = new EventSource("/events");
   events.onmessage = async () => {
     if (live.contains(document.activeElement)) return;
-    const response = await fetch(location.pathname + "?fragment=1");
+    const query = new URLSearchParams(location.search);
+    query.set("fragment", "1");
+    const response = await fetch(location.pathname + "?" + query);
     if (response.ok) live.innerHTML = await response.text();
   };
 })();
 </script>
 """
 
+TIPS = """
+<div id=tip hidden role=status></div>
+<script>
+(() => {
+  const tip = document.getElementById("tip");
+  const show = (target, x, y) => {
+    tip.textContent = target.dataset.tip;
+    tip.hidden = false;
+    const width = tip.offsetWidth, height = tip.offsetHeight;
+    tip.style.left = Math.max(8, Math.min(x + 14, innerWidth - width - 8)) + "px";
+    tip.style.top = Math.max(8, y - height - 12) + "px";
+  };
+  document.addEventListener("pointermove", (event) => {
+    const target = event.target.closest && event.target.closest("[data-tip]");
+    if (target) show(target, event.clientX, event.clientY); else tip.hidden = true;
+  });
+  document.addEventListener("focusin", (event) => {
+    const target = event.target.closest && event.target.closest("[data-tip]");
+    if (!target) { tip.hidden = true; return; }
+    const box = target.getBoundingClientRect();
+    show(target, box.left + box.width / 2, box.top);
+  });
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!still) {
+    for (const node of document.querySelectorAll("[data-count]")) {
+      const target = Number(node.dataset.count), suffix = node.dataset.suffix || "";
+      const began = performance.now() + 300;
+      const tick = (now) => {
+        const t = Math.min(Math.max((now - began) / 1400, 0), 1);
+        node.textContent = Math.round(target * (1 - Math.pow(1 - t, 3))) + suffix;
+        if (t < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }
+  }
+  setTimeout(() => document.body.classList.remove("boot"), 3200);
+  // A switch redraws only its own panel: fetch the view, swap that panel, keep the URL in step.
+  document.addEventListener("click", async (event) => {
+    const link = event.target.closest && event.target.closest(".switch a");
+    if (!link || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const panel = link.closest("section[id]");
+    if (!panel) return;
+    event.preventDefault();
+    const query = new URLSearchParams(link.search);
+    history.replaceState(null, "", location.pathname + "?" + query);
+    query.set("fragment", "1");
+    const response = await fetch(location.pathname + "?" + query);
+    if (!response.ok) { location.href = link.href; return; }
+    const fresh = new DOMParser().parseFromString(await response.text(), "text/html")
+      .getElementById(panel.id);
+    if (!fresh) return;
+    if (!still) fresh.classList.add("boot");
+    panel.replaceWith(fresh);
+    setTimeout(() => fresh.classList.remove("boot"), 2400);
+  });
+})();
+</script>
+"""
+"""One tooltip for every chart mark that carries ``data-tip``, by pointer and by keyboard."""
+
 PAGES = (
     ("/", "Issues"),
-    ("/workers", "Workers"),
+    ("/workers", "Cockpit"),
     ("/repositories", "Repositories"),
     ("/fleet", "Fleet"),
     ("/settings", "Settings"),
@@ -201,7 +481,9 @@ def when(moment: datetime, now: datetime) -> str:
     return f"{moment:%Y-%m-%d %H:%M} UTC ({relative})"
 
 
-def page(title: str, path: str, snapshot_id: str, body: str, live: bool = False) -> str:
+def page(
+    title: str, path: str, snapshot_id: str, body: str, live: bool = False, deck: bool = False
+) -> str:
     links = "".join(
         f'<a href="{href}"{" aria-current=page" if href == path else ""}>{name}</a>'
         for href, name in PAGES
@@ -209,10 +491,11 @@ def page(title: str, path: str, snapshot_id: str, body: str, live: bool = False)
     return (
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{e(title)}: GitHubIssueWorker</title><style>{STYLE}</style></head><body>"
-        f"<div class=frame><nav><div class=who>GitHubIssueWorker</div>"
+        f"<title>{e(title)}: GitHubIssueWorker</title><style>{STYLE}</style></head>"
+        + ("<body class='deck boot'>" if deck else "<body>")
+        + f"<div class=frame><nav><div class=who>GitHubIssueWorker</div>"
         f"<div class=id>manager {e(snapshot_id)}</div>{links}</nav>"
-        f"<main>{body}</main></div>{LIVE if live else ''}</body></html>"
+        f"<main>{body}</main></div>{LIVE if live else ''}{TIPS if deck else ''}</body></html>"
     )
 
 
@@ -229,47 +512,126 @@ def _track(step: str | None) -> str:
     return f'<div class=track role=list aria-label="Steps">{"".join(cells)}</div>'
 
 
-def _lane(worker: WorkerView, now: datetime) -> str:
-    who = (
-        f"<div class=name>{e(worker.name)}</div>"
-        f"<div class=runs>{e(worker.agent)} on account <span class=nowrap>{e(worker.account)}</span></div>"
-        + (
-            f"<div class=model>{e(worker.model)}</div>"
-            if worker.model != "-"
-            else "<div class=quiet>model shown after its first run</div>"
-        )
+def _issue_link(repository: str, number: int, title: str | None, body: str) -> str:
+    tip = f' data-tip="{e(body[:400])}"' if body else ""
+    return (
+        f'<a href="https://github.com/{e(repository)}/issues/{number}"{tip}>'
+        f"#{number} {e(title)}</a>"
     )
-    if worker.state == "working" and worker.issue is not None:
+
+
+def _run(slot: int, issue: str, track: str, facts: Iterable[str]) -> str:
+    """One issue a worker holds: its repository's coloured square, the issue, the track."""
+    return (
+        f'<div class=run><i class="square s{slot}" aria-hidden=true></i><div>'
+        f"<div class=issue>{issue}</div>{track}<div class=facts>{', '.join(facts)}</div></div></div>"
+    )
+
+
+def _free(text: str) -> str:
+    return f'<div class=run><i class="square free" aria-hidden=true></i><div>{text}</div></div>'
+
+
+def _who(
+    name: str, detail: str, model: str | None, unknown: str = "model shown after its first run"
+) -> str:
+    return f"<div class=name>{e(name)}</div><div class=runs>{detail}</div>" + (
+        f"<div class=model>{e(model)}</div>"
+        if model and model != "-"
+        else f"<div class=quiet>{unknown}</div>"
+    )
+
+
+def _lane(
+    worker: WorkerView,
+    now: datetime,
+    issues: Mapping[tuple[str, int], IssueView],
+    slots: Mapping[str, int],
+) -> str:
+    who = _who(
+        worker.name,
+        f"{e(worker.agent)} on account <span class=nowrap>{e(worker.account)}</span>",
+        worker.model,
+    )
+    if worker.state == "working" and worker.issue is not None and worker.repository:
+        name = e(worker.name)
         facts = []
         if worker.branch:
-            facts.append(f"branch <span class=mono>{e(worker.branch)}</span>")
-        if worker.worktree:
-            facts.append(f"in <span class=mono>{e(worker.worktree)}</span>")
+            facts.append(
+                f'<form method=post action="/workers/{name}/open" class=open>'
+                f'<button class=link title="Open {e(worker.worktree)} in the file manager">'
+                f"{e(worker.branch)}</button></form>"
+            )
         if worker.since:
             facts.append(f"for {span(now - worker.since)}")
-        middle = (
-            f"<div class=issue><span class=repo>{e(worker.repository)}</span> "
-            f'<a href="https://github.com/{e(worker.repository)}/issues/{worker.issue}">'
-            f"#{worker.issue} {e(worker.issue_title)}</a></div>"
-            f"{_track(worker.step)}<div class=facts>{', '.join(facts)}</div>"
+        known = issues.get((worker.repository, worker.issue))
+        issue = f"<span class=repo>{e(worker.repository)}</span> " + _issue_link(
+            worker.repository, worker.issue, worker.issue_title, known.body if known else ""
         )
+        middle = _run(slots.get(worker.repository, 0), issue, _track(worker.step), facts)
     elif worker.state == "limited" and worker.limited_until:
-        middle = (
+        middle = _free(
             f'<span class="flag limited">Usage limit</span> '
             f"<span class=quiet>resets {when(worker.limited_until, now)}</span>"
         )
     elif worker.state == "unavailable":
-        middle = f'<span class="flag unavailable">Unavailable</span> <span class=quiet>{e(worker.reason)}</span>'
+        middle = _free(
+            f'<span class="flag unavailable">Unavailable</span> <span class=quiet>{e(worker.reason)}</span>'
+        )
     elif worker.state == "paused":
-        middle = (
+        middle = _free(
             '<span class="flag paused">Paused</span> <span class=quiet>takes no new issue</span>'
         )
     else:
-        middle = "<span class=quiet>Idle, waiting for an issue.</span>"
+        middle = _free("<span class=quiet>Idle, waiting for an issue.</span>")
 
     actions = _worker_actions(worker) + f'<a class=button href="/workers/{e(worker.name)}">Edit</a>'
+    return (
+        f'<div class=lane role=group aria-label="{e(worker.name)}"><div>{who}</div>'
+        f"<div class=stack>{middle}</div><div class=actions>{actions}</div></div>"
+    )
 
-    return f'<section class=lane aria-label="{e(worker.name)}"><div>{who}</div><div>{middle}</div><div class=actions>{actions}</div></section>'
+
+def _remote_lane(
+    holder: str,
+    claims: Sequence[ClaimView],
+    now: datetime,
+    issues: Mapping[tuple[str, int], IssueView],
+    slots: Mapping[str, int],
+) -> str:
+    """Another manager's worker: the same squares, its branch on GitHub, and no controls."""
+    manager, _, worker = holder.partition("/")
+    model = next(
+        (
+            known.model
+            for c in claims
+            if (known := issues.get((c.repository, c.issue))) and known.model
+        ),
+        None,
+    )
+    runs = []
+    for claim in claims:
+        known = issues.get((claim.repository, claim.issue))
+        issue = f"<span class=repo>{e(claim.repository)}</span> " + _issue_link(
+            claim.repository, claim.issue, known.title if known else "", known.body if known else ""
+        )
+        facts = [
+            f'<a href="https://github.com/{e(claim.repository)}/tree/{e(claim.branch)}">'
+            f"{e(claim.branch)}</a>",
+            f"renewed {span(now - claim.renewed)} ago",
+        ]
+        if claim.paused_until:
+            facts.insert(
+                0, f'<span class="flag paused">Paused</span> until {when(claim.paused_until, now)}'
+            )
+        runs.append(_run(slots.get(claim.repository, 0), issue, _track(claim.step), facts))
+    who = _who(
+        worker or holder, f"on <span class=nowrap>{e(manager)}</span>", model, "model not reported"
+    )
+    return (
+        f'<div class="lane remote" role=group aria-label="{e(holder)}"><div>{who}</div>'
+        f"<div class=stack>{''.join(runs)}</div><div></div></div>"
+    )
 
 
 def _worker_actions(worker: WorkerView, with_log: bool = True) -> str:
@@ -290,25 +652,334 @@ def _worker_actions(worker: WorkerView, with_log: bool = True) -> str:
     return "".join(actions)
 
 
-def workers_fragment(snapshot: Snapshot) -> str:
-    if not snapshot.workers:
-        return (
-            '<p class=empty>No workers yet. <a href="/workers/new">Add one</a> from the agents '
-            "installed on this machine.</p>"
-        )
-    return "".join(_lane(worker, snapshot.now) for worker in snapshot.workers)
+@dataclass(frozen=True, slots=True)
+class CockpitView:
+    """What the cockpit's charts are split by and how far back they look."""
+
+    by: SplitBy = "model"
+    days: int = 30
+    time: SplitBy = "model"
+
+    def link(self, **change: object) -> str:
+        values = {"by": self.by, "days": self.days, "time": self.time, **change}
+        return "?" + "&amp;".join(f"{key}={value}" for key, value in values.items())
 
 
-def workers_page(snapshot: Snapshot, notice: str = "") -> str:
-    working = sum(1 for worker in snapshot.workers if worker.state == "working")
-    body = (
-        "<h1>Workers</h1>"
-        f"<p class=lede>{working} of {len(snapshot.workers)} working. Each worker takes one issue "
-        "at a time; the track shows how far its issue has come.</p>"
-        f"{_notice(notice)}<div id=live>{workers_fragment(snapshot)}</div>"
-        '<p><a href="/workers/new">Add a worker</a></p>'
+SPLITS: tuple[tuple[SplitBy, str], ...] = (
+    ("model", "Model"),
+    ("agent", "Agent"),
+    ("repository", "Repository"),
+)
+WINDOWS = (30, 90, 180)
+DEFAULT_VIEW = CockpitView()
+
+
+def _key_of(record: RunRecord, by: SplitBy) -> str:
+    return {"model": record.model, "agent": record.agent, "repository": record.repository}[by]
+
+
+def _slots(history: Sequence[RunRecord], by: SplitBy) -> dict[str, int]:
+    """Colour per entity by its first appearance in the whole history, so no view repaints it."""
+    slots = color_slots(_key_of(record, by) for record in history)
+    slots["Other"] = 0
+    return slots
+
+
+def _switch(
+    label: str, view: CockpitView, field: str, choices: Iterable[tuple[object, str]]
+) -> str:
+    """Links that change one setting of the view and keep the others."""
+    current = getattr(view, field)
+    links = "".join(
+        f'<a href="{view.link(**{field: value})}"'
+        f"{' aria-current=true' if value == current else ''}>{e(name)}</a>"
+        for value, name in choices
     )
-    return page("Workers", "/workers", snapshot.manager_id, body, live=True)
+    return f'<div class=switch role=group aria-label="{e(label)}">{links}</div>'
+
+
+def _legend(series: Mapping[str, Sequence[int]], slots: Mapping[str, int]) -> str:
+    keys = "".join(
+        f'<li><i class="key s{slots.get(name, 0)}"></i>{e(name)}</li>' for name in series
+    )
+    return f'<ul class="legend">{keys}</ul>'
+
+
+def _series_table(
+    axis: Sequence[date], series: Mapping[str, Sequence[int]], period: str, fmt: str
+) -> str:
+    head = "".join(f"<th class=n>{e(name)}</th>" for name in series)
+    rows = "".join(
+        f"<tr><td>{day:{fmt}}</td>"
+        + "".join(f"<td class=n>{values[index]}</td>" for values in series.values())
+        + f"<td class=n>{sum(values[index] for values in series.values())}</td></tr>"
+        for index, day in reversed(list(enumerate(axis)))
+    )
+    return (
+        "<details><summary>Show as table</summary><div class=scroll><table>"
+        f"<tr><th>{e(period)}</th>{head}<th class=n>Total</th></tr>{rows}</table></div></details>"
+    )
+
+
+def _readouts(history: list[RunRecord], now: datetime) -> str:
+    numbers = kpis(history, now)
+    average = sum(numbers.last_30_days) / 30
+    median = span(numbers.median_resolve) if numbers.median_resolve is not None else "-"
+    since = f"since {history[0].started:%b %d, %Y}" if history else "no run finished yet"
+
+    def count(value: int) -> str:
+        return f"<b data-count={value}>{value}</b>"
+
+    share = (
+        f"<b data-count={round(numbers.merge_share * 100)} data-suffix=%>{numbers.merge_share:.0%}</b>"
+        if numbers.merge_share is not None
+        else "<b>-</b>"
+    )
+    cells = (
+        ("Merged today", count(numbers.today), f"<small>{average:.1f} a day over 30 days</small>"),
+        ("Last 7 days", count(numbers.week), sparkline(numbers.last_30_days)),
+        ("All time", count(numbers.total), f"<small>{since}</small>"),
+        ("Median time to merge", f"<b>{e(median)}</b>", "<small>first run to merge</small>"),
+        (
+            "Merge rate",
+            f"<div class=gauged>{ring_gauge(numbers.merge_share)}{share}</div>",
+            "<small>merged among merged and failed</small>",
+        ),
+    )
+    return (
+        '<section class=readouts aria-label="Readouts">'
+        + "".join(
+            f"<div class=readout style=--i:{index}><span>{label}</span>{value}{note}</div>"
+            for index, (label, value, note) in enumerate(cells)
+        )
+        + "</section>"
+    )
+
+
+def _flight_log(snapshot: Snapshot, history: list[RunRecord]) -> str:
+    """The last day as a timeline: every run per worker, the running ones still growing."""
+    end = snapshot.now
+    start = end - timedelta(hours=24)
+    slots = _slots(history, "model")
+    spans = [
+        Span(
+            record.worker,
+            record.started,
+            record.finished,
+            slots.get(record.model, 0),
+            f"{record.repository}#{record.issue}: {record.kind} run, {record.verdict}, "
+            f"{record.model}, {span(record.finished - record.started)}",
+        )
+        for record in history
+        if record.finished >= start
+    ]
+    for worker in snapshot.workers:
+        if worker.state == "working" and worker.since and worker.issue is not None:
+            spans.append(
+                Span(
+                    worker.name,
+                    worker.since,
+                    end,
+                    slots.get(worker.model, 0),
+                    f"{worker.repository}#{worker.issue}: running, {worker.step}, {worker.model}, "
+                    f"{span(end - worker.since)} so far",
+                    live=True,
+                )
+            )
+    lanes = [w.name for w in snapshot.workers if any(s.lane == w.name for s in spans)]
+    lanes += sorted({s.lane for s in spans} - set(lanes))
+    return (
+        '<section class="panel wide" id="flight" aria-label="Flight log">'
+        "<header><h2>Flight log</h2></header>"
+        f"<p class=sub>Every run of the last 24 hours, per worker, coloured by model; "
+        f"{sum(1 for s in spans if s.live)} still running.</p>"
+        f"{timeline(spans, lanes, start, end)}</section>"
+    )
+
+
+def _share(history: list[RunRecord]) -> str:
+    rows = model_ledger(history)
+    slots = _slots(history, "model")
+    legend = "".join(
+        f'<li><i class="key s{slots.get(row.model, 0)}"></i>{e(row.model)}<b>{row.runs}</b></li>'
+        for row in rows
+    )
+    return (
+        '<section class=panel id="share" aria-label="Model share">'
+        "<header><h2>Model share</h2></header>"
+        "<p class=sub>All runs ever, per model.</p>"
+        f"<div class=share>{donut([(row.model, row.runs) for row in rows], slots, 'runs')}"
+        f'<ul class="legend tall">{legend}</ul></div></section>'
+    )
+
+
+def _total(history: list[RunRecord], now: datetime) -> str:
+    points = cumulative_merged(history)
+    start = min((r.started for r in history), default=now - timedelta(days=1))
+    return (
+        '<section class=panel id="total" aria-label="Merged over time">'
+        "<header><h2>Merged over time</h2></header>"
+        f"<p class=sub>The running total since the first run: {len(points)} issues.</p>"
+        f"{area_line(points, start, now, 'merged')}</section>"
+    )
+
+
+def _heat(history: list[RunRecord]) -> str:
+    return (
+        '<section class=panel id="heat" aria-label="When work gets done">'
+        "<header><h2>When work gets done</h2></header>"
+        "<p class=sub>Finished runs per weekday and hour (UTC); brighter is busier.</p>"
+        f"{heatmap(activity(history), ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'))}</section>"
+    )
+
+
+def _crew(snapshot: Snapshot) -> str:
+    working = sum(1 for worker in snapshot.workers if worker.state == "working")
+    issues = {(issue.repository, issue.number): issue for issue in snapshot.issues}
+    slots = color_slots(
+        [repository.name for repository in snapshot.repositories]
+        + [claim.repository for claim in snapshot.claims]
+    )
+    legend = "".join(
+        f'<li><i class="key s{slot}"></i>{e(name)}</li>' for name, slot in slots.items()
+    )
+    lanes = (
+        "".join(_lane(worker, snapshot.now, issues, slots) for worker in snapshot.workers)
+        if snapshot.workers
+        else '<p class=empty>No workers yet. <a href="/workers/new">Add one</a> from the agents '
+        "installed on this machine.</p>"
+    )
+    remote: dict[str, list[ClaimView]] = {}
+    for claim in snapshot.claims:
+        if not claim.mine:
+            remote.setdefault(claim.holder, []).append(claim)
+    remote_lanes = "".join(
+        _remote_lane(holder, claims, snapshot.now, issues, slots)
+        for holder, claims in sorted(remote.items())
+    )
+    return (
+        '<section class="panel wide" aria-label="Crew"><header><h2>Crew</h2>'
+        f'<a href="/workers/new">Add a worker</a></header>'
+        f"<p class=sub>{working} of {len(snapshot.workers)} on an issue here. A square is an issue "
+        "a worker holds, coloured by its repository; the track shows how far it has come.</p>"
+        f'<ul class="legend">{legend}</ul><h3>This machine</h3>{lanes}'
+        + (f"<h3>Remote</h3>{remote_lanes}" if remote_lanes else "")
+        + "</section>"
+    )
+
+
+def _throughput(history: list[RunRecord], now: datetime, view: CockpitView) -> str:
+    axis, series = daily_merged(history, now, days=view.days, by=view.by)
+    slots = _slots(history, view.by)
+    switches = _switch("Split by", view, "by", SPLITS) + _switch(
+        "Window", view, "days", ((days, f"{days} days") for days in WINDOWS)
+    )
+    total = sum(sum(values) for values in series.values())
+    return (
+        '<section class="panel wide" id="throughput" aria-label="Issues merged per day">'
+        f"<header><h2>Issues merged per day</h2><div class=switches>{switches}</div></header>"
+        f"<p class=sub>{total} merged in the last {view.days} days, "
+        f"{total / view.days:.1f} a day, by {view.by}.</p>"
+        f"{_legend(series, slots)}"
+        f"{stacked_columns(axis, series, slots, unit='merged')}"
+        f"{_series_table(axis, series, 'Day', '%Y-%m-%d')}</section>"
+    )
+
+
+def _mix(history: list[RunRecord], now: datetime) -> str:
+    axis, series = weekly_mix(history, now, weeks=26)
+    slots = _slots(history, "model")
+    return (
+        '<section class="panel wide" id="mix" aria-label="Model mix per week">'
+        "<header><h2>Model mix per week</h2></header>"
+        "<p class=sub>Runs per model per week over half a year, whatever their outcome.</p>"
+        f"{_legend(series, slots)}"
+        f"{stacked_columns(axis, series, slots, unit='runs', width=960, height=240, prefix='week of ')}"
+        f"{_series_table(axis, series, 'Week of', '%Y-%m-%d')}</section>"
+    )
+
+
+def _time(history: list[RunRecord], view: CockpitView) -> str:
+    rows = resolve_times(history, by=view.time)
+    bars = horizontal_bars(
+        [
+            (row.name, row.average.total_seconds(), f"{span(row.average)} avg, {row.count} issues")
+            for row in rows
+        ],
+        width=600,
+    )
+    table = "".join(
+        f"<tr><td>{e(row.name)}</td><td class=n>{row.count}</td>"
+        f"<td class=n>{span(row.average)}</td><td class=n>{span(row.median)}</td></tr>"
+        for row in rows
+    )
+    return (
+        '<section class=panel id="time" aria-label="Time to merge">'
+        "<header><h2>Time to merge</h2>"
+        f"{_switch('Split by', view, 'time', SPLITS)}</header>"
+        f"<p class=sub>Average from an issue's first run to its merge, by {view.time}; "
+        "slowest first.</p>"
+        f"{bars}<details><summary>Show as table</summary><div class=scroll><table>"
+        f"<tr><th>{e(view.time.capitalize())}</th><th class=n>Issues</th><th class=n>Average</th>"
+        f"<th class=n>Median</th></tr>{table}</table></div></details></section>"
+    )
+
+
+def _ledger(history: list[RunRecord]) -> str:
+    rows = model_ledger(history)
+    slots = _slots(history, "model")
+    if not rows:
+        return ""
+    body = "".join(
+        f'<tr><td><i class="key s{slots.get(row.model, 0)}"></i>{e(row.model)}</td>'
+        f"<td>{e(row.agent)}</td><td class=n>{row.runs}</td><td class=n>{row.merged}</td>"
+        f"<td class=n>{row.merged / row.runs:.0%}</td>"
+        f"<td class=n>{span(row.median_resolve) if row.median_resolve else '-'}</td>"
+        f"<td class=n>{row.first_used:%Y-%m-%d}</td><td class=n>{row.last_used:%Y-%m-%d}</td></tr>"
+        for row in rows
+    )
+    return (
+        '<section class="panel wide" id="ledger" aria-label="Model ledger">'
+        "<header><h2>Model ledger</h2></header>"
+        "<p class=sub>Every model this manager has run, most runs first.</p>"
+        "<div class=scroll><table><tr><th>Model</th><th>Agent</th><th class=n>Runs</th>"
+        "<th class=n>Merged</th><th class=n>Merge share</th><th class=n>Median to merge</th>"
+        f"<th class=n>First used</th><th class=n>Last used</th></tr>{body}</table></div></section>"
+    )
+
+
+def cockpit_fragment(
+    snapshot: Snapshot, history: list[RunRecord], view: CockpitView = DEFAULT_VIEW
+) -> str:
+    return (
+        _readouts(history, snapshot.now)
+        + "<div class=deck-grid>"
+        + _crew(snapshot)
+        + _flight_log(snapshot, history)
+        + _throughput(history, snapshot.now, view)
+        + _share(history)
+        + _total(history, snapshot.now)
+        + _time(history, view)
+        + _heat(history)
+        + _mix(history, snapshot.now)
+        + _ledger(history)
+        + "</div>"
+    )
+
+
+def cockpit_page(
+    snapshot: Snapshot,
+    history: list[RunRecord],
+    view: CockpitView = DEFAULT_VIEW,
+    notice: str = "",
+) -> str:
+    body = (
+        "<h1>Cockpit</h1>"
+        "<p class=lede>The crew at work right now, and everything this manager has finished: "
+        "kept across restarts in its state directory.</p>"
+        f"{_notice(notice)}<div id=live>{cockpit_fragment(snapshot, history, view)}</div>"
+    )
+    return page("Cockpit", "/workers", snapshot.manager_id, body, live=True, deck=True)
 
 
 # --- repositories --------------------------------------------------------------------------------
