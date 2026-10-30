@@ -102,10 +102,11 @@ class Api:
         self.requests: list[tuple[str, str]] = []
 
     def request(self, method: str, path: str, **_: object) -> Response:
-        self.requests.append((method, path))
+        if path != "user/repos":
+            self.requests.append((method, path))
         if not self.logged_in:
             raise GhUnavailable("To get started with GitHub CLI, please run:  gh auth login")
-        return Response(status=200, body={"login": "hawkynt"})
+        return Response(status=200, body=[] if path == "user/repos" else {"login": "hawkynt"})
 
 
 class Watch:
@@ -303,3 +304,225 @@ def test_watch_explains_a_missing_git_identity_instead_of_crashing(
     assert code == 2
     err = capsys.readouterr().err
     assert "no git identity" in err and "Traceback" not in err
+
+
+def test_given_a_posix_checkout_when_run_sh_is_executed_then_it_runs_watch_with_arguments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import shutil
+    import subprocess
+
+    repo_root = Path(__file__).resolve().parents[1]
+    run_sh = repo_root / "run.sh"
+    assert run_sh.exists()
+    text = run_sh.read_text(encoding="utf-8")
+    assert "-m venv" in text
+    assert "pip" in text and "install" in text
+    assert 'github-issue-worker" watch "$@"' in text
+
+    if sys.platform != "win32":
+        shutil.copy2(run_sh, tmp_path / "run.sh")
+        fake_python = tmp_path / "bin" / "python3"
+        fake_python.parent.mkdir(parents=True, exist_ok=True)
+        fake_python.write_text(
+            "#!/bin/sh\n"
+            'mkdir -p "$3/bin"\n'
+            'printf "#!/bin/sh\\n" > "$3/bin/python"\n'
+            'chmod +x "$3/bin/python"\n'
+            "cat > \"$3/bin/pip\" <<'EOF'\n"
+            "#!/bin/sh\n"
+            'VENV_BIN="$(dirname "$0")"\n'
+            "cat > \"$VENV_BIN/github-issue-worker\" <<'INNER'\n"
+            "#!/bin/sh\n"
+            'printf "%s\\n" "$@" > "$(dirname "$0")/../../invoked.txt"\n'
+            "INNER\n"
+            'chmod +x "$VENV_BIN/github-issue-worker"\n'
+            "EOF\n"
+            'chmod +x "$3/bin/pip"\n',
+            encoding="utf-8",
+        )
+        fake_python.chmod(fake_python.stat().st_mode | stat.S_IEXEC)
+        monkeypatch.setenv("PYTHON", str(fake_python))
+
+        result = subprocess.run(
+            ["bash", str(tmp_path / "run.sh"), "--once", "--no-ui"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert (tmp_path / "invoked.txt").read_text(encoding="utf-8").splitlines() == [
+            "watch",
+            "--once",
+            "--no-ui",
+        ]
+
+
+def test_given_a_windows_checkout_when_run_bat_is_executed_then_it_runs_watch_with_arguments(
+    tmp_path: Path,
+) -> None:
+    import shutil
+    import subprocess
+
+    repo_root = Path(__file__).resolve().parents[1]
+    run_bat = repo_root / "run.bat"
+    assert run_bat.exists()
+    text = run_bat.read_text(encoding="utf-8")
+    assert "python -m venv" in text
+    assert "pip" in text and "install" in text
+    assert "github-issue-worker" in text and "watch %*" in text
+
+    if sys.platform == "win32":
+        shutil.copy2(run_bat, tmp_path / "run.bat")
+        scripts = tmp_path / ".venv" / "Scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        (scripts / "github-issue-worker.cmd").write_text(
+            "@echo off\necho %* > invoked.txt\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [str(tmp_path / "run.bat"), "--once", "--no-ui"],
+            cwd=tmp_path,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        assert "watch --once --no-ui" in (tmp_path / "invoked.txt").read_text(encoding="utf-8")
+
+
+def test_given_no_config_when_watch_starts_then_it_detects_workers_of_one_and_saves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("claude", "codex", "antigravity"):
+        tool(tmp_path / "bin" / (f"{name}.cmd" if sys.platform == "win32" else name))
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    config_path = tmp_path / "config.json"
+    observed: list[object] = []
+
+    def factory(cfg: object, *_: object) -> Runtime:
+        observed.append(cfg)
+        return Runtime(Api(), Manager())
+
+    assert (
+        main(
+            ["--config", str(config_path), "watch", "--once"],
+            home=tmp_path,
+            runtime_factory=factory,  # type: ignore[arg-type]
+        )
+        == 0
+    )
+    assert config_path.exists()
+    saved = load(config_path)
+    assert {(w.name, w.agent, w.installation.type) for w in saved.workers} == {
+        ("claude", "claude", "path"),
+        ("codex", "codex", "path"),
+        ("antigravity", "antigravity", "path"),
+    }
+    assert {name: acc.max_concurrent_runs for name, acc in saved.accounts.items()} == {
+        "claude": 1,
+        "codex": 1,
+        "antigravity": 1,
+    }
+    assert len(observed) == 1
+    assert len(observed[0].workers) == 3  # type: ignore[attr-defined]
+
+
+def test_given_no_config_when_watch_starts_with_ui_then_it_opens_web_interface(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import webbrowser
+
+    import github_issue_worker.ui.server as ui_server
+
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    config_path = tmp_path / "config.json"
+    opened: list[str] = []
+    started: list[tuple[str, int]] = []
+
+    class FakeServer:
+        def __init__(self, backend: object, host: str, port: int) -> None:
+            self.host = host
+            self.port = port
+            self.url = f"http://localhost:{port}"
+
+        def start(self, **_: object) -> bool:
+            started.append((self.host, self.port))
+            return True
+
+        def stop(self) -> None:
+            pass
+
+    class StoppingManager(Manager):
+        def tick(self) -> None:
+            super().tick()
+            raise KeyboardInterrupt
+
+    class ConfiguredRuntime(Runtime):
+        def __init__(self, cfg: object, api: Api, manager: Manager) -> None:
+            super().__init__(api, manager)
+            self.config = cfg
+
+    monkeypatch.setattr(ui_server, "UiServer", FakeServer)
+    monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url) or True)
+
+    assert (
+        main(
+            ["--config", str(config_path), "watch"],
+            home=tmp_path,
+            runtime_factory=lambda cfg, *_: ConfiguredRuntime(cfg, Api(), StoppingManager()),
+        )
+        == 0
+    )
+    assert config_path.exists()
+    assert started == [("127.0.0.1", 8765)]
+    assert opened == ["http://localhost:8765"]
+
+
+def test_given_existing_config_when_watch_starts_then_it_keeps_config_without_browser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import webbrowser
+
+    import github_issue_worker.ui.server as ui_server
+
+    tool(tmp_path / "bin" / ("claude.cmd" if sys.platform == "win32" else "claude"))
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    config_path = watched_config(tmp_path)
+    opened: list[str] = []
+
+    class FakeServer:
+        def __init__(self, backend: object, host: str, port: int) -> None:
+            self.url = f"http://localhost:{port}"
+
+        def start(self, **_: object) -> bool:
+            return True
+
+        def stop(self) -> None:
+            pass
+
+    class StoppingManager(Manager):
+        def tick(self) -> None:
+            super().tick()
+            raise KeyboardInterrupt
+
+    class ConfiguredRuntime(Runtime):
+        def __init__(self, cfg: object, api: Api, manager: Manager) -> None:
+            super().__init__(api, manager)
+            self.config = cfg
+
+    monkeypatch.setattr(ui_server, "UiServer", FakeServer)
+    monkeypatch.setattr(webbrowser, "open", lambda url: opened.append(url) or True)
+
+    assert (
+        main(
+            ["--config", str(config_path), "watch"],
+            home=tmp_path,
+            runtime_factory=lambda cfg, *_: ConfiguredRuntime(cfg, Api(), StoppingManager()),
+        )
+        == 0
+    )
+    assert load(config_path).workers == []
+    assert opened == []
