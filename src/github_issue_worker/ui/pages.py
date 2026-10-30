@@ -319,21 +319,21 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
     animation: sweep 1.6s .2s ease-out both; }
   @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(400%);
     opacity: 0; } }
-  body.boot .chart .seg { transform-box: fill-box; transform-origin: bottom;
+  .boot .chart .seg { transform-box: fill-box; transform-origin: bottom;
     animation: rise .8s cubic-bezier(.2, .8, .2, 1) both;
     animation-delay: calc(.5s + var(--i, 0) * 16ms); }
-  body.boot .chart .bar, body.boot .chart .run-bar { transform-box: fill-box; transform-origin: left;
+  .boot .chart .bar, .boot .chart .run-bar { transform-box: fill-box; transform-origin: left;
     animation: reach .9s cubic-bezier(.2, .8, .2, 1) both;
     animation-delay: calc(.6s + var(--i, 0) * 60ms); }
-  body.boot .chart .arc { transform-box: view-box; transform-origin: center;
+  .boot .chart .arc { transform-box: view-box; transform-origin: center;
     animation: unfold 1s cubic-bezier(.2, .8, .2, 1) both;
     animation-delay: calc(.6s + var(--i, 0) * 110ms); }
-  body.boot .chart .cell { animation: appear .5s ease-out both;
+  .boot .chart .cell { animation: appear .5s ease-out both;
     animation-delay: calc(.6s + var(--i, 0) * 4ms); }
-  body.boot .area-line { stroke-dasharray: 1; animation: draw 1.8s .6s ease-in-out both; }
-  body.boot .area-fill { animation: appear 1.2s 1.4s ease-out both; }
-  body.boot .gauge-fill { animation: fill 1.6s .5s cubic-bezier(.3, .7, .2, 1) both; }
-  body.boot .spark path { stroke-dasharray: 600; animation: spark 1.6s .4s ease-out both; }
+  .boot .area-line { stroke-dasharray: 1; animation: draw 1.8s .6s ease-in-out both; }
+  .boot .area-fill { animation: appear 1.2s 1.4s ease-out both; }
+  .boot .gauge-fill { animation: fill 1.6s .5s cubic-bezier(.3, .7, .2, 1) both; }
+  .boot .spark path { stroke-dasharray: 600; animation: spark 1.6s .4s ease-out both; }
   @keyframes rise { from { transform: scaleY(0); } }
   @keyframes reach { from { transform: scaleX(0); } }
   @keyframes unfold { from { transform: rotate(-40deg) scale(.6); opacity: 0; } }
@@ -428,6 +428,25 @@ TIPS = """
     }
   }
   setTimeout(() => document.body.classList.remove("boot"), 3200);
+  // A switch redraws only its own panel: fetch the view, swap that panel, keep the URL in step.
+  document.addEventListener("click", async (event) => {
+    const link = event.target.closest && event.target.closest(".switch a");
+    if (!link || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const panel = link.closest("section[id]");
+    if (!panel) return;
+    event.preventDefault();
+    const query = new URLSearchParams(link.search);
+    history.replaceState(null, "", location.pathname + "?" + query);
+    query.set("fragment", "1");
+    const response = await fetch(location.pathname + "?" + query);
+    if (!response.ok) { location.href = link.href; return; }
+    const fresh = new DOMParser().parseFromString(await response.text(), "text/html")
+      .getElementById(panel.id);
+    if (!fresh) return;
+    if (!still) fresh.classList.add("boot");
+    panel.replaceWith(fresh);
+    setTimeout(() => fresh.classList.remove("boot"), 2400);
+  });
 })();
 </script>
 """
