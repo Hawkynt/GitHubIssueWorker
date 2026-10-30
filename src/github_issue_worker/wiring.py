@@ -141,7 +141,7 @@ class Runtime:
         name = settings.repository
         if name not in self.watches:
             clone = self.workspace.clone(name)
-            store = GitClaimStore(clone, home=self.home)
+            store = GitClaimStore(clone, home=self.home, push_url=remote_url(name))
             fleet = self.config.fleet
             coordinator = Coordinator(
                 store, self.api.clock, ClaimPolicy(fleet.claim_validity, fleet.claim_grace)

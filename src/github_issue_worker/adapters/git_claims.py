@@ -27,10 +27,19 @@ _REJECTED = ("[rejected]", "stale info", "already exists", "fetch first")
 class GitClaimStore:
     """A `ClaimStore` over a local clone of the watched repository and its remote."""
 
-    def __init__(self, clone: Path, remote: str = "origin", home: Path | None = None) -> None:
+    def __init__(
+        self,
+        clone: Path,
+        remote: str = "origin",
+        home: Path | None = None,
+        push_url: str | None = None,
+    ) -> None:
         self._clone = clone
         self._remote = remote
         self._home = home or account_home()
+        # The workspace disables the clone's push URL so that agents cannot push: claims go to the
+        # explicit URL instead.
+        self._push_url = push_url or remote
 
     def issues(self) -> list[int]:
         listed = self._run("ls-remote", self._remote, f"{_CLAIMS}/*").stdout
@@ -96,7 +105,7 @@ class GitClaimStore:
             "--quiet",
             "--porcelain",
             f"--force-with-lease={ref}:{expected}",
-            self._remote,
+            self._push_url,
             refspec,
             check=False,
         )

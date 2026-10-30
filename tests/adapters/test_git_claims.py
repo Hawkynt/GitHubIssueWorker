@@ -177,3 +177,20 @@ def test_network_git_runs_with_the_account_home(remote: Path, tmp_path: Path) ->
 
     with pytest.raises(ClaimStoreError):
         GitClaimStore(work, home=tmp_path / "elsewhere").read(42)
+
+
+def test_claims_are_pushed_to_the_explicit_url_when_the_push_url_is_disabled(
+    remote: Path, tmp_path: Path
+) -> None:
+    # The workspace disables the clone's push URL so agents cannot push; claims must still work.
+    work = clone(remote, tmp_path / "w")
+    git("config", "remote.origin.pushurl", "ghiw-push-disabled://only-the-manager-pushes", cwd=work)
+    with pytest.raises(ClaimStoreError):
+        GitClaimStore(work).create(claim())
+
+    store = GitClaimStore(work, push_url=str(remote))
+    version = store.create(claim())
+    stored = store.read(42)
+    assert stored is not None and stored.version == version
+    store.delete(42, version)
+    assert store.read(42) is None
