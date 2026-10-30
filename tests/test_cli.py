@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import json
 import stat
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from github_issue_worker.application.manager import WorkerSlot
 from github_issue_worker.cli import detect_workers, main, normalize_issue, normalize_repository
 from github_issue_worker.configuration import load
+from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState, Holder
+from github_issue_worker.ports.claims import StoredClaim
 from github_issue_worker.ports.github import GhUnavailable, Response
 from github_issue_worker.ports.repository import RepositoryInfo
 
@@ -206,3 +211,73 @@ def test_workers_detect_save_writes_workers_and_accounts(
     saved = load(config)
     assert [w.name for w in saved.workers] == ["local"]
     assert saved.accounts["claudelocal"].max_concurrent_runs == 1
+
+
+class Clock:
+    def now(self) -> datetime:
+        return datetime(2026, 10, 30, 10, 0, tzinfo=UTC)
+
+
+class Store:
+    def __init__(self, claims: list[Claim]) -> None:
+        self.claims = {claim.issue: claim for claim in claims}
+
+    def issues(self) -> list[int]:
+        return sorted(self.claims)
+
+    def read(self, issue: int) -> StoredClaim | None:
+        claim = self.claims.get(issue)
+        return StoredClaim("v1", claim) if claim else None
+
+
+class Limits:
+    def limited_until(self, account: str) -> datetime | None:
+        return None
+
+
+class StatusRuntime:
+    def __init__(self, claims: list[Claim]) -> None:
+        self.manager_id = "manager@host"
+        self.slots = [WorkerSlot(name="alpha", agent="claude", account="personal")]
+        self.state = Limits()
+        self.api = SimpleNamespace(clock=Clock())
+        self._store = Store(claims)
+
+    def watch(self, settings: object) -> SimpleNamespace:
+        return SimpleNamespace(store=self._store)
+
+
+def run_status(config: Path, runtime: StatusRuntime) -> int:
+    return main(
+        ["--config", str(config), "status"],
+        home=config.parent,
+        runtime_factory=lambda *a: runtime,  # type: ignore[arg-type,return-value]
+    )
+
+
+def test_status_prints_the_claims_of_each_watched_repository_by_holder(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    now = Clock().now()
+    claim = ClaimPolicy(timedelta(days=7), timedelta(days=1)).new_claim(
+        12, Holder("manager@host", "alpha"), now - timedelta(minutes=5), "issue/12-x"
+    )
+    done = claim.replace(issue=3, state=ClaimState.DONE)
+    assert run_status(watched_config(tmp_path), StatusRuntime([claim, done])) == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[:2] == ["Manager", "  manager@host"]
+    assert "  Claims held by this manager" in out
+    row = " ".join(next(line for line in out.splitlines() if "#12" in line).split())
+    assert row == "#12 alpha working triage 5m ago 2026-11-06 09:55 UTC (in 6d 23h) issue/12-x"
+    assert "  1 finished (done/released)" in out
+
+
+def test_status_without_watched_repositories_points_to_add(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "config.json"
+    config.write_text("{}")
+    assert run_status(config, StatusRuntime([])) == 0
+    assert "no repositories watched; add one with 'github-issue-worker add <owner/repo>'" in (
+        capsys.readouterr().out
+    )
