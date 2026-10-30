@@ -25,13 +25,15 @@ STYLE = """
   --paper: #edf0f3; --sheet: #f7f9fb; --ink: #1b2430; --muted: #5a6775; --rule: #c8d0d9;
   --steel: #2e5c8a; --steel-soft: #d6e2ee; --amber: #b7791f; --amber-soft: #f3e6cf;
   --brick: #a63d2f; --brick-soft: #f2dcd8; --done: #4d6b52;
+  --changed: #fbf0bd; --changed-rule: #a8862a;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --paper: #141a21; --sheet: #1b232c; --ink: #e3e8ee; --muted: #9aa6b3; --rule: #33404d;
     --steel: #7fa8d1; --steel-soft: #23384d; --amber: #e0a44a; --amber-soft: #3a2f1c;
-    --brick: #e07a6b; --brick-soft: #3b2420; --done: #8fb596; color-scheme: dark;
+    --brick: #e07a6b; --brick-soft: #3b2420; --done: #8fb596;
+    --changed: #3d3714; --changed-rule: #c9a83f; color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
@@ -110,6 +112,9 @@ legend { font-weight: 650; font-size: 1.05rem; padding: 0 .5rem 0 0; }
 .field .help { color: var(--muted); font-size: 13px; }
 .field .source { color: var(--muted); font-size: 12px; }
 .field.error input, .field.error select, .field.error textarea { border-color: var(--brick); }
+input.changed, select.changed, textarea.changed { background: var(--changed);
+  border-color: var(--changed-rule); }
+input[type=checkbox].changed { outline: 2px solid var(--changed-rule); outline-offset: 1px; }
 .problems { background: var(--brick-soft); color: var(--brick); padding: .75rem 1rem;
   border-radius: 4px; margin: 0 0 1rem; }
 .notice { background: var(--steel-soft); color: var(--steel); padding: .6rem 1rem;
@@ -132,6 +137,25 @@ summary { cursor: pointer; color: var(--steel); white-space: nowrap; }
   @keyframes beat { 50% { border-top-color: var(--steel-soft); } }
 }
 """
+
+UNSAVED = """
+<script>
+(() => {
+  const form = document.querySelector("form[data-unsaved]");
+  if (!form) return;
+  const current = (control) =>
+    control.type === "checkbox" ? String(control.checked) : control.value.replace(/\\r\\n/g, "\\n");
+  const mark = () => {
+    for (const control of form.querySelectorAll("[data-saved]"))
+      control.classList.toggle("changed", current(control) !== control.dataset.saved);
+  };
+  form.addEventListener("input", mark);
+  form.addEventListener("change", mark);
+  mark();
+})();
+</script>
+"""
+"""Marks every control of a ``data-unsaved`` form whose value differs from its ``data-saved``."""
 
 LIVE = """
 <script>
@@ -420,21 +444,36 @@ def _attr(model: type[BaseModel], alias: str) -> str:
     )
 
 
+def _saved(saved: str | None, value: str) -> str:
+    """The attributes that let the page mark ``value`` while it differs from ``saved``."""
+    if saved is None:
+        return ""
+    changed = value.replace("\r\n", "\n") != saved
+    return f' data-saved="{e(saved)}"' + (' class="changed"' if changed else "")
+
+
 def _input(
-    field: FormField, value: str, placeholder: str = "", source: str = "", error: bool = False
+    field: FormField,
+    value: str,
+    placeholder: str = "",
+    source: str = "",
+    error: bool = False,
+    saved: str | None = None,
 ) -> str:
     name = e(field.path)
     ident = "f-" + field.path.replace(".", "-").replace("[", "-").replace("]", "")
+    # A secret is write-only: its control starts empty, so only what is typed into it counts.
+    hint = _saved(saved, "" if field.kind == "secret" else value)
     if field.kind == "bool":
         control = (
             f'<input type=checkbox id="{ident}" name="{name}" value=true'
-            f"{' checked' if value == 'true' else ''}>"
+            f"{' checked' if value == 'true' else ''}{hint}>"
         )
     elif field.kind == "choice":
         options = [("", f"default ({placeholder})")] if field.optional or placeholder else []
         options += [(choice, choice) for choice in field.choices]
         control = (
-            f'<select id="{ident}" name="{name}">'
+            f'<select id="{ident}" name="{name}"{hint}>'
             + "".join(
                 f'<option value="{e(v)}"{" selected" if v == value else ""}>{e(t)}</option>'
                 for v, t in options
@@ -442,16 +481,16 @@ def _input(
             + "</select>"
         )
     elif field.kind == "env":
-        control = f'<textarea id="{ident}" name="{name}" rows=3 cols=34 placeholder="NAME=value">{e(value)}</textarea>'
+        control = f'<textarea id="{ident}" name="{name}" rows=3 cols=34 placeholder="NAME=value"{hint}>{e(value)}</textarea>'
     elif field.kind == "secret":
-        hint = "set; leave empty to keep" if value else "not set"
-        control = f'<input type=password id="{ident}" name="{name}" placeholder="{hint}" autocomplete=off>'
+        state = "set; leave empty to keep" if value else "not set"
+        control = f'<input type=password id="{ident}" name="{name}" placeholder="{state}" autocomplete=off{hint}>'
     else:
         kind = "number" if field.kind == "number" else "text"
         step = " step=any" if field.kind == "number" else ""
         control = (
             f'<input type={kind}{step} id="{ident}" name="{name}" value="{e(value)}" '
-            f'placeholder="{e(placeholder)}" size=30>'
+            f'placeholder="{e(placeholder)}" size=30{hint}>'
         )
     help_text = HELP.get(field.path, "")
     note = f"<div class=source>{e(source)}</div>" if source else ""
@@ -497,6 +536,7 @@ def settings_page(
         if field.kind == "secret":
             value = "set" if config.ui.token else ""
         source = "set in the configuration" if is_set(config, field.path) else "default"
+        saved = "" if field.kind == "secret" else display(value_at(config, field.path))
         groups[title].append(
             _input(
                 field,
@@ -504,6 +544,7 @@ def settings_page(
                 display(value_at(defaults, field.path)),
                 source,
                 field.path in error_paths,
+                saved,
             )
         )
     body = "".join(
@@ -515,10 +556,11 @@ def settings_page(
     page_body = (
         "<h1>Settings</h1>"
         "<p class=lede>Everything here is also in the configuration file; saving writes the file "
-        "and applies the change without a restart. Workers and repositories have their own pages."
+        "and applies the change without a restart. Workers and repositories have their own pages. "
+        "A value you changed but did not save yet is highlighted."
         f"</p>{_notice(notice)}{_problems(problems)}"
-        f'<form method=post action="/settings">{body}{accounts}'
-        "<p><button class=primary>Save settings</button></p></form>"
+        f'<form method=post action="/settings" data-unsaved>{body}{accounts}'
+        f"<p><button class=primary>Save settings</button></p></form>{UNSAVED}"
     )
     return page("Settings", "/settings", snapshot_id, page_body)
 
@@ -529,11 +571,11 @@ def _accounts(config: Configuration) -> str:
         runs = "" if account.max_concurrent_runs is None else str(account.max_concurrent_runs)
         rows.append(
             f'<tr><td><input name="accounts[{index}].name" value="{e(name)}" '
-            f'placeholder="{"new account" if not name else ""}" aria-label="Account name"></td>'
+            f'placeholder="{"new account" if not name else ""}" aria-label="Account name"{_saved(name, name)}></td>'
             f'<td><input type=number min=1 name="accounts[{index}].maxConcurrentRuns" value="{e(runs)}" '
-            'placeholder="unlimited" aria-label="Runs at once"></td>'
+            f'placeholder="unlimited" aria-label="Runs at once"{_saved(runs, runs)}></td>'
             + (
-                f'<td><label><input type=checkbox name="accounts[{index}].remove" value=true> remove</label></td>'
+                f'<td><label><input type=checkbox name="accounts[{index}].remove" value=true{_saved("false", "false")}> remove</label></td>'
                 if name
                 else "<td></td>"
             )
