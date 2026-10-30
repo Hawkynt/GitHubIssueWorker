@@ -50,9 +50,14 @@ jobs:
           python-version: '3.13'
           cache: pip
       - run: pip install -e '.[dev]'
-      # The full battery: every marker, coverage as a reporting metric (not a gate).
+      # The Settings page's change hints (F14.12) are tested in a real browser.
+      - run: python -m playwright install --with-deps chromium
+      # The full battery: every marker, coverage as a reporting metric (not a gate). The e2e tests
+      # talk to this repository through gh, which the workflow token authenticates.
       - run: pytest -q --cov=github_issue_worker --cov-report=term
         timeout-minutes: 25
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   readme:
     name: Repository README
@@ -60,9 +65,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      # Flip `gui: true` on in the pull request that lands the first local-UI page — it makes the
-      # hero image and the screenshot tour required (README, F14.7).
+      # The local UI ships, so the hero image and the screenshot tour are required (F14.7).
       - uses: Hawkynt/RepositoryTemplate/repo-readme@v1
+        with:
+          gui: true
 
   # Aggregate context: the branch protection requires this one check by name, so required-check
   # upkeep does not follow every matrix leg.

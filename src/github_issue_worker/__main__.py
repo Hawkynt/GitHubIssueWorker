@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import sys
 
+from github_issue_worker.cli import main as cli_main
 from github_issue_worker.product import NAME, version
 
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if args == ["--version"]:
+    if args in (["--version"], ["-V"]):
         print(f"{NAME} {version()}")
         return 0
-
-    print(f"{NAME} {version()} — no commands are implemented yet; see README.md.", file=sys.stderr)
-    return 2
+    return cli_main(args)
 
 
 if __name__ == "__main__":

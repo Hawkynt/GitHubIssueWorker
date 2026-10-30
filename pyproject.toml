@@ -12,7 +12,7 @@ license = "LGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "Hawkynt" }]
 dependencies = [
-  "httpx>=0.27",
+  "pydantic>=2.8",
   "fastapi>=0.115",
   "uvicorn>=0.30",
 ]
@@ -25,6 +25,9 @@ dev = [
   "mypy>=1.11",
   "build>=1.2",
   "playwright>=1.46",
+  "httpx>=0.27",
+  # Windows has no system time-zone database; the tests name real zones.
+  "tzdata>=2024.1; sys_platform == 'win32'",
 ]
 
 [project.scripts]
@@ -56,6 +59,14 @@ extend-exclude = ["README.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# HTML and CSS literals: splitting markup across string fragments makes it harder to read and
+# review, and ruff cannot wrap string literals itself.
+"src/github_issue_worker/ui/pages.py" = ["E501"]
+"src/github_issue_worker/ui/demo.py" = ["E501"]
+"src/github_issue_worker/ui/charts.py" = ["E501"]
+"tests/ui/*.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.13"

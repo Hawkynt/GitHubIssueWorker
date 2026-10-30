@@ -22,6 +22,8 @@
 > (Claude, Codex, Antigravity, OpenCode, local or cloud) share the work without doing anything twice
 > or leaving an issue stranded.
 
+![The cockpit: readouts, crew lanes with their issues, and the long-term charts](docs/screenshots/workers.png)
+
 ## 🧭 Vision
 
 The issue tracker becomes the only interface a maintainer needs. Writing an issue is the same as
@@ -110,11 +112,18 @@ The manager drives tools you already use, and must find each of them working:
 | Tool | Needed for | Check |
 | --- | --- | --- |
 | [`git`](https://git-scm.com) | clone, branch, commit, push, claims. Commit signing configured when your repositories require signatures | `git config commit.gpgsign` |
-| [`gh`](https://cli.github.com) | authentication only: the manager reads its token | `gh auth status` |
+| [`gh`](https://cli.github.com) | all GitHub API access, as `gh api`, authenticated as you | `gh auth status` |
 | at least one agent | the workers, run headless | see [Workers](#-workers) |
 
-When `gh` is configured under a different home directory than the one the manager runs in, point
-it at that with `GH_CONFIG_DIR`, or set `GH_TOKEN` directly.
+The manager never handles a token itself: every REST and GraphQL call is a `gh api` call, so `gh`'s
+own login, hosts and environment apply. `gh` and every networked `git` call run with the account's
+real home directory, taken from the operating system's user database rather than from `HOME`:
+launchers such as ClaudeCodePortable and ClaudeLocal relocate `HOME` into a profile, and there `gh`
+reports "not logged into any GitHub hosts". `manager.home` overrides the directory, and an explicit
+`GH_CONFIG_DIR` or `GH_TOKEN` works as it does for `gh` itself. Agents do not get it: inside a run
+there is no GitHub access at all (see Security). `watch` checks the login with one request before it
+polls anything, so an account that is not logged in stops there with `gh auth login` instead of
+failing somewhere inside the first poll.
 
 ## 🚀 Quick start
 
@@ -134,6 +143,60 @@ be configured: they find each other's claims in the repository.
 `github-issue-worker watch --dry-run` does everything except write: it logs every claim, label,
 comment, push and merge it would have made.
 
+`github-issue-worker status` shows what is going on, in headed sections: the manager, its workers
+(agent, account, and `limited until …` while the account waits for its reset), then one section per
+watched repository with the claims held by this manager apart from those held by other managers.
+Each claim shows its worker, state, step, branch, how long ago it was renewed and when it expires;
+paused claims show when they resume and claims nobody renewed for validity plus grace show as
+`abandoned`. Finished claims (done or released) are only counted. Times are UTC with the distance
+from now, `2026-11-06 10:00 UTC (in 6d 23h)`.
+
+## 🖼️ Screenshots
+
+Generated from the UI's demo scenario (`github-issue-worker ui --demo`) on every branch push, so they
+always show the current UI with the same believable sample fleet.
+
+**Issues**, the start page. Every open issue in the watched repositories, what is happening with
+it in words, and who works it: a worker of this machine with its model and step, which you can
+pause, stop & release (the agent is killed and the issue freed) or watch, or a worker of another
+manager, marked remote.
+
+![Issues page with local and remote workers and waiting issues](docs/screenshots/issues.png)
+
+**Cockpit.** The crew at work and the long view. Readouts on top: merged today, the last seven days
+with a 30-day trace, all time, median time to merge, merge rate. Each worker is a lane: agent,
+account and model, and a square per issue it holds, coloured by repository, with the issue (its
+description as tooltip), a track through the six steps of a run, and its branch, which opens the
+worktree. Other managers' workers follow in a remote row, their branches linked on GitHub. Below:
+a flight log of every run of the last day per worker, issues merged per day by model, agent or
+repository over 30, 90 or 180 days, the model share, the running total of merges, time to merge,
+the busy hours by weekday, the weekly model mix and a ledger of every model used. Every chart has a
+tooltip per mark; the history survives restarts. The deck boots with one animated sequence and
+keeps still for anyone who prefers reduced motion.
+
+![Cockpit with readouts, crew lanes, throughput, model mix and time to merge](docs/screenshots/workers.png)
+
+**Log.** What a local agent says and does while it works: its messages, the commands and tools it
+runs, and their output, refreshed as it goes.
+
+![The log of a worker: messages, commands and their output](docs/screenshots/log.png)
+
+**Repositories.** The watch list with per-repository overrides; a repository is added only when
+your account can push to it.
+
+![Repositories page with three watched repositories](docs/screenshots/repositories.png)
+
+**Fleet.** Every claim in the watched repositories, this manager's and other managers', with step,
+renewal and expiry. Releasing another manager's claim needs the issue typed out.
+
+![Fleet page with claims from this and two other managers](docs/screenshots/fleet.png)
+
+**Settings.** Every other key of the configuration, generated from its schema, with its default
+and whether it is set; values not yet saved stand out, and saving validates, writes the file and
+applies the change live.
+
+![Settings page with every configuration section](docs/screenshots/settings.png)
+
 ## 🔄 Issue lifecycle
 
 Every watched issue is in exactly one state, and every state except *idle* and *done* is visible as a
@@ -145,7 +208,7 @@ stateDiagram-v2
   Queued --> Triage: claimed by an idle, eligible worker
   Queued --> Unserved: no known worker is eligible
   Unserved --> Queued: an eligible worker appears
-  Triage --> Working: labelled (or already was)
+  Triage --> Working: restated and labelled, restatement posted
   Triage --> NeedsInput: too vague to start
   Working --> NeedsInput: question or design decision
   Working --> Paused: agent hit its usage limit
@@ -198,8 +261,17 @@ What counts as an event:
 
 ## 🧠 How an issue is worked
 
-The manager hands the issue to its worker's agent with a fixed working contract, then checks the
-result itself instead of trusting the report. The contract, in order:
+Issues are often short and not measurable, so a first run starts by **understanding** the issue:
+the agent reads it and the repository, changes nothing, and restates the request in its own words,
+with the goal, what is in and out of scope, acceptance criteria as Given / When / Then scenarios a
+test can check, and its assumptions. The manager posts that restatement as a comment ("How I
+understand this issue") together with the labels, before any code is written. It is what the work
+is then measured against, and a comment correcting it is new input like any other. The issue text
+itself stays as its author wrote it. A request that cannot be restated without guessing becomes a
+question instead.
+
+The manager then hands the issue to its worker's agent with a fixed working contract, and checks
+the result itself instead of trusting the report. The contract, in order:
 
 1. **Spec-driven (SDD).** Read the repository's specification (README, `SPEC.md`, `PRD.md` or
    whatever the repo's `AGENTS.md` names) and decide whether the issue changes specified behaviour.
@@ -260,18 +332,29 @@ Every agent is driven through the same contract, so agents are interchangeable m
   `summary`, `scenarios`, `questions[]` with options and a recommendation). Agents that can enforce a
   JSON schema natively are given one as well. The outcome file is the contract, so an agent without
   that feature still works.
-- **Signals:** an adapter turns the agent's own output into *progress*, *cost*, *session id* and
-  *usage limit* events. Usage-limit detection is the part that differs most between vendors. See
+- **Signals:** an adapter turns the agent's own output into *progress*, *cost*, *session id*,
+  *model* and *usage limit* events. Usage-limit detection is the part that differs most between vendors. See
   [Usage limits](#-usage-limits).
+- **No permission prompts.** A headless run has nobody to answer a prompt, so every adapter starts
+  its agent with prompts switched off: `--dangerously-skip-permissions` for `claude` and `agy`,
+  `--dangerously-bypass-approvals-and-sandbox` for `codex`, all permissions allowed in the run's own
+  configuration for `opencode`. What keeps the agent from acting outward is its environment, not a
+  prompt (see Security).
 
 | Agent kind | Invocation | Continues a conversation with | Native schema | Limit signal |
 | --- | --- | --- | :---: | --- |
-| `claude` | `claude -p --output-format stream-json --verbose` | `--session-id` / `--resume` | `--json-schema` | `rate_limit_event` (`status`, `resetsAt`), `api_error: usage_limit_reached` |
-| `codex` | `codex exec --json` | `codex exec resume <id>` | `--output-schema` | `error` / `turn.failed` message text, "try again at …" |
-| `antigravity` | `agy -p --output-format stream-json`, under a pseudo-terminal | `--conversation <uuid>` | — | message and log text |
+| `claude` | `claude -p --output-format stream-json --verbose --dangerously-skip-permissions` | `--session-id` / `--resume` | `--json-schema` | `rate_limit_event` (`status`, `resetsAt`), `api_error: usage_limit_reached` |
+| `codex` | `codex exec --json --dangerously-bypass-approvals-and-sandbox` | `codex exec resume <id>` | `--output-schema` | `error` / `turn.failed` message text, "try again at …" |
+| `antigravity` | `agy -p --output-format stream-json --dangerously-skip-permissions`, prompt as a pointer to `.ghiw/prompt.md` | `--conversation <uuid>` | — | message and log text |
 | `opencode` | `opencode run --format json`, model as `provider/model` | `--session <id>` | — | provider error events |
 | `command` | any CLI, from a configured argument template | template-defined | — | configured patterns + exit code |
 | `remote` | a vendor's cloud agent: submit, poll, collect the diff | vendor-defined | — | vendor API |
+
+**Which model ran** is read from where each agent reveals it: Claude's init event, Codex's own
+session file in its home, Antigravity's log in its profile, and for ClaudeLocal the gateway's model
+id matched against `claude.sh --list` for its human name (e.g. "Qwen3.8-Flash-Next IQ3_S"). The
+manager logs it with every run, remembers each worker's last one, and `status` and the UI show it
+next to the worker and on the issue it works.
 
 A conversation is continued natively only when the same worker resumes its own issue. Everywhere
 else (another worker, another machine, a cloud agent) the next run starts a fresh conversation primed
@@ -286,7 +369,7 @@ and the presets exist for setups that keep agents out of the system:
 | --- | --- | --- |
 | `path` (default) | The executable of the agent kind on `PATH` (`claude`, `codex`, `agy`, `opencode`). | The agent's standard config and login locations. This is every normal installation: npm, the vendors' installers, package managers. |
 | `executable` | An explicit `path`. | Plus any `env` entries you give. |
-| `claudecodeportable` | A `root` (default `~/ClaudeCodePortable`) and a `profile`. Runs the matching launcher (`claude.sh`, `codex.sh`, `antigravity.sh`, or the `.bat` on Windows) non-interactively: `--profile <p> --skip-menu`, agent flags passed through. | Owned by the launcher: `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or the redirected `HOME` of that profile, and on Windows Antigravity's per-profile keyring swap. |
+| `claudecodeportable` | A `root` (default `~/ClaudeCodePortable`) and a `profile`. Resolves the profile's own CLI directly: `npm-global/bin/claude` or `npm-global/bin/codex`, or `.local/bin/agy`, with the portable node first on `PATH`. The interactive launchers are not used, because their menus, first-run installers and banners would land in the agent's output. | The profile's `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or the profile as `HOME` for Antigravity, as the launchers set them. On Windows, Antigravity's per-profile login swap is the launcher's and is not reproduced. |
 | `claudelocal` | A `root` (default `~/ClaudeLocal`), for a `claude` worker. Runs ClaudeLocal's separate Claude Code: `claude.sh --dir <worktree> --prompt - --output-format json` (or `Claude.bat`) with an optional `--model`. | ClaudeLocal's own Claude Code against its local gateway, with its own config and sessions, independent of any other Claude installation. Availability is `claude.sh --status`. Never `--stop` or `--tune`. |
 
 `github-issue-worker workers --detect` looks in all of these places and proposes one worker per agent
@@ -471,9 +554,9 @@ not a second program: what the UI changes, the manager does, with the same check
 
 | Page | Shows | Lets you |
 | --- | --- | --- |
-| **Workers** | Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
+| **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
 | **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), edit its per-repository overrides, remove one. |
-| **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get. |
+| **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
 | **Issue** | One issue's runs, the journal, the outcome, the log tail, and the claim's history. | Skip it, release it, open the PR. |
 
@@ -485,8 +568,10 @@ UI off; the settings remain editable through the file and the CLI.
 The UI is generated documentation like every house GUI: the manager has a demo mode
 (`github-issue-worker ui --demo <scenario>`) that serves each page with deterministic sample data
 through the real UI code, and `generate.yml` captures every page as a screenshot on each
-working-branch push. The pull request that lands the first page also adds the hero image and the
-`## 🖼️ Screenshots` tour to this README and switches the README check to `gui: true`.
+working-branch push, commits the changed images back onto the branch and, when that branch has an
+open pull request, runs CI again so the checks belong to the commit that carries them. The hero
+image is the Workers page. The pull request that lands the first page also adds the hero image and
+the `## 🖼️ Screenshots` tour to this README and switches the README check to `gui: true`.
 
 ## ⚙️ Configuration
 
@@ -540,7 +625,8 @@ first, and a moved UI listener reopens on its new address.
     "processBacklog": false,
     "createMissingLabels": false,
     "maxActiveIssuesPerRepository": 4,
-    "runTimeout": "02:00:00"
+    "runTimeout": "02:00:00",
+    "checksTimeout": "02:00:00"
   },
   "repositories": [
     { "repository": "Hawkynt/ShiftDiff" },
@@ -553,6 +639,7 @@ first, and a moved UI listener reopens on its new address.
 | --- | --- | --- |
 | `manager.name` | host name | Human-readable name in presence, the UI and logs. A random suffix makes the manager id unique. |
 | `manager.tags` | `[]` | Capabilities of this machine, matched against `needs:<tag>` routing labels, inherited by every worker. |
+| `manager.home` | account home | Home directory `gh` and networked `git` run with. The default comes from the OS user database, so a relocated `HOME` does not hide `gh`'s login. |
 | `pollInterval` | 1 min | Time between polls of one repository, with a random jitter of ±10 %. |
 | `trustedUsers` | `[]` | Logins trusted in addition to everyone with write access. |
 | `ui.port`, `ui.bind`, `ui.token` | 8765, loopback, none | The local UI. A non-loopback `bind` requires a `token`. |
@@ -581,7 +668,10 @@ first, and a moved UI listener reopens on its new address.
 | `createMissingLabels` | `false` | Let triage create a label that does not exist yet. The `worker:*` labels are always created. |
 | `maxActiveIssuesPerRepository` | 4 | Fleet-wide soft limit of claimed issues in one repository. |
 | `runTimeout` | 2 h | Wall-clock limit of one agent run. |
+| `checksTimeout` | 2 h | How long a mergeable-looking pull request may wait for required checks or a review before it is labelled `worker:awaiting-review` and released. |
 | `build` / `test` | detected | Verification commands. Detected from `AGENTS.md`/`CONTRIBUTING.md`, then from the stack (`*.sln[x]`, `package.json`, `pyproject.toml`, `Cargo.toml`, …). |
+| `maxProseLines` | 2 | Commit body lines allowed besides change lines (`+ - * # !` and a space, or their indented continuation). More, and the commit is sent back to be rewritten as change lines. |
+| `forbiddenWords` | agent and vendor names | Case-insensitive whole-word regular-expression fragments the commit gate refuses (`claude`, `anthropic`, `codex`, `openai`, `gemini`, `antigravity`, `opencode`, `llm`, `agents?`). `AI` as a word, `generated with` and 🤖 stay forbidden whatever this list says. |
 
 Local state (poll cursors, ETags, native conversation ids, costs) lives in
 `~/.local/state/GitHubIssueWorker/` (`%LOCALAPPDATA%` on Windows). Clones and worktrees live under
@@ -603,11 +693,18 @@ untrusted until proven otherwise:
   and cached per poll cycle, because an association of `COLLABORATOR` alone can mean read-only), or
   the login is in `trustedUsers`. Bots are never trusted. Anyone else's text is never put into a
   prompt, including as context for a trusted comment.
-- **No agent can reach outward.** Every agent run is denied `git push`, `gh`, and the GitHub API
-  where the agent supports tool restrictions, and runs without a GitHub token either way. Pushing,
-  claiming, commenting, labelling and merging are done by the manager after its own checks.
-- **No secrets in the worktree.** The run's environment is scrubbed of `GH_TOKEN`, `GITHUB_TOKEN`
-  and the manager's own credentials. The token is never written to disk, logs, checkpoints or claims.
+- **No agent can reach outward.** Runs have no permission prompts, so the boundary is the
+  environment: no GitHub token, `GH_CONFIG_DIR` pointing at an empty directory (unsetting it is not
+  enough, `gh` then falls back to `~/.config/gh`), no `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND` set to
+  fail, the worktree's push URL disabled, and deny rules for `git push` and `gh` where the agent
+  honours them even without prompts (Claude). A push that slips through anyway is caught: the manager
+  pushes the issue branch with `--force-with-lease` against the commit it expects, so a foreign
+  commit on the branch aborts the run and is reported. Pushing, claiming, commenting, labelling and
+  merging are done by the manager after its own checks. An agent can still read files your account
+  can read, including keys, which is why a dedicated OS user or container is recommended below.
+- **No secrets in the worktree.** The run's environment is scrubbed of `GH_TOKEN`, `GITHUB_TOKEN`,
+  `GH_CONFIG_DIR` and the manager's own credentials, so an agent cannot reach `gh`'s login either. No
+  token is ever written to disk, logs, checkpoints or claims.
   Agent credentials stay with the agent installations.
 - **The UI is local.** It binds to loopback unless you configure a token, and it can do nothing the
   CLI cannot.
@@ -631,7 +728,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F0.1** House-standard repository: license, editorconfig, gitignore, AGENTS, CONTRIBUTING,
   smoke/CI/nightly/release workflows in the house Python dialect, README checked by `repo-readme`.
 - [x] 🟥 **F0.2** Package skeleton (`pyproject.toml`, `src/github_issue_worker`, `tests/`) that is
-  `ruff`/`mypy --strict` clean and tests green, with a `github-issue-worker --version` entry point.
+  `ruff`/`mypy --strict` clean and tests green, with a `github-issue-worker --version` (short `-V`)
+  entry point.
 - [ ] 🟥 **F0.3** Configuration loads from the platform path or `--config`, validates every key, and
   reports an invalid key by its JSON path. Unknown keys are an error, not ignored. One validator serves
   the file, the CLI and the UI, and every write is atomic.
@@ -640,9 +738,13 @@ operational items, demonstrated on a real repository. Commits that implement an 
   invalid change to the file is reported and the running configuration kept.
 - [ ] 🟥 **F0.4** Structured log to console plus one log file per repository and per issue run.
   Secrets are redacted.
-- [ ] 🟥 **F0.5** Authentication resolves `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token`
-  (honouring `GH_CONFIG_DIR`). A missing or expired token fails at start with the command that fixes
-  it.
+- [ ] 🟥 **F0.5** All GitHub access goes through `gh api` (REST and GraphQL), with `gh`'s login,
+  `GH_CONFIG_DIR` and `GH_TOKEN` applying unchanged; the manager never reads or stores a token. Status,
+  headers (`ETag`, `Date`, rate limit, `Retry-After`) and body are parsed from `gh api -i`, including
+  `304` and error responses, which `gh` reports with a non-zero exit. `gh` and networked `git` run
+  with the account's home from the OS user database (or `manager.home`), never a relocated `HOME`.
+  One `GET user` through the adapter at start proves the login: when `gh` cannot answer it, the
+  manager stops before polling with the command that fixes it (`gh auth login`).
 - [ ] 🟥 **F0.6** Start-up preflight: `git` and `gh` are found and runnable, every worker's
   installation answers a version probe (a worker that does not is *unavailable* with the reason, and
   the manager runs with the rest), and commit signing is configured when a watched repository's
@@ -650,11 +752,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 ### F1 — Watched repositories
 
-- [ ] 🟥 **F1.1** `add <repo>` accepts `https://github.com/o/r`, `git@github.com:o/r.git`, `o/r` and
+- [x] 🟥 **F1.1** `add <repo>` accepts `https://github.com/o/r`, `git@github.com:o/r.git`, `o/r` and
   an issue URL, and stores the normalised `owner/repo`.
-- [ ] 🟥 **F1.2** `add` refuses a repository the authenticated account cannot push to
+- [x] 🟥 **F1.2** `add` refuses a repository the authenticated account cannot push to
   (`permissions.push` is false), and says so.
-- [ ] 🟥 **F1.3** `add` creates the `worker:*` labels that do not exist yet.
+- [x] 🟥 **F1.3** `add` creates the `worker:*` labels that do not exist yet.
 - [ ] 🟥 **F1.4** `remove <repo>` and `list` (last poll, state counts, current issues). Removing a
   repository releases this manager's claims in it with a checkpoint.
 - [ ] 🟥 **F1.5** Push access is re-checked on every start and every hour. A repository that lost it
@@ -669,10 +771,10 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F2.2** Classifies events as *opened*, *reopened*, *commented*, *review-commented*,
   *routing-changed* and *labelled-skip*. Pull requests returned by the issues endpoint are not
   treated as issues.
-- [ ] 🟥 **F2.3** Ignores every comment carrying the manager's marker (`<!-- ghiw:… -->`), whichever
+- [x] 🟥 **F2.3** Ignores every comment carrying the manager's marker (`<!-- ghiw:… -->`), whichever
   manager wrote it, so output under your account never triggers any worker.
-- [ ] 🟥 **F2.4** Ignores input from untrusted authors (see Security above) and logs it.
-- [ ] 🟥 **F2.5** First watch of a repository records the current position and queues nothing unless
+- [x] 🟥 **F2.4** Ignores input from untrusted authors (see Security above) and logs it.
+- [x] 🟥 **F2.5** First watch of a repository records the current position and queues nothing unless
   `processBacklog` is on.
 - [ ] 🟥 **F2.6** Honours `X-RateLimit-Remaining`/`Reset` and secondary-limit `Retry-After`, and
   backs off instead of failing.
@@ -688,7 +790,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   event first.
 - [ ] 🟥 **F3.2** Progress is mirrored as exactly one `worker:*` label per issue, matching the
   [lifecycle](#-issue-lifecycle). Only the claim holder's manager writes the label of a claimed issue.
-- [ ] 🟥 **F3.3** Local state is written atomically (write-temp-then-rename), so a crash leaves the
+- [x] 🟥 **F3.3** Local state is written atomically (write-temp-then-rename), so a crash leaves the
   old or the new state, never a torn one.
 - [ ] 🟥 **F3.4** Crash recovery: after a restart, a manager resumes each of its workers' claims from
   the claim's last completed step (triage, implement, push, PR, checks, merge, close) and its last
@@ -704,11 +806,18 @@ operational items, demonstrated on a real repository. Commits that implement an 
 ### F4 — Triage
 
 - [ ] 🟥 **F4.1** An issue with no labels gets one or more labels from the repository's existing set,
-  chosen by a tool-less run of the cheapest available worker that can return structured output.
+  chosen by the first run itself: its prompt lists the existing labels and its outcome carries
+  `labels`, so no separate agent call is spent. Labels outside the existing set are dropped.
 - [ ] 🟥 **F4.2** Labels that do not exist are never created unless `createMissingLabels` is on.
 - [ ] 🟥 **F4.3** An issue that already carries a non-`worker:*` label is not relabelled.
 - [ ] 🟧 **F4.4** Triage may conclude the issue is too vague to start, which goes straight to
   [F8](#f8--asking-for-input) with the missing information named.
+- [ ] 🟥 **F4.5** First and reopen runs start with an understanding run that changes nothing: the
+  agent restates the issue in its own words (goal, scope, measurable Given / When / Then acceptance
+  criteria, assumptions), the manager applies the chosen labels and posts the restatement as a
+  marked comment before any work starts, and every later run's prompt carries it as the agreed
+  understanding. The issue text itself is never edited. A request too vague to restate becomes a
+  question instead (F8). An existing restatement is reused, not posted again.
 
 ### F5 — Workspace
 
@@ -717,7 +826,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   freshly fetched base branch, or from the latest checkpoint when continuing.
 - [ ] 🟥 **F5.3** The branch is linked to the issue (GraphQL `createLinkedBranch`), so it shows in the
   issue's *Development* panel.
-- [ ] 🟥 **F5.4** Commits use your git identity and signing configuration. The manager never sets an
+- [x] 🟥 **F5.4** Commits use your git identity and signing configuration. The manager never sets an
   author, committer or e-mail of its own.
 - [ ] 🟥 **F5.5** Clean state after every PR: on merge, unmerged close, release or loss of the claim,
   the worktree and local branch are removed, the remote issue branch is deleted after a merge, the
@@ -738,8 +847,12 @@ operational items, demonstrated on a real repository. Commits that implement an 
   description.
 - [ ] 🟥 **F6.3** The [working contract](#-how-an-issue-is-worked) (SDD → BDD → DDD → TDD) and the
   journal duty are part of every implementation prompt.
-- [ ] 🟥 **F6.4** Every agent is denied `git push`, `gh` and GitHub API access where it supports tool
-  restrictions, and every agent's environment carries no GitHub token.
+- [ ] 🟥 **F6.4** Every agent runs without permission prompts and without outward credentials: no
+  `GH_TOKEN`/`GITHUB_TOKEN`/`SSH_AUTH_SOCK`, `GH_CONFIG_DIR` at an empty directory, `GIT_SSH_COMMAND`
+  failing, the worktree's
+  push URL disabled, and deny rules for `git push` and `gh` where the agent honours them. Tested: a
+  fake agent that tries `git push` and `gh api` in its run fails at both, and a commit pushed to the
+  issue branch behind the manager's back aborts the run.
 - [ ] 🟥 **F6.5** Each adapter switches its agent's own attribution off where the agent has one
   (Claude: `--settings`), so no co-author trailer or footer is added. The commit gate (F7.1) catches
   whatever an agent adds anyway.
@@ -753,20 +866,25 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 ### F7 — Commit, push, pull request, merge, close
 
-- [ ] 🟥 **F7.1** Commit gate on every commit between base and branch head: subject starts with
-  `+ - * # !`, never with "fix"/"bugfix"/"changed"/"modified", has a body, and contains no AI trace
+- [x] 🟥 **F7.1** Commit gate on every commit between base and branch head: subject starts with
+  `+ - * # !`, never with "fix"/"bugfix"/"changed"/"modified", has a body of change lines (each
+  starting with `+ - * # !` and a space, longer ones continued on indented lines; at most
+  `maxProseLines` other lines, default 2, so paragraphs of prose are sent back), and contains no AI trace
   (`Co-Authored-By` naming an AI, "Generated with", 🤖, mentions of Claude, Anthropic, Codex, OpenAI,
-  Gemini, Antigravity, OpenCode, AI, LLM or agents). A failing commit is sent back for rewording, and
+  Gemini, Antigravity, OpenCode, AI, LLM or agents; the word list is configurable via `forbiddenWords`,
+  while "AI", "generated with" and 🤖 stay forbidden). A failing commit is sent back for rewording, and
   is never pushed as is.
 - [ ] 🟥 **F7.2** Pushes only the issue branch, always with `--force-with-lease` against the commit
   this worker last pushed. Never pushes the base branch.
-- [ ] 🟥 **F7.3** Opens the pull request with the house-style title, a body containing the summary,
-  the BDD scenarios, the verification evidence and `Closes #<n>`, plus the marker.
+- [ ] 🟥 **F7.3** Opens the pull request with the house-style title and a body of the branch's
+  change lines (no prose summary), the BDD scenarios and `Closes #<n>`. The squash merge gets the
+  title plus the PR number as its subject and the same change lines as its body, instead of
+  GitHub's pasted commit bodies, and the closing comment on the issue lists them too.
 - [ ] 🟥 **F7.4** Waits for the required checks. Red checks hand the failing job's log back to the
   agent, up to `ciRepairAttempts` times, then ask.
 - [ ] 🟥 **F7.5** When the base moved or conflicts: rebase, re-verify (F6.6), push. Unresolvable
   conflicts go back to the agent.
-- [ ] 🟥 **F7.6** Merges with `mergeMethod` (or the first method the repository allows), passing the
+- [x] 🟥 **F7.6** Merges with `mergeMethod` (or the first method the repository allows), passing the
   expected head `sha`.
 - [ ] 🟥 **F7.7** Merge blocked by a required review: label `worker:awaiting-review`, comment once,
   release the claim. The approval is an event like any other, and whoever claims it merges.
@@ -808,8 +926,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
   the cache is written, and each would-be write is logged.
 - [ ] 🟥 **F10.5** `release <owner/repo#n> [--force]`: release a claim with a checkpoint. Without
   `--force` only this manager's claims; with it any claim, recorded in the claim's history.
-- [ ] 🟧 **F10.6** `status`: this manager's workers and claims, and fleet-wide per repository: known
-  managers, claims with holder, step and expiry, paused issues with their reset, unserved issues.
+- [ ] 🟧 **F10.6** `status`: this manager's workers with the model each runs on, and its claims
+  with the worker's model, and fleet-wide per repository: known managers, claims with holder, step
+  and expiry, paused issues with their reset, unserved issues.
 - [ ] 🟧 **F10.7** Service recipes: a systemd user unit and a Windows scheduled task, documented and
   tested on both.
 - [ ] 🟦 **F10.8** Per-day and per-repository cost ceilings across runs.
@@ -817,7 +936,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 ### F11 — Fleet coordination
 
-- [ ] 🟥 **F11.1** Claims are created, renewed, moved, taken over, released and completed only by
+- [x] 🟥 **F11.1** Claims are created, renewed, moved, taken over, released and completed only by
   `git push --force-with-lease` compare-and-swap on `refs/ghiw/claims/<issue>`. With N concurrent
   claimants, exactly one succeeds (tested with parallel claimants against a real remote).
 - [ ] 🟥 **F11.2** Claim times use GitHub's `Date` header. A manager whose local clock is skewed by a
@@ -833,7 +952,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F11.6** Checkpoints to `refs/ghiw/wip/<issue>` after each step, every
   `checkpointInterval`, and before pause or release. Restoring one reproduces the branch commits and
   the uncommitted worktree exactly.
-- [ ] 🟥 **F11.7** `consumedThrough` advances only in the compare-and-swap that ends the run which
+- [x] 🟥 **F11.7** `consumedThrough` advances only in the compare-and-swap that ends the run which
   used the events. Two workers seeing the same comment produce exactly one rework run.
 - [ ] 🟥 **F11.8** No-reservation rule: a claim is attempted only by a worker that holds none, is
   eligible and available, whose account is unlimited, below `stopClaimingAt` and within
@@ -863,17 +982,18 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F12.2** One manager runs all its workers concurrently, each in its own worktree and
   process, with a crash or hang of one worker never affecting another (tested with four fake agents,
   one of which hangs and one of which crashes).
-- [ ] 🟥 **F12.3** `claude` adapter: `claude -p --output-format stream-json --verbose`,
-  `--session-id`/`--resume`, `--json-schema`, `--max-budget-usd`, `--model`, attribution off, tool
-  restrictions for push/`gh`.
-- [ ] 🟥 **F12.4** `codex` adapter: `codex exec --json`, `codex exec resume <id>`, `--output-schema`,
-  workspace-write sandbox, `--model`.
-- [ ] 🟥 **F12.5** `antigravity` adapter: `agy -p --output-format stream-json`, `--conversation`,
-  `--mode accept-edits`, run under a pseudo-terminal because `agy -p` can lose its output without a
-  TTY.
+- [x] 🟥 **F12.3** `claude` adapter: `claude -p --output-format stream-json --verbose
+  --dangerously-skip-permissions`, `--session-id`/`--resume`, `--json-schema`, `--max-budget-usd`,
+  `--model`, attribution off, deny rules for `git push` and `gh`.
+- [x] 🟥 **F12.4** `codex` adapter: `codex exec --json --dangerously-bypass-approvals-and-sandbox`,
+  `codex exec resume <id>`, `--output-schema`, `--model`.
+- [x] 🟥 **F12.5** `antigravity` adapter: `agy -p --output-format stream-json
+  --dangerously-skip-permissions`, `--conversation`, the prompt as a pointer to `.ghiw/prompt.md`.
+  With stdin closed, agy 1.4.11 gave complete output without a pseudo-terminal, so none is used.
 - [ ] 🟧 **F12.6** `opencode` adapter: `opencode run --format json`, `--session`, `--model
-  provider/model`, for models behind any provider OpenCode supports, local ones included. Tested
-  against a fake replaying captured OpenCode output; verified against a real installation in F15.8.
+  provider/model`, with every permission allowed in the run's own configuration, for models behind
+  any provider OpenCode supports, local ones included. Tested against a fake replaying captured
+  OpenCode output; verified against a real installation in F15.8.
 - [ ] 🟥 **F12.7** `command` adapter: argument template with `{prompt}`, `{worktree}`, `{outcome}`,
   `{session}` placeholders, configured limit patterns and exit codes, for any further CLI agent.
 - [ ] 🟥 **F12.8** `workers` command: list workers with agent, installation, version, account,
@@ -910,37 +1030,62 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 ### F14 — Local UI
 
-- [ ] 🟥 **F14.1** The manager serves the UI on `127.0.0.1:<ui.port>`. A non-loopback bind is refused
+- [x] 🟥 **F14.1** The manager serves the UI on `127.0.0.1:<ui.port>`. A non-loopback bind is refused
   without `ui.token`, and with one every request must carry it. `--no-ui` disables it.
-- [ ] 🟥 **F14.2** Workers page: per worker the agent, installation and version, account and usage
-  state with reset time, current issue (link), step, local branch, worktree path, time on the issue,
-  last checkpoint and run cost, updated live.
+- [ ] 🟥 **F14.2** Workers page: per worker the agent, the model it runs on, installation and
+  version, account and usage state with reset time, current issue (link), step, local branch,
+  worktree path, time on the issue, last checkpoint and run cost, updated live.
 - [ ] 🟥 **F14.3** Repositories page: watch list with last poll, push-access result and per-state
   counts; add (verified before saving), edit per-repository overrides, remove.
+- [ ] 🟥 **F14.10** Issues page, the start page: every open issue of the watched repositories with
+  what is happening in words and who works it, local (this machine's worker, its model and step,
+  with log, pause and stop & release) or remote (another manager's worker). Stop & release kills
+  the agent's whole process group, releases the claim and pauses the worker.
+- [ ] 🟥 **F14.11** Log page: a local agent's run as a chat log (messages, tool calls and their
+  output, errors), read from the run's own output file while it is written and refreshed live.
 - [ ] 🟥 **F14.4** Worker actions: add from detected installations or by hand, edit every worker
   setting (agent, installation, account, priority, tags, model, budget, command and limit patterns),
   remove (releases the claim), pause, resume, release claim.
-- [ ] 🟥 **F14.8** Settings page: every remaining configuration key, with its default and its source
+- [x] 🟥 **F14.8** Settings page: every remaining configuration key, with its default and its source
   (file or default), inline validation through the F0.3 validator, atomic save and live apply (F0.7).
   Tested: for every key in the schema there is a UI field, so a new key cannot ship without one.
-- [ ] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
+- [x] 🟧 **F14.12** Settings page change hints: a field or account value that differs from what the
+  page loaded has a background of its own, distinct from errors and notices, in light and dark; it
+  clears when the value is edited back, and a save refused by validation keeps the typed values
+  marked. Tested in a real browser.
+- [x] 🟧 **F14.13** Cockpit: every finished run is appended to `history.jsonl` in the state
+  directory and survives restarts and damaged lines. Readouts (merged today, last 7 days with a
+  30-day trace, all time, median time from first run to merge, merge rate), issues merged per day
+  split by model, agent or repository over 30/90/180 days, runs per model per week over 26 weeks,
+  time to merge by model, agent or repository, a model ledger (runs, merged, median time, first
+  and last use), a 24-hour flight log of runs per worker with the running ones live, the model share
+  as a ring, the running total of merges, and finished runs per weekday and hour. Colour follows the entity across views, a ninth series folds into "Other", every
+  chart has a per-mark tooltip and a table view, the grid reflows down to phone width, and it
+  refreshes live without losing the chosen view.
+- [x] 🟧 **F14.14** Crew squares: each issue a worker holds is a square coloured by its repository
+  (the same colour for every worker, local or remote), with the issue linked and its description as
+  tooltip, and its branch: locally a button that opens the worktree in the file manager, remotely a
+  link to the branch on GitHub. Other managers' workers form a remote row without controls.
+- [x] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
   without one.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
 - [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
-- [ ] 🟥 **F14.7** Demo mode `ui --demo <scenario>` renders every page through the real UI code with
+- [x] 🟥 **F14.7** Demo mode `ui --demo <scenario>` renders every page through the real UI code with
   deterministic sample data (several workers of every agent kind, limited and paused accounts,
-  claims from other managers). `generate.yml` captures each page and commits changed screenshots.
-  The same pull request adds the hero image and `## 🖼️ Screenshots` and sets `gui: true`.
+  claims from other managers). `generate.yml` captures each page, commits changed screenshots and
+  reruns CI on that commit for an open pull request; the hero image is the cockpit. The same
+  pull request adds the hero image and `## 🖼️ Screenshots` and sets `gui: true`.
 
 ### F15 — Installations and the reference setup
 
-- [ ] 🟥 **F15.1** `path` installation: each agent kind is found on `PATH` with its standard config
+- [x] 🟥 **F15.1** `path` installation: each agent kind is found on `PATH` with its standard config
   location (tested with fake agents on `PATH`, no portable layout present).
-- [ ] 🟥 **F15.2** `executable` installation with explicit path and environment.
-- [ ] 🟥 **F15.3** `claudecodeportable` installation: runs `claude.sh`/`codex.sh`/`antigravity.sh`
-  (`.bat` on Windows) with `--profile <p> --skip-menu` and passes agent flags through. Verified that
-  stdout carries only the agent's output, or the adapter strips the launcher's preamble.
+- [x] 🟥 **F15.2** `executable` installation with explicit path and environment.
+- [x] 🟥 **F15.3** `claudecodeportable` installation: resolves the profile's CLI and environment
+  directly (`npm-global/bin/{claude,codex}` with `CLAUDE_CONFIG_DIR`/`CODEX_HOME`, `.local/bin/agy`
+  with the profile as `HOME`, the portable node first on `PATH`), without the interactive launchers.
+  `~` in the root means the account home, not a relocated one.
 - [ ] 🟥 **F15.4** `claudelocal` installation: `claude.sh --dir <worktree> --prompt - --output-format
   json` with optional `--model`; availability from `--status`; never `--stop` or `--tune`.
 - [ ] 🟥 **F15.5** Reference setup on the maintainer's hardware: one manager with four workers (Claude
@@ -972,7 +1117,7 @@ src/github_issue_worker/
                  Janitor (clean state after a PR), InputRequester, LimitMonitor
   ports/         GitHubApi, Git, ClaimStore, AgentAdapter, InstallationResolver, StateStore, Clock,
                  ProcessRunner  (typing.Protocol)
-  adapters/      GitHub REST/GraphQL over httpx; git, claims and checkpoints via the git CLI;
+  adapters/      GitHub REST/GraphQL through `gh api`; git, claims and checkpoints via the git CLI;
                  agents: claude, codex, antigravity, opencode, command, remote;
                  installations: path, executable, claudecodeportable, claudelocal;
                  JSON state store; configuration; logging
@@ -1006,15 +1151,14 @@ watched repository.
 | Dependency | Kind | Why |
 | --- | --- | --- |
 | Python 3.13+ | runtime | `asyncio`, `subprocess`, `json`, `dataclasses`. |
-| [`httpx`](https://www.python-httpx.org) | runtime | Async HTTP for the REST and GraphQL calls, with ETag and rate-limit handling under the manager's own control. |
 | [`FastAPI`](https://fastapi.tiangolo.com) + [`uvicorn`](https://www.uvicorn.org) | runtime | The local UI, on the manager's own event loop. |
 | `git` | runtime | Clones, worktrees, commits, signing, push, and the compare-and-swap that claims rely on. |
-| `gh` | runtime, optional | Source of the token only. `GH_TOKEN` replaces it. |
+| `gh` | runtime | Every GitHub API call, as `gh api -i`: authentication, hosts and login stay `gh`'s business. |
 | [`claude`](https://docs.claude.com/en/docs/claude-code), [`codex`](https://github.com/openai/codex), [`agy`](https://antigravity.google), [`opencode`](https://opencode.ai) | runtime, any subset | The agents. At least one is needed. |
 | `pytest`, `ruff`, `mypy`, `build`, `playwright` | development | Tests, lint and format, strict typing, packaging, UI screenshots. |
 
-No GitHub SDK: the handful of calls the manager makes are thin enough that a client library would add
-more surface than it removes.
+No GitHub SDK and no HTTP client: `gh api -i` already authenticates, and returns the status and
+headers the manager needs for conditional polling, server time and rate limits.
 
 ## ⚠️ Limitations
 

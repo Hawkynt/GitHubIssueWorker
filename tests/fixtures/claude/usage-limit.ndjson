@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"1d8cbbe2-b4ca-4003-b49f-7ea099f2c425","cwd":"/work/issue-42"}
+{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1793948400,"rateLimitType":"seven_day","utilization":1.0},"session_id":"1d8cbbe2-b4ca-4003-b49f-7ea099f2c425"}
+{"type":"assistant","error":"rate_limit","api_error":"usage_limit_reached","message":{"content":[{"type":"text","text":"You've hit your weekly limit · resets 11am (UTC)"}]},"session_id":"1d8cbbe2-b4ca-4003-b49f-7ea099f2c425"}
+{"type":"result","subtype":"error_during_execution","is_error":true,"api_error":"usage_limit_reached","terminal_reason":"api_error","session_id":"1d8cbbe2-b4ca-4003-b49f-7ea099f2c425"}

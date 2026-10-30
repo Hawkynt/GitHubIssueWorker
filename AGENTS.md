@@ -25,9 +25,21 @@ requirement id (e.g. `F7.1`) in the commit body. Tick an item only when its acce
 covered by a passing test or, for operational items, demonstrated on a real repository. Never
 renumber or delete an unticked item.
 
+## Relocated homes (ClaudeCodePortable, ClaudeLocal)
+
+Sessions started through ClaudeCodePortable or ClaudeLocal run with `HOME` relocated into a profile
+directory. There `gh` is not logged in, so anything that needs `gh` or GitHub over ssh must run with
+the account's real home: `HOME=<real home> gh ...`, `HOME=<real home> pytest -m e2e`. The manager
+does this by itself (`adapters/home.py`, `manager.home`). A run the manager starts for an agent has
+no GitHub access at all, deliberately: such an agent runs the fast tier, and leaves pushing, pull
+requests and the `e2e` tests to the manager and CI.
+
 ## Commits
 
-- **Group changes semantically** — one requirement/concern per commit, with a detailed body.
+- **Group changes semantically** — one requirement/concern per commit.
+- **The body is change lines, not prose**: after a blank line, one short line per change, each
+  starting with a prefix and a space; a longer change continues on indented lines. More than two
+  other lines and the commit gate sends it back (`maxProseLines`).
 - **Every subject line starts with a prefix**: `+` added · `-` removed · `*` changed · `#` bug fixed
   · `!` critical todo.
 - Never start a subject with "fix"/"bugfix"/"changed"/"modified"/"updated".

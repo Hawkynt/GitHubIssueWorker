@@ -1,0 +1,23 @@
+"""The issue's working copy, as the issue run needs it (F5)."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
+
+
+@dataclass(frozen=True, slots=True)
+class CommitInfo:
+    sha: str
+    message: str
+
+
+class WorkspacePort(Protocol):
+    def worktree(self, repository: str, issue: int, branch: str, base: str) -> Path: ...
+    def commits(self, worktree: Path, base: str) -> list[CommitInfo]: ...
+    def head(self, worktree: Path) -> str: ...
+    def rebase(self, worktree: Path, base: str) -> bool: ...
+    def push(self, repository: str, worktree: Path, branch: str, expected: str | None) -> str: ...
+    def remote_head(self, repository: str, branch: str) -> str | None: ...
+    def remove(self, repository: str, issue: int, branch: str) -> None: ...

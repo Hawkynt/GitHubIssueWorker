@@ -40,3 +40,5 @@ jobs:
       - uses: actions/checkout@v4
       # Keep `gui:` in step with ci.yml.
       - uses: Hawkynt/RepositoryTemplate/repo-readme@v1
+        with:
+          gui: true
