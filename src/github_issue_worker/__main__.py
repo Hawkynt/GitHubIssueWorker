@@ -10,7 +10,7 @@ from github_issue_worker.product import NAME, version
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if args == ["--version"]:
+    if args in (["--version"], ["-V"]):
         print(f"{NAME} {version()}")
         return 0
     return cli_main(args)

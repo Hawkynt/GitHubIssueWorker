@@ -396,7 +396,7 @@ def _dirs(args: argparse.Namespace) -> tuple[Path | None, Path | None]:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="github-issue-worker", description=f"{NAME} {version()}")
-    parser.add_argument("--version", action="version", version=f"{NAME} {version()}")
+    parser.add_argument("-V", "--version", action="version", version=f"{NAME} {version()}")
     parser.add_argument("--config", type=Path, help="configuration file (default: platform path)")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     parser.add_argument("--state-dir", type=Path, help="local state (default: ~/.local/state/...)")
