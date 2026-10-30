@@ -1,20 +1,20 @@
 {
   "branch": "issue/22-webui-change-hints",
-  "claimedAt": "2026-10-30T16:36:09Z",
+  "claimedAt": "2026-10-30T16:38:19Z",
   "consumedThrough": {
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-06T16:37:12Z",
-  "generation": 1,
+  "expiresAt": "2026-11-06T16:38:19Z",
+  "generation": 2,
   "holder": {
     "manager": "hawky-desktop-96a3",
     "worker": "claude"
   },
   "issue": 22,
   "pausedUntil": null,
-  "renewedAt": "2026-10-30T16:37:19Z",
-  "state": "released",
+  "renewedAt": "2026-10-30T16:38:19Z",
+  "state": "working",
   "step": "needs-input",
   "takeovers": 0
 }
