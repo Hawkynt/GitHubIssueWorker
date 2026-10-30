@@ -817,7 +817,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 ### F11 — Fleet coordination
 
-- [ ] 🟥 **F11.1** Claims are created, renewed, moved, taken over, released and completed only by
+- [x] 🟥 **F11.1** Claims are created, renewed, moved, taken over, released and completed only by
   `git push --force-with-lease` compare-and-swap on `refs/ghiw/claims/<issue>`. With N concurrent
   claimants, exactly one succeeds (tested with parallel claimants against a real remote).
 - [ ] 🟥 **F11.2** Claim times use GitHub's `Date` header. A manager whose local clock is skewed by a
