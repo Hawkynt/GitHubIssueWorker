@@ -90,6 +90,8 @@ class Manager:
     _own: dict[tuple[str, int], str] = field(default_factory=dict)
     _labelled: dict[tuple[str, int], str] = field(default_factory=dict)
     _adopted: set[str] = field(default_factory=set)
+    _untrusted_issues: set[tuple[str, int]] = field(default_factory=set)
+    _untrusted_comments: set[tuple[str, int]] = field(default_factory=set)
 
     # --- the loop ------------------------------------------------------------------------------
 
@@ -154,7 +156,32 @@ class Manager:
         def trusted(actor: Actor) -> bool:
             return is_trusted(actor, watch.host.role(actor.login), self.trusted_users)
 
+        issue_key = (watch.name, number)
+        if not trusted(issue.author) and issue_key not in self._untrusted_issues:
+            log.info(
+                "%s#%d: ignored issue opened by untrusted author %s",
+                watch.name,
+                number,
+                issue.author.login,
+            )
+            self._untrusted_issues.add(issue_key)
+
         comments = tuple(watch.host.comments(number))
+        for comment in comments:
+            comment_key = (watch.name, comment.id)
+            if (
+                not comment.is_own_output
+                and comment_key not in self._untrusted_comments
+                and not trusted(comment.author)
+            ):
+                log.info(
+                    "%s#%d: ignored comment %d by untrusted author %s",
+                    watch.name,
+                    number,
+                    comment.id,
+                    comment.author.login,
+                )
+                self._untrusted_comments.add(comment_key)
         context = WorkContext(
             issue, claim, comments, trusted, watch.mode, since, watch.coordinator.policy, now
         )
