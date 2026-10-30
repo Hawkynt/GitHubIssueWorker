@@ -34,7 +34,8 @@ executable scenarios, the code speaks the domain's language, and every behaviour
 test.
 
 A **worker** is one coding agent (a Claude Code, a Codex, an Antigravity, a Claude Code on a local
-model, an OpenCode) that works one issue at a time. A **manager** is the `github-issue-worker`
+model, an OpenCode) that works as many issues at once as its account allows, one per *instance*
+(`claude`, `claude.2`, ...), one by default and never more than twenty. A **manager** is the `github-issue-worker`
 process on a machine. It steers all of that machine's workers at once, does everything outward-facing
 (push, pull request, merge, close, comment) on their behalf, and only after it has checked the
 result: build and tests green, every commit conforming to the house rules, no trace of who or what
@@ -49,6 +50,42 @@ claim nobody has renewed for eight days goes back to the fleet, so a worker that
 never blocks anything. A worker claims only when it is idle and able to start, so nothing is ever
 reserved by someone who cannot work on it. Usage limits are treated as weather, not failure: the
 limited worker pauses its issue, takes nothing new, and resumes on its own when the limit resets.
+
+```mermaid
+flowchart TB
+    github[("GitHub: issues, pull requests,<br/>claims in refs/ghiw/claims/*")]
+    subgraph desktop["desktop: Arch Linux, GPU"]
+        direction TB
+        office{{"manager office-pc"}}
+        claude["claude: Claude Opus 5.5<br/>3 at once: #214, #57, one idle"]
+        codex["codex: GPT 6.1 Sol<br/>2 at once: #88, one idle"]
+        local["local: Qwen3.8 Flash Next<br/>1 at once: idle"]
+        office --> claude & codex & local
+    end
+    subgraph laptop["laptop: Windows 11"]
+        direction TB
+        lap{{"manager laptop-01ab"}}
+        lapclaude["claude: Claude Opus 5.5<br/>1 at once: #219,<br/>paused by a usage limit"]
+        lap --> lapclaude
+    end
+    subgraph cloud["cloud VM: Ubuntu"]
+        direction TB
+        ci{{"manager ci-runner-03"}}
+        gemini["antigravity: Gemini 4 Argon<br/>2 at once: #91, #93"]
+        opencode["opencode: GPT 6.1 Sol<br/>1 at once: idle"]
+        ci --> gemini & opencode
+    end
+    subgraph studio["studio: macOS"]
+        mac{{"manager studio<br/>all workers paused"}}
+    end
+    github <--> office & lap & ci & mac
+```
+
+Every machine runs one manager, on whatever operating system it has, with the agents and models
+installed there; each polls, pushes, opens and merges pull requests, and claims issues by
+compare-and-swap on the same repositories. A worker whose account allows three runs at once works three issues side by side;
+another sits idle until an issue it may take turns up. No manager talks to another: they meet only
+in the repositories, where each issue has at most one claim.
 
 A local web UI on each manager shows which worker is on which issue, on which local branch, and
 gives access to every setting: watched repositories, workers, accounts, fleet behaviour and defaults.
@@ -165,9 +202,11 @@ manager, marked remote.
 
 **Cockpit.** The crew at work and the long view. Readouts on top: merged today, the last seven days
 with a 30-day trace, all time, median time to merge, merge rate. Each worker is a lane: agent,
-account and model, and a square per issue it holds, coloured by repository, with the issue (its
-description as tooltip), a track through the six steps of a run, and its branch, which opens the
-worktree. Other managers' workers follow in a remote row, their branches linked on GitHub. Below:
+account and model, with a sub-row per instance its account lets run at once: a square per issue,
+coloured by repository, with the issue (its description as tooltip), a track through the six steps
+of a run, its branch, which opens the worktree, and its own log and stop & release. When other
+managers hold issues, a remote row follows with a sub-row for each, its branch linked on GitHub.
+Below:
 a flight log of every run of the last day per worker, issues merged per day by model, agent or
 repository over 30, 90 or 180 days, the model share, the running total of merges, time to merge,
 the busy hours by weekday, the weekly model mix and a ledger of every model used. Every chart has a
@@ -380,9 +419,12 @@ in is shown as *unavailable* with the reason, and claims nothing.
 
 Every worker has an **account**: an opaque name for what its agent bills against. Usage limits belong
 to accounts, not to workers or machines. Two workers on one account, on one machine or on two, share
-its limit (see [Usage limits](#-usage-limits)). An account can also cap concurrency:
-`maxConcurrentRuns: 1` fits a local model that serves one request at a time, as ClaudeLocal's
-gateway does, so a second worker on it waits instead of queuing inside the engine. A local model has
+its limit (see [Usage limits](#-usage-limits)). An account also sets concurrency:
+`maxConcurrentRuns` (1 by default, at most 20, never unlimited) is how many issues its workers run
+at once on this manager. Each worker runs that many instances, `claude`, `claude.2`, `claude.3`,
+each holding one claim of its own; two workers on one account share the number. `1` fits a local
+model that serves one request at a time, as ClaudeLocal's gateway does, so a second issue waits
+instead of queuing inside the engine. A worker's name cannot end like an instance name (`.2`). A local model has
 no vendor usage limit; its worker is *unavailable* instead while the gateway is not running.
 
 **Choosing who takes an issue.** When several idle workers of one manager are eligible for an issue,
@@ -462,7 +504,7 @@ too: the issue branch is pushed with `--force-with-lease` against the commit thi
 and the merge passes the expected head `sha`, so a worker that lost its claim cannot overwrite or
 merge somebody else's work.
 
-**No reservations.** A worker claims an issue only when, at that moment, it holds no other claim, it
+**No reservations.** A worker instance claims an issue only when, at that moment, it holds no other claim, it
 is eligible for the issue (routing labels), its installation is available, its account is not limited
 and is below its claim-stop threshold, and the account's `maxConcurrentRuns` allows another run. It
 never queues claims ahead of time.
@@ -643,7 +685,7 @@ first, and a moved UI listener reopens on its new address.
 | `pollInterval` | 1 min | Time between polls of one repository, with a random jitter of ±10 %. |
 | `trustedUsers` | `[]` | Logins trusted in addition to everyone with write access. |
 | `ui.port`, `ui.bind`, `ui.token` | 8765, loopback, none | The local UI. A non-loopback `bind` requires a `token`. |
-| `accounts.<name>.maxConcurrentRuns` | unlimited | Runs on this account at once, on this manager. |
+| `accounts.<name>.maxConcurrentRuns` | 1 | Issues this account's workers run at once on this manager, 1 to 20; each worker runs that many instances. |
 | `workers[].name` | — | Unique on this manager. Together with the manager id it is the claim holder. |
 | `workers[].agent` | — | `claude`, `codex`, `antigravity`, `opencode`, `command` or `remote`. |
 | `workers[].account` | — | Key into `accounts`. Limits are tracked per account. |
@@ -1004,7 +1046,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F12.10** Continuation across agents: a run started by one agent kind is finished by another
   from the journal and checkpoint, with no repeated commits (tested claude → codex → antigravity →
   local claude with fakes).
-- [ ] 🟥 **F12.11** `maxConcurrentRuns` per account is enforced on the manager.
+- [x] 🟥 **F12.11** `maxConcurrentRuns` per account (1 by default, 1 to 20) is enforced on the
+  manager: each worker runs that many instances (`<name>`, `<name>.2`, ...), each holding one claim,
+  a resize applies live, and workers sharing an account share the cap.
 - [ ] 🟦 **F12.12** `remote` adapter for vendor cloud agents: submit the task with the checkpoint,
   poll, collect the diff into the worktree, then the same verification and commit gate as a local
   run.
@@ -1065,7 +1109,10 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟧 **F14.14** Crew squares: each issue a worker holds is a square coloured by its repository
   (the same colour for every worker, local or remote), with the issue linked and its description as
   tooltip, and its branch: locally a button that opens the worktree in the file manager, remotely a
-  link to the branch on GitHub. Other managers' workers form a remote row without controls.
+  link to the branch on GitHub. Each worker is a row with a sub-row per instance its account
+  allows, with log and stop & release per instance and pause and edit per worker. Issues held by
+  other managers form one remote row, shown only when there are any, with a sub-row per issue and no
+  controls.
 - [x] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
   without one.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and

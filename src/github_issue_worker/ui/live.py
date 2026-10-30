@@ -165,7 +165,7 @@ class RuntimeBackend:
         return tuple(found)
 
     def _worker(self, slot: WorkerSlot, now) -> WorkerView:  # type: ignore[no-untyped-def]
-        settings = next((w for w in self._runtime.config.workers if w.name == slot.name), None)
+        settings = next((w for w in self._runtime.config.workers if w.name == slot.group), None)
         local = settings is not None and isinstance(settings.installation, ClaudeLocalInstallation)
         agent = "ClaudeLocal" if local else AGENT_NAMES.get(slot.agent, slot.agent)
         model = worker_model(slot, self.history())
@@ -189,6 +189,7 @@ class RuntimeBackend:
         )
         return WorkerView(
             name=slot.name,
+            group=slot.group,
             agent=agent,
             account=slot.account,
             model=model,
@@ -272,7 +273,7 @@ class RuntimeBackend:
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None:
         for slot in self._manager.workers:
-            if slot.name == name:
+            if name in (slot.name, slot.group):
                 slot.enabled = enabled
 
     def stop_worker(self, name: str) -> None:

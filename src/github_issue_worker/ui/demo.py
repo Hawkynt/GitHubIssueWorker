@@ -30,9 +30,9 @@ CONFIG = {
     "pollInterval": "00:01:00",
     "trustedUsers": ["release-bot-owner"],
     "accounts": {
-        "anthropic-max": {},
-        "openai-plus": {},
-        "google-pro": {},
+        "anthropic-max": {"maxConcurrentRuns": 3},
+        "openai-plus": {"maxConcurrentRuns": 2},
+        "google-pro": {"maxConcurrentRuns": 2},
         "local-gpu": {"maxConcurrentRuns": 1},
     },
     "workers": [
@@ -91,6 +91,25 @@ WORKERS = (
         branch="issue/214-retry-uploads-after-a-gateway-timeout",
         worktree="~/.cache/GitHubIssueWorker/acme/telemetry-gateway/issues/214",
         since=NOW - timedelta(minutes=23),
+        group="claude",
+    ),
+    WorkerView(
+        "claude.2",
+        "Claude Code",
+        "anthropic-max",
+        "Claude Opus 5.5",
+        "working",
+        repository="acme/design-tokens",
+        issue=57,
+        issue_title="Export tokens as CSS custom properties",
+        step="implement",
+        branch="issue/57-export-tokens-as-css-custom-properties",
+        worktree="~/.cache/GitHubIssueWorker/acme/design-tokens/issues/57",
+        since=NOW - timedelta(minutes=9),
+        group="claude",
+    ),
+    WorkerView(
+        "claude.3", "Claude Code", "anthropic-max", "Claude Opus 5.5", "idle", group="claude"
     ),
     WorkerView(
         "codex",
@@ -105,14 +124,20 @@ WORKERS = (
         branch="issue/88-invoices-round-vat-per-line-instead-of-per",
         worktree="~/.cache/GitHubIssueWorker/acme/billing-cli/issues/88",
         since=NOW - timedelta(hours=1, minutes=4),
+        group="codex",
     ),
-    WorkerView(
-        "antigravity",
-        "Antigravity",
-        "google-pro",
-        "Gemini 4 Argon (Medium)",
-        "limited",
-        limited_until=NOW + timedelta(hours=2, minutes=40),
+    WorkerView("codex.2", "Codex", "openai-plus", "GPT 6.1 Sol", "idle", group="codex"),
+    *(
+        WorkerView(
+            name,
+            "Antigravity",
+            "google-pro",
+            "Gemini 4 Argon (Medium)",
+            "limited",
+            limited_until=NOW + timedelta(hours=2, minutes=40),
+            group="antigravity",
+        )
+        for name in ("antigravity", "antigravity.2")
     ),
     WorkerView("local", "ClaudeLocal", "local-gpu", "Qwen3.8 Flash Next IQ3_S", "idle"),
     WorkerView(
@@ -148,6 +173,17 @@ CLAIMS = (
         NOW + timedelta(days=6, hours=19),
         "issue/219-buffer-metrics-while-offline",
         paused_until=NOW + timedelta(hours=1, minutes=10),
+    ),
+    ClaimView(
+        "acme/design-tokens",
+        57,
+        f"{MANAGER}/claude.2",
+        True,
+        "working",
+        "implement",
+        NOW - timedelta(minutes=1),
+        NOW + timedelta(days=7) - timedelta(minutes=1),
+        "issue/57-export-tokens-as-css-custom-properties",
     ),
     ClaimView(
         "acme/billing-cli",
@@ -249,7 +285,23 @@ ISSUES: tuple[IssueView, ...] = (
     ),
 )
 
+ISSUES += (
+    IssueView(
+        "acme/design-tokens",
+        57,
+        "Export tokens as CSS custom properties",
+        "worked here",
+        "claude.2",
+        MANAGER,
+        True,
+        "Claude Opus 5.5",
+        "implement",
+        NOW - timedelta(minutes=9),
+    ),
+)
 BODIES = {
+    ("acme/design-tokens", 57): "Apps that do not use the JavaScript package need the tokens too. "
+    "Generate a tokens.css with one custom property per token.",
     ("acme/telemetry-gateway", 214): "Uploads to the gateway fail for good after a single 504. "
     "Retry them with a backoff, at most five times, before reporting the batch as lost.",
     ("acme/telemetry-gateway", 219): "When the uplink drops, metrics are discarded. Keep them in "
@@ -365,7 +417,7 @@ class DemoBackend:
 
     def snapshot(self) -> Snapshot:
         names = {worker.name for worker in self._config.workers}
-        workers = tuple(w for w in self._workers if w.name in names)
+        workers = tuple(w for w in self._workers if w.worker in names)
         repos = {r.repository for r in self._config.repositories}
         return Snapshot(
             manager_id=MANAGER,
@@ -412,7 +464,9 @@ class DemoBackend:
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None:
         self._workers = [
-            replace(w, state="paused" if not enabled else "idle") if w.name == name else w
+            replace(w, state="paused" if not enabled else "idle")
+            if name in (w.name, w.worker)
+            else w
             for w in self._workers
         ]
 
