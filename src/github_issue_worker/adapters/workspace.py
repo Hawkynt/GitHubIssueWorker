@@ -179,6 +179,34 @@ class Workspace:
         self._try(clone, "worktree", "remove", "--force", str(path))
         self._git(clone, "worktree", "prune")
         self._try(clone, "branch", "-D", branch)
+        # Branches an agent made on the side (backups before a rebase, ...) are left over once
+        # their worktree is gone; everything of value was pushed. A checked-out branch stays.
+        checked_out = set(self._checked_out(clone).values())
+        for name in self._git(clone, "branch", "--format=%(refname:short)").split():
+            if name not in checked_out:
+                self._try(clone, "branch", "-D", name)
+
+    def worktrees(self, repository: str) -> dict[int, str]:
+        clone = self._root(repository) / "clone"
+        if not clone.exists():
+            return {}
+        issues = (self._root(repository) / "issues").resolve()
+        found = {}
+        for path, branch in self._checked_out(clone).items():
+            if path.parent == issues and path.name.isdigit():
+                found[int(path.name)] = branch
+        return found
+
+    def _checked_out(self, clone: Path) -> dict[Path, str]:
+        """Every worktree of the clone, the clone itself included, with its branch."""
+        found: dict[Path, str] = {}
+        path: Path | None = None
+        for line in self._git(clone, "worktree", "list", "--porcelain").splitlines():
+            if line.startswith("worktree "):
+                path = Path(line.removeprefix("worktree ")).resolve()
+            elif line.startswith("branch ") and path is not None:
+                found[path] = line.removeprefix("branch refs/heads/")
+        return found
 
     # --- git ----------------------------------------------------------------------------------
 

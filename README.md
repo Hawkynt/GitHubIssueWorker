@@ -921,7 +921,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
   that issue or a configurable number of days.
 
 ### F6 — Implementation run
-
+  An hourly sweep catches what the manager did not merge itself: a branch with no open pull request
+  whose pull request was merged or closed, or whose issue is closed, is deleted on GitHub, and a
+  worktree whose issue is closed or held by another manager goes with its local branch. Nothing
+  anybody holds a claim on is touched. Branches an agent made on the side go with the worktree, and
+  agents are told to create none. (Sweep and local branches tested; checkpoint refs still open.)
 - [ ] 🟥 **F6.1** Runs the worker's agent headless in the worktree through its adapter, with the
   per-issue prompt file, and reads the outcome from `.ghiw/outcome.json` (`outcome` `done` /
   `needs-input` / `impossible`, `summary`, `scenarios`, `questions[]` with options and a

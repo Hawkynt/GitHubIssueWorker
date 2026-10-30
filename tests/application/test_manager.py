@@ -393,3 +393,19 @@ def test_a_trusted_comment_on_a_split_parent_queues_a_rework_run() -> None:
     f.polls.append(PollResult(comments=(note,)))
     f.manager.tick()
     assert f.runs == [Recorded("claude", 1, RunKind.REWORK)]
+
+
+def test_housekeeping_runs_hourly_with_the_claims_held_here_and_anywhere() -> None:
+    f = Fixture([slot("claude")], verdicts=[Verdict("paused", until=T0 + timedelta(hours=2))])
+    swept: list[tuple[set[int], set[int]]] = []
+    f.manager.sweep = lambda watch, mine, claimed: swept.append((mine, claimed))
+    other = POLICY.new_claim(5, Holder("laptop-01ab", "codex"), T0, "issue/5-x")
+    f.store.force_create(other)
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert swept == [({1}, {1, 5})]
+    f.manager.tick()
+    assert len(swept) == 1  # not again within the hour
+    f.clock.advance(timedelta(hours=1))
+    f.manager.tick()
+    assert len(swept) == 2

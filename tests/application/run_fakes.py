@@ -36,6 +36,8 @@ class FakeHost:
     closed: list[int] = field(default_factory=list)
     head_of: dict[str, str] = field(default_factory=dict)
     children: dict[int, list[int]] = field(default_factory=dict)
+    remote_branches: list[str] = field(default_factory=list)
+    branch_pulls: dict[str, list[PullRequest]] = field(default_factory=dict)
     """Sub-issue numbers per parent, in the order they were attached."""
 
     def info(self) -> RepositoryInfo:
@@ -100,6 +102,14 @@ class FakeHost:
 
     def delete_branch(self, branch: str) -> None:
         self.deleted_branches.append(branch)
+        if branch in self.remote_branches:
+            self.remote_branches.remove(branch)
+
+    def branches(self, prefix: str) -> list[str]:
+        return [branch for branch in self.remote_branches if branch.startswith(prefix)]
+
+    def pull_requests_for(self, branch: str) -> list[PullRequest]:
+        return list(self.branch_pulls.get(branch, []))
 
     def close_issue(self, issue: int) -> None:
         self.closed.append(issue)
@@ -124,6 +134,8 @@ class FakeWorkspace:
     remote: dict[str, str] = field(default_factory=dict)
     pushes: list[tuple[str, str | None]] = field(default_factory=list)
     removed: list[int] = field(default_factory=list)
+    local: dict[int, str] = field(default_factory=dict)
+    """Worktrees on this machine: issue to branch."""
     rebase_ok: bool = True
     shas: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
     head_listener: Callable[[str, str], None] | None = None
@@ -162,6 +174,10 @@ class FakeWorkspace:
 
     def remove(self, repository: str, issue: int, branch: str) -> None:
         self.removed.append(issue)
+        self.local.pop(issue, None)
+
+    def worktrees(self, repository: str) -> dict[int, str]:
+        return dict(self.local)
 
 
 @dataclass

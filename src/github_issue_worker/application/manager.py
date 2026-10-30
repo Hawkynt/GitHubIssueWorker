@@ -14,7 +14,7 @@ import re
 import threading
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -120,6 +120,9 @@ class Manager:
     spawn: Callable[[Callable[[], None]], None]
     on_finished: Callable[[RunRecord], None] | None = None
     """Told about every finished run, for the long-term history the cockpit draws."""
+    sweep: Callable[[RepositoryWatch, set[int], set[int]], None] | None = None
+    """Removes finished branches and worktrees, given the issues held here and held anywhere."""
+    sweep_every: timedelta = timedelta(hours=1)
     max_runs: Callable[[str], int] | None = None
     """An account's ``maxConcurrentRuns`` on this manager (F12.11); None leaves it uncapped."""
     _lock: threading.RLock = field(default_factory=threading.RLock)
@@ -130,6 +133,7 @@ class Manager:
     _adopted: set[str] = field(default_factory=set)
     _untrusted_issues: set[tuple[str, int]] = field(default_factory=set)
     _untrusted_comments: set[tuple[str, int]] = field(default_factory=set)
+    _swept: dict[str, datetime] = field(default_factory=dict)
 
     # --- the loop ------------------------------------------------------------------------------
 
@@ -159,6 +163,30 @@ class Manager:
                 self._consider(watch, number, since)
             except Exception:
                 log.exception("%s#%d: could not be considered", watch.name, number)
+        self._housekeeping(watch)
+
+    def _housekeeping(self, watch: RepositoryWatch) -> None:
+        """Every ``sweep_every``, finished issues lose their branch and worktree (F5.5)."""
+        now = self.clock.now()
+        last = self._swept.get(watch.name)
+        if self.sweep is None or (last is not None and now - last < self.sweep_every):
+            return
+        self._swept[watch.name] = now
+        claimed: set[int] = set()
+        mine: set[int] = set()
+        for number in watch.store.issues():
+            stored = watch.store.read(number)
+            if stored and stored.claim.state.holds:
+                claimed.add(number)
+                if stored.claim.holder.manager == self.manager_id:
+                    mine.add(number)
+        with self._lock:
+            mine |= {number for (repo, number) in self._own if repo == watch.name}
+            mine |= {s.current[1] for s in self.workers if s.current and s.current[0] == watch.name}
+        try:
+            self.sweep(watch, mine, claimed)
+        except Exception:
+            log.exception("%s: housekeeping failed", watch.name)
 
     def _adopt(self, watch: RepositoryWatch) -> None:
         """Claims this manager still holds from before a restart are continued (F3.4)."""
