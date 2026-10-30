@@ -63,6 +63,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 # review, and ruff cannot wrap string literals itself.
 "src/github_issue_worker/ui/pages.py" = ["E501"]
 "src/github_issue_worker/ui/demo.py" = ["E501"]
+"src/github_issue_worker/ui/charts.py" = ["E501"]
 "tests/ui/*.py" = ["E501"]
 
 [tool.mypy]

@@ -7,9 +7,11 @@ no personal data.
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
+from github_issue_worker.application.history import RunRecord
 from github_issue_worker.configuration import Configuration, validate
 from github_issue_worker.ui.model import (
     ActionError,
@@ -184,7 +186,7 @@ REPOSITORIES = (
 )
 
 
-ISSUES = (
+ISSUES: tuple[IssueView, ...] = (
     IssueView(
         "acme/telemetry-gateway",
         214,
@@ -247,6 +249,20 @@ ISSUES = (
     ),
 )
 
+BODIES = {
+    ("acme/telemetry-gateway", 214): "Uploads to the gateway fail for good after a single 504. "
+    "Retry them with a backoff, at most five times, before reporting the batch as lost.",
+    ("acme/telemetry-gateway", 219): "When the uplink drops, metrics are discarded. Keep them in "
+    "a bounded on-disk buffer and send them once the connection is back.",
+    ("acme/billing-cli", 88): "Invoices round the VAT once on the total, which differs by a cent "
+    "from what the tax office expects. Round per line, then sum.",
+    ("acme/billing-cli", 91): "Statements can only be printed. Add an export as CSV with one row "
+    "per booking.",
+}
+ISSUES = tuple(
+    replace(issue, body=BODIES.get((issue.repository, issue.number), "")) for issue in ISSUES
+)
+
 LOG = "\n".join(
     json.dumps(event)
     for event in (
@@ -295,6 +311,48 @@ LOG = "\n".join(
 )
 
 
+def demo_history() -> list[RunRecord]:
+    """120 days of a believable fleet: models arriving and leaving, a few questions and failures."""
+    rng = random.Random(20261030)
+    eras = (
+        ("Claude Opus 5", "claude", 0, 45, 38),
+        ("Claude Opus 5.5", "claude", 40, 120, 31),
+        ("GPT 6.1 Sol", "codex", 25, 120, 44),
+        ("Gemini 4 Argon (Medium)", "antigravity", 60, 120, 52),
+        ("Qwen3.8 Flash Next IQ3_S", "local", 80, 120, 96),
+    )
+    repositories = ("acme/telemetry-gateway", "acme/billing-cli", "acme/design-tokens")
+    start = NOW - timedelta(days=120)
+    records: list[RunRecord] = []
+    issue = 100
+    for day in range(120):
+        for model, agent, first, last, minutes in eras:
+            if not first <= day < last:
+                continue
+            for _ in range(rng.choice((0, 0, 1, 1, 1, 2, 2, 3))):
+                issue += 1
+                began = start + timedelta(days=day, hours=rng.uniform(7, 20))
+                took = timedelta(minutes=max(4.0, rng.gauss(minutes, minutes / 3)))
+                verdict = rng.choices(
+                    ("merged", "needs-input", "failed", "awaiting-review"), (86, 8, 3, 3)
+                )[0]
+                records.append(
+                    RunRecord(
+                        repository=rng.choice(repositories),
+                        issue=issue,
+                        worker=agent,
+                        agent=agent,
+                        model=model,
+                        kind="first",
+                        verdict=verdict,
+                        started=began,
+                        finished=min(began + took, NOW - timedelta(minutes=1)),
+                        issue_started=began,
+                    )
+                )
+    return sorted(records, key=lambda record: record.finished)
+
+
 class DemoBackend:
     """The demo fleet. Changes are kept in memory for the session, so the UI can be tried out."""
 
@@ -302,6 +360,8 @@ class DemoBackend:
         self._config = validate(json.loads(json.dumps(CONFIG)))
         self._workers = list(WORKERS)
         self.stopped: list[str] = []
+        self.opened: list[str] = []
+        self._history = demo_history()
 
     def snapshot(self) -> Snapshot:
         names = {worker.name for worker in self._config.workers}
@@ -365,6 +425,15 @@ class DemoBackend:
             raise ActionError(f"{name} is not working on an issue, so there is nothing to stop")
         self.stopped.append(name)
         self.set_worker_enabled(name, False)
+
+    def open_worktree(self, name: str) -> None:
+        worker = next((w for w in self._workers if w.name == name), None)
+        if worker is None or worker.worktree is None:
+            raise ActionError(f"{name} is not working on an issue, so it has no worktree to open")
+        self.opened.append(name)
+
+    def history(self) -> list[RunRecord]:
+        return self._history
 
     def log(self, name: str) -> str | None:
         worker = next((w for w in self._workers if w.name == name), None)
