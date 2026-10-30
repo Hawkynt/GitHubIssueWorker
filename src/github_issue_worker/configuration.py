@@ -322,12 +322,16 @@ def save(config: Configuration, path: Path) -> None:
         raise
 
 
-def default_path(platform: str = sys.platform) -> Path:
+def default_path(platform: str = sys.platform, home: Path | None = None) -> Path:
     """The platform's configuration file: ``$XDG_CONFIG_HOME`` or ``~/.config`` on Linux,
-    ``%APPDATA%`` on Windows."""
+    ``%APPDATA%`` on Windows. ``home`` replaces ``HOME``, so a launcher that relocated it does not
+    give the manager a second configuration."""
     if platform == "win32":
-        base = Path(os.environ["APPDATA"])
+        base = home / "AppData" / "Roaming" if home else Path(os.environ["APPDATA"])
     else:
         xdg = os.environ.get("XDG_CONFIG_HOME")
-        base = Path(xdg) if xdg else Path(os.environ["HOME"]) / ".config"
+        if xdg and not (home and not Path(xdg).is_relative_to(home)):
+            base = Path(xdg)
+        else:
+            base = (home or Path(os.environ["HOME"])) / ".config"
     return base / "GitHubIssueWorker" / "config.json"

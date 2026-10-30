@@ -45,17 +45,24 @@ def _windows() -> bool:
     return sys.platform == "win32"
 
 
-def resolve(worker: WorkerSettings) -> Resolved:
+def _expand(path: str, home: Path | None) -> Path:
+    """``~`` means the account home: a relocated ``HOME`` would point into a launcher's profile."""
+    if home is not None and (path == "~" or path.startswith(("~/", "~\\"))):
+        return home / path[2:]
+    return Path(path).expanduser()
+
+
+def resolve(worker: WorkerSettings, home: Path | None = None) -> Resolved:
     installation = worker.installation
     if isinstance(installation, ExecutableInstallation):
-        path = Path(installation.path).expanduser()
+        path = _expand(installation.path, home)
         if not path.exists():
             raise Unavailable(f"{worker.name}: {path} does not exist")
         return Resolved(path, dict(installation.env))
     if isinstance(installation, ClaudeCodePortableInstallation):
-        return _portable(worker, installation)
+        return _portable(worker, installation, home)
     if isinstance(installation, ClaudeLocalInstallation):
-        root = Path(installation.root).expanduser()
+        root = _expand(installation.root, home)
         launcher = root / ("Claude.bat" if _windows() else "claude.sh")
         if not launcher.exists():
             raise Unavailable(f"{worker.name}: no ClaudeLocal launcher at {launcher}")
@@ -68,8 +75,10 @@ def resolve(worker: WorkerSettings) -> Resolved:
     return Resolved(Path(found))
 
 
-def _portable(worker: WorkerSettings, installation: ClaudeCodePortableInstallation) -> Resolved:
-    root = Path(installation.root).expanduser()
+def _portable(
+    worker: WorkerSettings, installation: ClaudeCodePortableInstallation, home: Path | None
+) -> Resolved:
+    root = _expand(installation.root, home)
     profile = root / "profiles" / installation.profile
     if not profile.is_dir():
         raise Unavailable(f"{worker.name}: no ClaudeCodePortable profile {profile}")

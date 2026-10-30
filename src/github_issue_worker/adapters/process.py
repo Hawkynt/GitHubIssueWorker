@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import tempfile
+import threading
 from dataclasses import dataclass
 
 from github_issue_worker.ports.agents import Invocation
@@ -25,6 +26,17 @@ _BLOCKED = {
     "GIT_SSH_COMMAND": "false",  # any ssh push fails
     "GIT_TERMINAL_PROMPT": "0",  # and an https one cannot ask for a password
 }
+
+
+_LIVE: set[subprocess.Popen[str]] = set()
+_LIVE_LOCK = threading.Lock()
+
+
+def terminate_all() -> None:
+    """Kill every agent still running, with everything it started (on manager shutdown)."""
+    with _LIVE_LOCK:
+        for process in list(_LIVE):
+            _kill_group(process)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +73,8 @@ def _run(invocation: Invocation, timeout: float, empty_gh_config: str) -> Proces
         env=agent_environment(dict(invocation.env), empty_gh_config),
         start_new_session=True,
     )
+    with _LIVE_LOCK:
+        _LIVE.add(process)
     try:
         stdout, stderr = process.communicate(invocation.stdin, timeout=timeout)
         return ProcessResult(process.returncode, stdout, stderr)
@@ -68,6 +82,9 @@ def _run(invocation: Invocation, timeout: float, empty_gh_config: str) -> Proces
         _kill_group(process)
         stdout, stderr = process.communicate()
         return ProcessResult(process.returncode or -9, stdout, stderr, timed_out=True)
+    finally:
+        with _LIVE_LOCK:
+            _LIVE.discard(process)
 
 
 def _kill_group(process: subprocess.Popen[str]) -> None:

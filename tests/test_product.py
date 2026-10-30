@@ -19,5 +19,7 @@ def test_version_flag_prints_name_and_version(capsys: pytest.CaptureFixture[str]
     assert capsys.readouterr().out == f"{NAME} 0.1.0\n"
 
 
-def test_unknown_command_fails_with_usage_exit_code() -> None:
-    assert main(["watch"]) == 2
+def test_an_unknown_command_is_a_usage_error() -> None:
+    with pytest.raises(SystemExit) as caught:
+        main(["no-such-command"])
+    assert caught.value.code == 2
