@@ -611,7 +611,8 @@ untrusted until proven otherwise:
   the login is in `trustedUsers`. Bots are never trusted. Anyone else's text is never put into a
   prompt, including as context for a trusted comment.
 - **No agent can reach outward.** Runs have no permission prompts, so the boundary is the
-  environment: no GitHub token and no `GH_CONFIG_DIR`, no `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND` set to
+  environment: no GitHub token, `GH_CONFIG_DIR` pointing at an empty directory (unsetting it is not
+  enough, `gh` then falls back to `~/.config/gh`), no `SSH_AUTH_SOCK`, `GIT_SSH_COMMAND` set to
   fail, the worktree's push URL disabled, and deny rules for `git push` and `gh` where the agent
   honours them even without prompts (Claude). A push that slips through anyway is caught: the manager
   pushes the issue branch with `--force-with-lease` against the commit it expects, so a foreign
@@ -754,7 +755,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F6.3** The [working contract](#-how-an-issue-is-worked) (SDD → BDD → DDD → TDD) and the
   journal duty are part of every implementation prompt.
 - [ ] 🟥 **F6.4** Every agent runs without permission prompts and without outward credentials: no
-  `GH_TOKEN`/`GITHUB_TOKEN`/`GH_CONFIG_DIR`/`SSH_AUTH_SOCK`, `GIT_SSH_COMMAND` failing, the worktree's
+  `GH_TOKEN`/`GITHUB_TOKEN`/`SSH_AUTH_SOCK`, `GH_CONFIG_DIR` at an empty directory, `GIT_SSH_COMMAND`
+  failing, the worktree's
   push URL disabled, and deny rules for `git push` and `gh` where the agent honours them. Tested: a
   fake agent that tries `git push` and `gh api` in its run fails at both, and a commit pushed to the
   issue branch behind the manager's back aborts the run.
