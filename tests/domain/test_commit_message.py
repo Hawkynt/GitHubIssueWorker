@@ -98,6 +98,24 @@ def test_the_forbidden_words_are_configurable_per_repository() -> None:
     assert Rule.AI_TRACE in rules(f"# add the agent adapter{BODY}")
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "An AI wrote the parser.",
+        "Co-Authored-By: AI <noreply@example.org>",
+        "Generated with some tool",
+        "generated with a helper",
+        "🤖 made by a bot",
+    ],
+)
+def test_always_forbidden_traces_cannot_be_switched_off(line: str) -> None:
+    empty_gate = CommitGate(forbidden_words=())
+    custom_gate = CommitGate(forbidden_words=("custom",))
+    assert Rule.AI_TRACE in rules(f"# retry on timeout{BODY}\n{line}", empty_gate)
+    assert Rule.AI_TRACE in rules(f"# retry on timeout{BODY}\n{line}", custom_gate)
+    assert rules(f"# mention claude and codex and agents{BODY}", empty_gate) == set()
+
+
 def test_violations_name_the_line_they_sit_on() -> None:
     message = f"# retry on timeout{BODY}\nfirst\nGenerated with a tool"
     (violation,) = GATE.check(message)
