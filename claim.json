@@ -1,0 +1,20 @@
+{
+  "branch": "issue/5-pass-the-worker-s-budget-to-claude-runs",
+  "claimedAt": "2026-10-30T14:50:38Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-06T14:50:38Z",
+  "generation": 1,
+  "holder": {
+    "manager": "trial-87aa",
+    "worker": "claude"
+  },
+  "issue": 5,
+  "pausedUntil": null,
+  "renewedAt": "2026-10-30T14:50:38Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
