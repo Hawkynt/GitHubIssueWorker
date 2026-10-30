@@ -53,6 +53,7 @@ HELP: dict[str, str] = {
     "defaults.test": "Test command. Default: detected from the repository.",
     "defaults.forbiddenWords": "Words commit messages must not contain, as regular expressions.",
     "defaults.maxProseLines": "Body lines a commit may have besides + - * # ! change lines.",
+    "defaults.splitIssues": "Let a large issue with independent parts become parallel sub-issues.",
 }
 
 

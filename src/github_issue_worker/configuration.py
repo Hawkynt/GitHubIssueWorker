@@ -166,6 +166,7 @@ class DefaultsSettings(_Settings):
     test: str | None = None
     forbidden_words: list[str] = Field(default_factory=lambda: list(DEFAULT_FORBIDDEN_WORDS))
     max_prose_lines: int = Field(default=2, ge=0)
+    split_issues: bool = True
 
 
 class RepositorySettings(_Settings):
@@ -185,6 +186,7 @@ class RepositorySettings(_Settings):
     test: str | None = None
     forbidden_words: list[str] | None = None
     max_prose_lines: int | None = Field(default=None, ge=0)
+    split_issues: bool | None = None
 
 
 class Configuration(_Settings):
