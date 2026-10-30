@@ -75,6 +75,16 @@ def resolve(worker: WorkerSettings, home: Path | None = None) -> Resolved:
     return Resolved(Path(found))
 
 
+def portable_tool(profile: Path, agent: str, windows: bool | None = None) -> Path:
+    """Where a ClaudeCodePortable profile keeps the agent's CLI; Windows adds .cmd or .exe."""
+    windows = _windows() if windows is None else windows
+    if agent in ("claude", "codex"):
+        return profile / "npm-global" / "bin" / (f"{agent}.cmd" if windows else agent)
+    if agent == "antigravity":
+        return profile / ".local" / "bin" / ("agy.exe" if windows else "agy")
+    return profile / "missing" / agent
+
+
 def _portable(
     worker: WorkerSettings, installation: ClaudeCodePortableInstallation, home: Path | None
 ) -> Resolved:
@@ -83,19 +93,12 @@ def _portable(
     if not profile.is_dir():
         raise Unavailable(f"{worker.name}: no ClaudeCodePortable profile {profile}")
 
-    suffix = ".cmd" if _windows() else ""
+    tool = portable_tool(profile, worker.agent)
     if worker.agent == "claude":
-        tool, env = (
-            profile / "npm-global" / "bin" / f"claude{suffix}",
-            {"CLAUDE_CONFIG_DIR": str(profile / "claude-config")},
-        )
+        env = {"CLAUDE_CONFIG_DIR": str(profile / "claude-config")}
     elif worker.agent == "codex":
-        tool, env = (
-            profile / "npm-global" / "bin" / f"codex{suffix}",
-            {"CODEX_HOME": str(profile / "codex-config")},
-        )
+        env = {"CODEX_HOME": str(profile / "codex-config")}
     elif worker.agent == "antigravity":
-        tool = profile / ".local" / "bin" / ("agy.exe" if _windows() else "agy")
         env = {"HOME": str(profile)}
         if _windows():
             env |= {"USERPROFILE": str(profile), "LOCALAPPDATA": str(profile / "AppData" / "Local")}

@@ -81,9 +81,10 @@ def test_claude_exiting_with_no_output_is_an_error(tmp_path: Path) -> None:
 
 
 def test_claudelocal_goes_through_its_launcher(tmp_path: Path) -> None:
-    adapter = ClaudeLocalAdapter(Path("/opt/ClaudeLocal/claude.sh"))
+    launcher = Path("/opt/ClaudeLocal/claude.sh")
+    adapter = ClaudeLocalAdapter(launcher)
     argv = adapter.invocation(run(tmp_path)).argv
-    assert argv[:5] == ["/opt/ClaudeLocal/claude.sh", "--dir", str(tmp_path), "--prompt", "-"]
+    assert argv[:5] == [str(launcher), "--dir", str(tmp_path), "--prompt", "-"]
     assert argv[argv.index("--output-format") + 1] == "json"
     assert argv[argv.index("--model") + 1] == "opus"
     assert "--stop" not in argv and "--tune" not in argv

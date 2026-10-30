@@ -165,7 +165,9 @@ def test_network_git_runs_with_the_account_home(remote: Path, tmp_path: Path) ->
     account = tmp_path / "account-home"
     account.mkdir()
     (account / ".gitconfig").write_text(
-        f'[url "{remote}"]\n\tinsteadOf = ghiw-test:\n', encoding="utf-8"
+        # as_posix: backslashes in a Windows path are escapes in a .gitconfig value
+        f'[url "{remote.as_posix()}"]\n\tinsteadOf = ghiw-test:\n',
+        encoding="utf-8",
     )
     work = clone(remote, tmp_path / "w")
     git("remote", "set-url", "origin", "ghiw-test:", cwd=work)

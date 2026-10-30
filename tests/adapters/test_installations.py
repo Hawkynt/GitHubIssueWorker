@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
 
-from github_issue_worker.adapters.installations import Unavailable, resolve
+from github_issue_worker.adapters.installations import Unavailable, portable_tool, resolve
 from github_issue_worker.configuration import parse
 
 
@@ -27,10 +28,10 @@ def worker(agent: str, installation: dict[str, str] | None = None) -> object:
 
 
 def test_path_finds_the_agent_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    agy = executable(tmp_path / "bin" / "agy")
+    agy = executable(tmp_path / "bin" / ("agy.cmd" if sys.platform == "win32" else "agy"))
     monkeypatch.setenv("PATH", str(tmp_path / "bin"))
     resolved = resolve(worker("antigravity"))  # type: ignore[arg-type]
-    assert resolved.executable == agy
+    assert resolved.executable.name.lower() == agy.name.lower()
     assert resolved.env == {}
 
 
@@ -49,19 +50,19 @@ def test_executable_is_taken_as_given_with_its_environment(tmp_path: Path) -> No
 
 
 @pytest.mark.parametrize(
-    ("agent", "relative", "variable", "value"),
+    ("agent", "variable", "value"),
     [
-        ("claude", "npm-global/bin/claude", "CLAUDE_CONFIG_DIR", "claude-config"),
-        ("codex", "npm-global/bin/codex", "CODEX_HOME", "codex-config"),
-        ("antigravity", ".local/bin/agy", "HOME", ""),
+        ("claude", "CLAUDE_CONFIG_DIR", "claude-config"),
+        ("codex", "CODEX_HOME", "codex-config"),
+        ("antigravity", "HOME", ""),
     ],
 )
 def test_claudecodeportable_resolves_inside_the_profile(
-    tmp_path: Path, agent: str, relative: str, variable: str, value: str
+    tmp_path: Path, agent: str, variable: str, value: str
 ) -> None:
     root = tmp_path / "ClaudeCodePortable"
     profile = root / "profiles" / "P"
-    tool = executable(profile / relative)
+    tool = executable(portable_tool(profile, agent))
     node = executable(root / "app" / "node" / "node-v22.23.3-linux-x64" / "bin" / "node")
 
     resolved = resolve(
@@ -83,7 +84,8 @@ def test_claudecodeportable_names_a_missing_profile(tmp_path: Path) -> None:
 
 
 def test_claudelocal_resolves_its_launcher(tmp_path: Path) -> None:
-    launcher = executable(tmp_path / "ClaudeLocal" / "claude.sh")
+    name = "Claude.bat" if sys.platform == "win32" else "claude.sh"
+    launcher = executable(tmp_path / "ClaudeLocal" / name)
     resolved = resolve(
         worker("claude", {"type": "claudelocal", "root": str(tmp_path / "ClaudeLocal")})  # type: ignore[arg-type]
     )

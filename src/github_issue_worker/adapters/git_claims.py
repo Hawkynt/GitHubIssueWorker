@@ -123,12 +123,13 @@ class GitClaimStore:
         env: dict[str, str] | None = None,
         check: bool = True,
     ) -> subprocess.CompletedProcess[str]:
-        result = subprocess.run(
+        # Bytes, not text mode: on Windows a text pipe turns "\n" into "\r\n", and `git mktree`
+        # then named the claim file "claim.json\r" (seen on the Windows CI runner).
+        raw = subprocess.run(
             ["git", *args],
             cwd=self._clone,
-            input=stdin,
+            input=stdin.encode("utf-8") if stdin is not None else None,
             capture_output=True,
-            text=True,
             # Messages are parsed, so they must be git's English ones whatever the user's locale.
             env={
                 **tool_environment(self._home),
@@ -138,6 +139,12 @@ class GitClaimStore:
                 **(env or {}),
             },
             check=False,
+        )
+        result = subprocess.CompletedProcess(
+            raw.args,
+            raw.returncode,
+            raw.stdout.decode("utf-8", "replace"),
+            raw.stderr.decode("utf-8", "replace"),
         )
         if check and result.returncode != 0:
             raise ClaimStoreError(f"git {args[0]} failed: {result.stderr.strip()}")
