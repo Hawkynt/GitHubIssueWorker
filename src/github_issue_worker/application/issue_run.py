@@ -18,6 +18,14 @@ from github_issue_worker.application.prompt import build_prompt
 from github_issue_worker.domain.commit_message import CommitGate, change_lines
 from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.domain.outcome import Outcome
+from github_issue_worker.domain.split import (
+    SPLIT_LABEL,
+    SPLIT_STEP,
+    inherited_labels,
+    missing_sub_issues,
+    parent_of,
+    sub_issue_body,
+)
 from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import AgentRun, RunReport
 from github_issue_worker.ports.clock import Clock
@@ -26,7 +34,7 @@ from github_issue_worker.ports.workspace import WorkspacePort
 from github_issue_worker.product import MARKER_PREFIX
 
 VerdictKind = Literal[
-    "merged", "needs-input", "awaiting-review", "paused", "failed", "lost", "stopped"
+    "merged", "needs-input", "awaiting-review", "paused", "failed", "lost", "stopped", "split"
 ]
 
 
@@ -85,6 +93,8 @@ class RunSettings:
     limit_probe: timedelta = timedelta(minutes=5)
     understand_first: bool = True
     """First and reopen runs start with a run that restates the issue and posts it (F4.5)."""
+    split_issues: bool = True
+    """The understanding run may split a large issue with independent parts (F4.6)."""
     gate: CommitGate = field(default_factory=CommitGate)
 
 
@@ -230,18 +240,37 @@ class IssueRun:
         branch: str,
         label_choices: set[str] | None,
     ) -> Verdict | None:
-        """Restate the issue before any work, apply the labels, post the restatement (F4.5)."""
+        """Restate the issue before any work, apply the labels, post the restatement (F4.5), and
+        split it into sub-issues when the agent found independent parts (F4.6)."""
+        may_split = self.settings.split_issues and parent_of(issue) is None
         feedback: str | None = None
         for _ in range(2):
             report = self._agent(
-                tree, issue, comments, kind, branch, label_choices, feedback, phase="understand"
+                tree,
+                issue,
+                comments,
+                kind,
+                branch,
+                label_choices,
+                feedback,
+                phase="understand",
+                may_split=may_split,
             )
             if report.limit is not None:
                 return self._pause(issue, report)
             outcome = report.outcome
             if outcome is not None and outcome.kind != "done":
                 return self._ask(issue, outcome)
+            parts = outcome.sub_issues if outcome is not None and may_split else ()
+            if outcome is not None and outcome.restatement and len(parts) == 1:
+                feedback = (
+                    "A split needs at least two independent parts. Either name every part in "
+                    "`subIssues`, or leave `subIssues` empty and the issue is worked as a whole."
+                )
+                continue
             if outcome is not None and outcome.restatement:
+                if parts:
+                    self._create_sub_issues(issue, outcome)
                 if label_choices and outcome.labels:
                     chosen = [label for label in outcome.labels if label in label_choices]
                     if chosen:
@@ -252,7 +281,7 @@ class IssueRun:
                 )
                 self._fenced(partial(self.host.comment, issue.number, body))
                 self._understanding = outcome.restatement
-                return None
+                return self._split(issue, branch) if parts else None
             reason = report.error if outcome is None else "the outcome has no restatement"
             feedback = (
                 f"The understanding run is not usable: {reason}. Write `.ghiw/outcome.json` with "
@@ -270,6 +299,7 @@ class IssueRun:
         label_choices: set[str] | None,
         feedback: str | None,
         phase: str = "implement",
+        may_split: bool = False,
     ) -> RunReport:
         key = (issue.number, self.settings.worker)
         prompt = build_prompt(
@@ -282,6 +312,7 @@ class IssueRun:
             feedback,
             understanding=self._understanding,
             phase=phase,
+            may_split=may_split,
         )
         report = self.agent(
             AgentRun(
@@ -405,6 +436,28 @@ class IssueRun:
             outcome.kind if outcome.kind == "needs-input" else "needs-input", detail=outcome.summary
         )
 
+    def _create_sub_issues(self, issue: Issue, outcome: Outcome) -> None:
+        """One queued sub-issue per part. Parts that already exist, from a run that crashed half
+        way, are reused by title, so a retry creates no twin."""
+        labels = [*inherited_labels(issue.labels), "worker:queued"]
+        existing = self.host.sub_issues(issue.number)
+        for part in missing_sub_issues(outcome.sub_issues, existing):
+            body = sub_issue_body(issue.number, part)
+            self._fenced(
+                partial(self.host.create_sub_issue, issue.number, part.title, body, labels)
+            )
+
+    def _split(self, issue: Issue, branch: str) -> Verdict:
+        """The parent waits for its sub-issues and holds nothing; nothing is implemented on it."""
+        children = self.host.sub_issues(issue.number)
+        lines = ["Split into sub-issues that are worked on their own:", ""]
+        lines += [f"- #{child.number} {child.title}" for child in children]
+        self._fenced(partial(self.host.comment, issue.number, "\n".join(lines)))
+        self.host.set_worker_label(issue.number, SPLIT_LABEL)
+        self.coordinator.release(self._handle, step=SPLIT_STEP, consumed=self._consumed)
+        self.workspace.remove(self.host.repository, issue.number, branch)
+        return Verdict("split", detail=", ".join(f"#{child.number}" for child in children))
+
     def _pause(self, issue: Issue, report: RunReport) -> Verdict:
         assert report.limit is not None
         until = report.limit.reset_at or self.clock.now() + self.settings.limit_probe
@@ -435,6 +488,6 @@ class IssueRun:
         self.coordinator.release(self._handle, step="failed", consumed=self._consumed)
         return Verdict("failed", detail=reason)
 
-    def _fenced(self, write: Callable[[], None]) -> None:
+    def _fenced(self, write: Callable[[], object]) -> None:
         self._handle = self.coordinator.fence(self._handle)
         write()

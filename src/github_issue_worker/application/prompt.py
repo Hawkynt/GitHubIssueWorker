@@ -78,7 +78,8 @@ Write `.ghiw/outcome.json`, following the JSON schema in `.ghiw/outcome.schema.j
 - `summary`: what you did, or why you stopped, in a few sentences;
 - `scenarios`: the acceptance scenarios, one string each;
 - `questions`: for `needs-input`, each question with its options and the option you recommend;
-- `labels`: see below, otherwise an empty list.
+- `labels`: see below, otherwise an empty list;
+- `subIssues`: an empty list.
 """
 
 
@@ -101,7 +102,20 @@ Write `.ghiw/outcome.json` following `.ghiw/outcome.schema.json`:
 - `scenarios`: the same acceptance scenarios, one string each;
 - `summary`: one sentence;
 - `labels`: see below, otherwise an empty list;
-- `questions`: for `needs-input`, otherwise an empty list.
+- `questions`: for `needs-input`, otherwise an empty list;
+- `subIssues`: {sub_issues}.
+"""
+
+SPLIT = """\
+## Splitting a large issue
+
+If the issue is large and has two or more parts that can each be implemented, tested and merged on
+its own branch, independently and in any order, split it: put one entry per part in `subIssues`,
+with a `title`, a `body` saying what the part is about, and its own Given / When / Then
+`scenarios`. Each part becomes a sub-issue that another worker may take in parallel, and nothing is
+implemented on this issue itself. Never split when the parts have to be done in sequence or one
+builds on another, and never split an issue that is small enough to be done as one: leave
+`subIssues` empty and the issue is worked as a whole. Restate the whole issue either way.
 """
 
 
@@ -115,7 +129,9 @@ def build_prompt(
     feedback: str | None = None,
     understanding: str | None = None,
     phase: str = "implement",
+    may_split: bool = False,
 ) -> str:
+    """``may_split`` offers the understanding run to split the issue into sub-issues (F4.6)."""
     parts = [
         f"# Issue #{issue.number} of {repository}: {issue.title}",
         "",
@@ -143,7 +159,13 @@ def build_prompt(
             "",
             understanding.strip(),
         ]
-    parts += ["", UNDERSTAND if phase == "understand" else CONTRACT]
+    if phase == "understand":
+        offer = "the parts of a split, see below, otherwise an empty list"
+        parts += ["", UNDERSTAND.format(sub_issues=offer if may_split else "an empty list")]
+        if may_split:
+            parts.append(SPLIT)
+    else:
+        parts += ["", CONTRACT]
     if choices:
         parts += [
             "## Labels",
