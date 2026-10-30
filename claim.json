@@ -1,0 +1,20 @@
+{
+  "branch": "issue/44-easy-to-setup",
+  "claimedAt": "2026-10-30T19:15:10Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-06T19:15:10Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "antigravity.2"
+  },
+  "issue": 44,
+  "pausedUntil": null,
+  "renewedAt": "2026-10-30T19:15:10Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
