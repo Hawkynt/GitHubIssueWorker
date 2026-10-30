@@ -186,7 +186,7 @@ def _watch(config: Configuration, args: argparse.Namespace, home: Path) -> int:
     from github_issue_worker.adapters.process import terminate_all
     from github_issue_worker.wiring import build_runtime
 
-    runtime = build_runtime(config, home)
+    runtime = build_runtime(config, home, *_dirs(args))
     manager = runtime.manager()
     for watch in manager.repositories:
         watch.host.ensure_worker_labels()
@@ -217,10 +217,10 @@ def _watch(config: Configuration, args: argparse.Namespace, home: Path) -> int:
     return 0
 
 
-def _status(config: Configuration, home: Path) -> int:
+def _status(config: Configuration, args: argparse.Namespace, home: Path) -> int:
     from github_issue_worker.wiring import build_runtime
 
-    runtime = build_runtime(config, home)
+    runtime = build_runtime(config, home, *_dirs(args))
     print(f"manager {runtime.manager_id}")
     for slot in runtime.slots:
         state = "ok" if slot.available else slot.reason
@@ -246,7 +246,7 @@ def _release(config: Configuration, args: argparse.Namespace, home: Path) -> int
     from github_issue_worker.wiring import build_runtime
 
     repository, number = normalize_issue(args.issue)
-    runtime = build_runtime(config, home)
+    runtime = build_runtime(config, home, *_dirs(args))
     settings = next((r for r in config.repositories if r.repository == repository), None)
     watch = runtime.watch(settings or RepositorySettings(repository=repository))
     stored = watch.store.read(number)
@@ -271,7 +271,7 @@ def _work(config: Configuration, args: argparse.Namespace, home: Path) -> int:
     from github_issue_worker.wiring import build_runtime
 
     repository, number = normalize_issue(args.issue)
-    runtime = build_runtime(config, home)
+    runtime = build_runtime(config, home, *_dirs(args))
     settings = next((r for r in config.repositories if r.repository == repository), None)
     watch = runtime.watch(settings or RepositorySettings(repository=repository))
     slots = [s for s in runtime.slots if s.available and (args.worker in (None, s.name))]
@@ -293,11 +293,20 @@ def _work(config: Configuration, args: argparse.Namespace, home: Path) -> int:
     return 0 if verdict.kind in ("merged", "needs-input", "awaiting-review", "paused") else 1
 
 
+def _dirs(args: argparse.Namespace) -> tuple[Path | None, Path | None]:
+    state = args.state_dir / "state.json" if args.state_dir else None
+    return state, args.cache_dir
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="github-issue-worker", description=f"{NAME} {version()}")
     parser.add_argument("--version", action="version", version=f"{NAME} {version()}")
     parser.add_argument("--config", type=Path, help="configuration file (default: platform path)")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
+    parser.add_argument("--state-dir", type=Path, help="local state (default: ~/.local/state/...)")
+    parser.add_argument(
+        "--cache-dir", type=Path, help="clones and worktrees (default: ~/.cache/...)"
+    )
     commands = parser.add_subparsers(dest="command", required=True)
 
     add = commands.add_parser("add", help="watch a repository you can push to")
@@ -369,7 +378,7 @@ def main(
         if args.command == "watch":
             return _watch(config, args, home)
         if args.command == "status":
-            return _status(config, home)
+            return _status(config, args, home)
         if args.command == "release":
             return _release(config, args, home)
         if args.command == "work":

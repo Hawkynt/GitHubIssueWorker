@@ -550,7 +550,8 @@ first, and a moved UI listener reopens on its new address.
     "processBacklog": false,
     "createMissingLabels": false,
     "maxActiveIssuesPerRepository": 4,
-    "runTimeout": "02:00:00"
+    "runTimeout": "02:00:00",
+    "checksTimeout": "02:00:00"
   },
   "repositories": [
     { "repository": "Hawkynt/ShiftDiff" },
@@ -592,6 +593,7 @@ first, and a moved UI listener reopens on its new address.
 | `createMissingLabels` | `false` | Let triage create a label that does not exist yet. The `worker:*` labels are always created. |
 | `maxActiveIssuesPerRepository` | 4 | Fleet-wide soft limit of claimed issues in one repository. |
 | `runTimeout` | 2 h | Wall-clock limit of one agent run. |
+| `checksTimeout` | 2 h | How long a mergeable-looking pull request may wait for required checks or a review before it is labelled `worker:awaiting-review` and released. |
 | `build` / `test` | detected | Verification commands. Detected from `AGENTS.md`/`CONTRIBUTING.md`, then from the stack (`*.sln[x]`, `package.json`, `pyproject.toml`, `Cargo.toml`, …). |
 
 Local state (poll cursors, ETags, native conversation ids, costs) lives in

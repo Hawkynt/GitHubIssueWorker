@@ -8,6 +8,7 @@ import threading
 import time
 from collections.abc import Iterator, MutableMapping
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
 
 from github_issue_worker.adapters.agents.antigravity import AntigravityAdapter
@@ -55,6 +56,7 @@ class RepositoryRun:
     base_branch: str | None
     ci_repair_attempts: int
     run_timeout: float
+    checks_timeout: float
     build: str | None
     test: str | None
 
@@ -71,6 +73,7 @@ def repository_run(config: Configuration, repository: RepositorySettings) -> Rep
         base_branch=pick("base_branch"),  # type: ignore[arg-type]
         ci_repair_attempts=int(pick("ci_repair_attempts")),  # type: ignore[call-overload]
         run_timeout=pick("run_timeout").total_seconds(),  # type: ignore[attr-defined]
+        checks_timeout=pick("checks_timeout").total_seconds(),  # type: ignore[attr-defined]
         build=pick("build"),  # type: ignore[arg-type]
         test=pick("test"),  # type: ignore[arg-type]
     )
@@ -190,6 +193,7 @@ class Runtime:
                 merge_method=method,
                 base_branch=run.base_branch,
                 ci_repair_attempts=run.ci_repair_attempts,
+                checks_timeout=timedelta(seconds=run.checks_timeout),
             ),
         ).run(handle, issue, comments, kind)
 
@@ -211,16 +215,21 @@ class Runtime:
         )
 
 
-def build_runtime(config: Configuration, home: Path | None = None) -> Runtime:
+def build_runtime(
+    config: Configuration,
+    home: Path | None = None,
+    state_path: Path | None = None,
+    cache: Path | None = None,
+) -> Runtime:
     home = home or account_home(config.manager.home)
-    state = JsonStateStore(state_dir(home) / "state.json")
+    state = JsonStateStore(state_path or state_dir(home) / "state.json")
     runtime = Runtime(
         config=config,
         home=home,
         api=GhApi(home=home),
         state=state,
         manager_id=state.manager_id(config.manager.name or socket.gethostname()),
-        workspace=Workspace(cache_dir(home), remote_url, home),
+        workspace=Workspace(cache or cache_dir(home), remote_url, home),
     )
     for worker in config.workers:
         slot = WorkerSlot(

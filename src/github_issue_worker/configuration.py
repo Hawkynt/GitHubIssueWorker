@@ -159,6 +159,7 @@ class DefaultsSettings(_Settings):
     create_missing_labels: bool = False
     max_active_issues_per_repository: int = Field(default=4, ge=1)
     run_timeout: Duration = timedelta(hours=2)
+    checks_timeout: Duration = timedelta(hours=2)
     build: str | None = None
     test: str | None = None
 
@@ -175,6 +176,7 @@ class RepositorySettings(_Settings):
     create_missing_labels: bool | None = None
     max_active_issues_per_repository: int | None = Field(default=None, ge=1)
     run_timeout: Duration | None = None
+    checks_timeout: Duration | None = None
     build: str | None = None
     test: str | None = None
 
