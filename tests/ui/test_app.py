@@ -449,7 +449,7 @@ def test_remote_workers_get_their_own_row_with_github_branch_links_and_no_contro
     crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
     remote = crew.split('aria-label="Remote"', 1)[1]
     assert crew.count('aria-label="Remote"') == 1  # one row, a sub-row per issue held elsewhere
-    assert remote.count("class=run>") == 2
+    assert len(re.findall(r'<div class=(?:"run(?: waiting)?"|run)>', remote)) == 2
     assert "laptop-01ab" in remote and "ci-runner-03" in remote
     assert "#219 Buffer metrics while offline" in remote
     assert (
@@ -470,14 +470,23 @@ def test_opening_a_worktree_hands_it_to_the_file_manager(
 
 def test_a_worker_row_has_a_sub_row_per_instance_its_account_allows(client: TestClient) -> None:
     crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
-    claude = crew.split('aria-label="claude"', 1)[1].split("class=lane", 1)[0]
-    assert claude.count("class=run>") == 3  # anthropic-max runs three at once
+    claude = re.split(
+        r'<div class=(?:"lane[^\"]*"|lane)', crew.split('aria-label="claude"', 1)[1], maxsplit=1
+    )[0]
+    assert (
+        len(re.findall(r'<div class=(?:"run(?: waiting)?"|run)>', claude)) == 3
+    )  # anthropic-max runs three at once
     assert "2 of 3 running" in claude
     assert "#214 Retry uploads" in claude and "#57 Export tokens" in claude
     assert 'action="/workers/claude.2/stop"' in claude  # each instance stops on its own
     assert claude.count('action="/workers/claude/pause"') == 1  # the worker pauses as a whole
-    codex = crew.split('aria-label="codex"', 1)[1].split("class=lane", 1)[0]
-    assert codex.count("class=run>") == 2 and "1 of 2 running" in codex
+    codex = re.split(
+        r'<div class=(?:"lane[^\"]*"|lane)', crew.split('aria-label="codex"', 1)[1], maxsplit=1
+    )[0]
+    assert (
+        len(re.findall(r'<div class=(?:"run(?: waiting)?"|run)>', codex)) == 2
+        and "1 of 2 running" in codex
+    )
     assert crew.count('aria-label="local"') == 1
 
 

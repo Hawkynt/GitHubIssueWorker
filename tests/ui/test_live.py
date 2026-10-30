@@ -82,3 +82,89 @@ def test_the_live_backend_reads_the_pushable_repositories_in_the_background() ->
     while not backend.pushable_repositories() and time.monotonic() < deadline:
         time.sleep(0.005)
     assert backend.pushable_repositories() == ("Hawkynt/ShiftDiff",)
+
+
+def test_resource_paused_worker_keeps_its_issue_reason_and_conflict_in_the_live_ui() -> None:
+    from datetime import timedelta
+
+    from github_issue_worker.configuration import Configuration
+    from github_issue_worker.ui.model import ClaimView
+    from tests.fakes import FakeClock
+
+    now = datetime(2026, 10, 30, tzinfo=UTC)
+    reset = now + timedelta(hours=2)
+    runtime = SimpleNamespace(
+        manager_id="m",
+        config=Configuration(),
+        state=SimpleNamespace(limited_until=lambda account: reset),
+        workspace=SimpleNamespace(worktree_path=lambda repo, issue: Path("/work/42")),
+    )
+    slot = WorkerSlot("w", "codex", "a")
+    # Isolate the read-only mapping; background I/O is covered separately.
+    backend = object.__new__(RuntimeBackend)
+    backend._runtime = runtime
+    backend._history_at = time.monotonic()
+    backend._history = []
+    backend._claims = (
+        ClaimView(
+            "o/r",
+            42,
+            "m/w",
+            True,
+            "paused",
+            "implement",
+            now,
+            reset,
+            "issue/42",
+            reset,
+            True,
+            "Rate control",
+        ),
+    )
+    view = backend._worker(slot, FakeClock(now).now())
+    assert view.state == "limited" and view.issue == 42
+    assert view.merge_conflict and view.reason == "Rate control" and view.limited_until == reset
+    slot.busy = True
+    slot.current = ("o/r", 42)
+    slot.merge_conflict = False
+    assert backend._worker(slot, now).state == "working"
+    assert not backend._worker(slot, now).merge_conflict
+
+
+def test_live_issue_shows_checkpoint_conflict_even_after_claim_release() -> None:
+    from github_issue_worker.ui.model import ClaimView
+    from tests.application.test_issue_run import ISSUE, T0
+
+    backend = object.__new__(RuntimeBackend)
+    backend._runtime = SimpleNamespace(manager_id="m")
+    backend._manager = SimpleNamespace(workers=[])
+    backend._claims = ()
+    backend._checkpoints = {
+        ("o/r", 42): ClaimView(
+            "o/r", 42, "m/w", True, "released", "failed", T0, T0, "issue/42", merge_conflict=True
+        )
+    }
+    backend._open = {"o/r": [ISSUE]}
+    (view,) = backend._issues(T0)
+    assert view.worker is None and view.merge_conflict
+
+
+def test_resumed_local_work_clears_wait_details_before_the_claim_cache_refreshes() -> None:
+    from github_issue_worker.ui.model import ClaimView
+    from tests.application.test_issue_run import ISSUE, T0
+
+    backend = object.__new__(RuntimeBackend)
+    backend._runtime = SimpleNamespace(manager_id="m")
+    backend._manager = SimpleNamespace(
+        workers=[WorkerSlot("w", "codex", "a", busy=True, current=("o/r", 42))]
+    )
+    waiting = ClaimView(
+        "o/r", 42, "m/w", True, "paused", "implement", T0, T0, "issue/42", T0, True, "Rate control"
+    )
+    backend._claims = (waiting,)
+    backend._checkpoints = {("o/r", 42): waiting}
+    backend._open = {"o/r": [ISSUE]}
+    (view,) = backend._issues(T0)
+    assert view.state == "worked here"
+    assert view.wait_reason == "" and view.paused_until is None
+    assert not view.merge_conflict

@@ -16,8 +16,8 @@ from github_issue_worker.ui.model import Backend
 log = logging.getLogger(__name__)
 
 SCREENSHOTS = (
-    ("issues.png", "/", False),
-    ("workers.png", "/workers", False),
+    ("issues.png", "/", True),
+    ("workers.png", "/workers", True),
     ("log.png", "/workers/claude/log", False),
     ("repositories.png", "/repositories", False),
     ("fleet.png", "/fleet", False),

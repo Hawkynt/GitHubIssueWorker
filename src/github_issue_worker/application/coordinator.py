@@ -62,15 +62,23 @@ class Coordinator:
             return self.renew(handle)
         return handle
 
-    def pause(self, handle: ClaimHandle, until: datetime) -> ClaimHandle:
+    def set_merge_conflict(self, handle: ClaimHandle, conflict: bool) -> ClaimHandle:
+        """Checkpoint display state without changing the claim's ownership or lifecycle."""
+        if handle.claim.merge_conflict == conflict:
+            return handle
+        return self._write(handle, handle.claim.replace(merge_conflict=conflict))
+
+    def pause(self, handle: ClaimHandle, until: datetime, reason: str = "") -> ClaimHandle:
         now = self.clock.now()
-        paused = self.policy.renewed(handle.claim, now, state=ClaimState.PAUSED, paused_until=until)
+        paused = self.policy.renewed(
+            handle.claim, now, state=ClaimState.PAUSED, paused_until=until, wait_reason=reason
+        )
         return self._write(handle, paused)
 
     def resume(self, handle: ClaimHandle) -> ClaimHandle:
         now = self.clock.now()
         working = self.policy.renewed(
-            handle.claim, now, state=ClaimState.WORKING, paused_until=None
+            handle.claim, now, state=ClaimState.WORKING, paused_until=None, wait_reason=""
         )
         return self._write(handle, working)
 

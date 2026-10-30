@@ -1159,7 +1159,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟧 **F14.17** Every link that leaves the UI (an `http(s)` link: issues, branches and
   repositories on GitHub) opens in a new tab, `target="_blank"` with `rel="noopener noreferrer"`, on
   every page and live fragment; links to the UI's own pages open in the same tab.
-- [ ] 🟧 **F14.18** Feedback colours: an issue waiting for a requested human answer has a
+- [x] 🟧 **F14.18** Feedback colours: an issue waiting for a requested human answer has a
   yellow status chip even after its claim is released. Token, spending-allowance and rate-limit
   waits have gray chips, with the reason and reset time when known. Idle, paused and resource-waiting
   worker boxes are gray; a worker still executing stays active. A merge conflict makes the Merge

@@ -121,6 +121,7 @@ WORKERS = (
         issue=88,
         issue_title="Invoices round VAT per line instead of per total",
         step="checks",
+        merge_conflict=True,
         branch="issue/88-invoices-round-vat-per-line-instead-of-per",
         worktree="~/.cache/GitHubIssueWorker/acme/billing-cli/issues/88",
         since=NOW - timedelta(hours=1, minutes=4),
@@ -136,6 +137,7 @@ WORKERS = (
             "limited",
             limited_until=NOW + timedelta(hours=2, minutes=40),
             group="antigravity",
+            reason="Token allowance reached",
         )
         for name in ("antigravity", "antigravity.2")
     ),
@@ -173,6 +175,7 @@ CLAIMS = (
         NOW + timedelta(days=6, hours=19),
         "issue/219-buffer-metrics-while-offline",
         paused_until=NOW + timedelta(hours=1, minutes=10),
+        wait_reason="Rate control",
     ),
     ClaimView(
         "acme/design-tokens",
@@ -195,6 +198,7 @@ CLAIMS = (
         NOW - timedelta(minutes=2),
         NOW + timedelta(days=7) - timedelta(minutes=2),
         "issue/88-invoices-round-vat-per-line-instead-of-per",
+        merge_conflict=True,
     ),
     ClaimView(
         "acme/billing-cli",
@@ -246,6 +250,8 @@ ISSUES: tuple[IssueView, ...] = (
         None,
         "implement",
         NOW - timedelta(hours=5),
+        wait_reason="Rate control",
+        paused_until=NOW + timedelta(hours=1, minutes=10),
     ),
     IssueView(
         "acme/telemetry-gateway",
@@ -264,6 +270,7 @@ ISSUES: tuple[IssueView, ...] = (
         "GPT 6.1 Sol",
         "checks",
         NOW - timedelta(hours=1, minutes=4),
+        merge_conflict=True,
     ),
     IssueView(
         "acme/billing-cli",

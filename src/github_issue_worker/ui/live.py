@@ -105,6 +105,7 @@ class RuntimeBackend:
         self._path = config_path
         self._detect = detect
         self._claims: tuple[ClaimView, ...] = ()
+        self._checkpoints: dict[tuple[str, int], ClaimView] = {}
         self._open: dict[str, list[Issue]] = {}
         self._history: list[RunRecord] = []
         self._history_at = 0.0
@@ -142,6 +143,7 @@ class RuntimeBackend:
         for repository, issues in self._open.items():
             for issue in issues:
                 claim = claims.get((repository, issue.number))
+                checkpoint = self._checkpoints.get((repository, issue.number))
                 slot = slots.get((repository, issue.number))
                 local = slot is not None or (claim is not None and claim.mine)
                 manager = worker = None
@@ -166,6 +168,15 @@ class RuntimeBackend:
                         model=display_model(known) if known else None,
                         step=(slot.step if slot else claim.step if claim else None),
                         since=slot.started_at if slot else claim.renewed if claim else None,
+                        merge_conflict=(
+                            slot.merge_conflict
+                            if slot and slot.busy
+                            else checkpoint.merge_conflict
+                            if checkpoint
+                            else False
+                        ),
+                        wait_reason=claim.wait_reason if claim and not slot else "",
+                        paused_until=claim.paused_until if claim and not slot else None,
                         body=issue.body,
                     )
                 )
@@ -177,6 +188,14 @@ class RuntimeBackend:
         agent = "ClaudeLocal" if local else AGENT_NAMES.get(slot.agent, slot.agent)
         model = worker_model(slot, self.history())
         limited = self._runtime.state.limited_until(slot.account)
+        claim = next(
+            (
+                c
+                for c in self._claims
+                if c.mine and c.holder == f"{self._runtime.manager_id}/{slot.name}"
+            ),
+            None,
+        )
         state: WorkerState
         if not slot.available:
             state = "unavailable"
@@ -184,11 +203,17 @@ class RuntimeBackend:
             state = "working"
         elif not slot.enabled:
             state = "paused"
-        elif limited and limited > now:
+        elif (limited and limited > now) or (claim and claim.state == "paused"):
             state = "limited"
         else:
             state = "idle"
-        repository, issue = slot.current if slot.current else (None, None)
+        repository, issue = (
+            slot.current
+            if slot.current
+            else (claim.repository, claim.issue)
+            if claim
+            else (None, None)
+        )
         worktree = (
             str(self._runtime.workspace.worktree_path(repository, issue))
             if repository and issue
@@ -201,15 +226,20 @@ class RuntimeBackend:
             account=slot.account,
             model=model,
             state=state,
-            reason=slot.reason,
-            limited_until=limited,
+            reason=claim.wait_reason if claim and not slot.busy else slot.reason,
+            limited_until=claim.paused_until if claim and claim.paused_until else limited,
             repository=repository,
             issue=issue,
             issue_title=slot.issue_title,
-            step=slot.step,
-            branch=slot.branch,
+            step=slot.step if slot.busy else claim.step if claim else None,
+            branch=slot.branch or (claim.branch if claim else None),
             worktree=worktree,
             since=slot.started_at,
+            merge_conflict=slot.merge_conflict
+            if slot.busy
+            else claim.merge_conflict
+            if claim
+            else False,
         )
 
     def _refresh_claims(self) -> None:
@@ -221,26 +251,31 @@ class RuntimeBackend:
         def refresh() -> None:
             try:
                 found: list[ClaimView] = []
+                checkpoints: dict[tuple[str, int], ClaimView] = {}
                 for name, watch in list(self._runtime.watches.items()):
                     for number in watch.store.issues():
                         stored = watch.store.read(number)
-                        if stored is None or not stored.claim.state.holds:
+                        if stored is None:
                             continue
                         claim = stored.claim
-                        found.append(
-                            ClaimView(
-                                repository=name,
-                                issue=number,
-                                holder=str(claim.holder),
-                                mine=claim.holder.manager == self._runtime.manager_id,
-                                state=claim.state.value,
-                                step=claim.step,
-                                renewed=claim.renewed_at,
-                                expires=claim.expires_at,
-                                branch=claim.branch,
-                                paused_until=claim.paused_until,
-                            )
+                        view = ClaimView(
+                            repository=name,
+                            issue=number,
+                            holder=str(claim.holder),
+                            mine=claim.holder.manager == self._runtime.manager_id,
+                            state=claim.state.value,
+                            step=claim.step,
+                            renewed=claim.renewed_at,
+                            expires=claim.expires_at,
+                            branch=claim.branch,
+                            paused_until=claim.paused_until,
+                            merge_conflict=claim.merge_conflict,
+                            wait_reason=claim.wait_reason,
                         )
+                        checkpoints[(name, number)] = view
+                        if claim.state.holds:
+                            found.append(view)
+                self._checkpoints = checkpoints
                 self._claims = tuple(found)
                 self._open = {
                     name: watch.host.open_issues()

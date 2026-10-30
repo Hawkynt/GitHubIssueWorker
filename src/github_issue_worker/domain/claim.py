@@ -70,12 +70,16 @@ class Claim:
     paused_until: datetime | None = None
     consumed_through: ConsumedThrough = ConsumedThrough()
     takeovers: int = 0
+    merge_conflict: bool = False
+    wait_reason: str = ""
 
     def replace(self, **changes: Any) -> Claim:
         return dataclasses.replace(self, **changes)
 
     def to_json(self) -> dict[str, Any]:
         return {
+            **({"mergeConflict": True} if self.merge_conflict else {}),
+            **({"waitReason": self.wait_reason} if self.wait_reason else {}),
             "issue": self.issue,
             "holder": {"manager": self.holder.manager, "worker": self.holder.worker},
             "generation": self.generation,
@@ -98,6 +102,8 @@ class Claim:
         paused_until = data.get("pausedUntil")
         consumed = data.get("consumedThrough") or {}
         return Claim(
+            merge_conflict=data.get("mergeConflict", False),
+            wait_reason=data.get("waitReason", ""),
             issue=int(data["issue"]),
             holder=Holder(manager=data["holder"]["manager"], worker=data["holder"]["worker"]),
             generation=int(data["generation"]),
@@ -156,5 +162,6 @@ class ClaimPolicy:
             renewed_at=now,
             expires_at=now + self.validity,
             paused_until=None,
+            wait_reason="",
             takeovers=claim.takeovers + (1 if self.is_abandoned(claim, now) else 0),
         )
