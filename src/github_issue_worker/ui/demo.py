@@ -92,6 +92,7 @@ WORKERS = (
         worktree="~/.cache/GitHubIssueWorker/acme/telemetry-gateway/issues/214",
         since=NOW - timedelta(minutes=23),
         group="claude",
+        agent_kind="claude",
     ),
     WorkerView(
         "claude.2",
@@ -107,9 +108,16 @@ WORKERS = (
         worktree="~/.cache/GitHubIssueWorker/acme/design-tokens/issues/57",
         since=NOW - timedelta(minutes=9),
         group="claude",
+        agent_kind="claude",
     ),
     WorkerView(
-        "claude.3", "Claude Code", "anthropic-max", "Claude Opus 5.5", "idle", group="claude"
+        "claude.3",
+        "Claude Code",
+        "anthropic-max",
+        "Claude Opus 5.5",
+        "idle",
+        group="claude",
+        agent_kind="claude",
     ),
     WorkerView(
         "codex",
@@ -128,8 +136,11 @@ WORKERS = (
         group="codex",
         blocker="CI (CI) waits for approval to run",
         blocker_url="https://github.com/acme/billing-cli/actions/runs/9120391",
+        agent_kind="codex",
     ),
-    WorkerView("codex.2", "Codex", "openai-plus", "GPT 6.1 Sol", "idle", group="codex"),
+    WorkerView(
+        "codex.2", "Codex", "openai-plus", "GPT 6.1 Sol", "idle", group="codex", agent_kind="codex"
+    ),
     *(
         WorkerView(
             name,
@@ -140,10 +151,18 @@ WORKERS = (
             limited_until=NOW + timedelta(hours=2, minutes=40),
             group="antigravity",
             reason="Token allowance reached",
+            agent_kind="antigravity",
         )
         for name in ("antigravity", "antigravity.2")
     ),
-    WorkerView("local", "ClaudeLocal", "local-gpu", "Qwen3.8 Flash Next IQ3_S", "idle"),
+    WorkerView(
+        "local",
+        "ClaudeLocal",
+        "local-gpu",
+        "Qwen3.8 Flash Next IQ3_S",
+        "idle",
+        agent_kind="claude",
+    ),
     WorkerView(
         "opencode",
         "OpenCode",
@@ -151,6 +170,7 @@ WORKERS = (
         "-",
         "unavailable",
         reason="opencode is not on PATH",
+        agent_kind="opencode",
     ),
 )
 

@@ -7,6 +7,7 @@ from github_issue_worker.application.history import (
     HistoryStore,
     RunRecord,
     activity,
+    cumulative_by,
     cumulative_merged,
     daily_merged,
     kpis,
@@ -156,6 +157,13 @@ def test_the_model_ledger_counts_runs_merges_and_time_per_model() -> None:
 def test_the_running_total_of_merges_and_the_activity_grid() -> None:
     runs = [record(1, 2), record(2, 1, verdict="failed"), record(3, 0)]
     assert [count for _, count in cumulative_merged(runs)] == [1, 2]
+    lines = dict(cumulative_by(runs, "model"))
+    assert list(lines) == ["Claude Opus 5.5"]
+    assert [count for _, count in lines["Claude Opus 5.5"]] == [1, 2]
+    many = [record(number, 0, model=f"Model {number}") for number in range(1, 12)]
+    folded = cumulative_by(many, "model")
+    assert len(folded) == 8 and folded[-1][0] == "Other"
+    assert [count for _, count in folded[-1][1]] == [1, 2, 3, 4]
     grid = activity(runs)
     assert len(grid) == 7 and all(len(row) == 24 for row in grid)
     assert sum(map(sum, grid)) == 3 and grid[NOW.weekday()][NOW.hour] == 1

@@ -1200,7 +1200,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   progress chip red through refreshes, repair steps and restarts until resolution, independently of
   a gray worker box. Live refresh clears obsolete colours. Status text stays readable in light and
   dark schemes, repository colours keep their meaning, and deterministic demos cover these states.
-- [ ] 🟧 **F14.19** Model colours: every model series wears a colour of its maker's hue segment —
+- [x] 🟧 **F14.19** Model colours: every model series wears a colour of its maker's hue segment —
   `modelColors.anthropic` from orange to yellow, `.google` green, `.openai` blue, and `.other` a
   segment every unlisted maker keeps its own fixed part of. The hue follows the model's name (`opus`,
   `sonnet`, `haiku`, `fable`) and never its version: `Claude Opus 5` and `Claude Opus 5.5` keep one

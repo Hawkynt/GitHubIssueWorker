@@ -2,27 +2,20 @@
 
 Mark specs follow the dataviz method: thin marks, a 2px surface gap between stacked segments,
 4px rounded data ends, recessive grid and axes, a hover target larger than the mark, and colour
-that follows the entity (its slot by first appearance), never its rank.
+that follows the entity, never its rank. The colour of an entity arrives as a string and goes out
+as ``--c`` on the mark, so the deck never decides which colour an entity wears.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from html import escape
 
-SLOTS = 8
-
-
-def color_slots(names_in_order_of_appearance: Iterable[str]) -> dict[str, int]:
-    """Slot 1..8 per entity in order of first appearance; later ones get 0 (Other's grey)."""
-    slots: dict[str, int] = {}
-    for name in names_in_order_of_appearance:
-        if name not in slots:
-            slots[name] = len(slots) + 1 if len(slots) < SLOTS else 0
-    return slots
+FALLBACK = "#66758a"
+"""The grey of an entity no colour was worked out for: the folded "Other" of a split."""
 
 
 def _rounded_top(x: float, y: float, width: float, height: float, radius: float = 4.0) -> str:
@@ -45,7 +38,7 @@ def _nice_max(value: int) -> int:
 def stacked_columns(
     axis: Sequence[date],
     series: Mapping[str, Sequence[int]],
-    slots: Mapping[str, int],
+    colors: Mapping[str, str],
     unit: str,
     width: int = 960,
     height: int = 260,
@@ -78,14 +71,13 @@ def stacked_columns(
         for position, (name, count) in enumerate(stack):
             segment = plot_h * count / peak
             gap = 2.0 if position < len(stack) - 1 else 0.0
+            wear = f"--c:{colors.get(name, FALLBACK)};--i:{index}"
             if position == len(stack) - 1:
                 shape = _rounded_top(x, base - segment, bar_w, segment)
-                parts.append(
-                    f'<path class="seg s{slots.get(name, 0)}" style="--i:{index}" d="{shape}"/>'
-                )
+                parts.append(f'<path class="seg" style="{wear}" d="{shape}"/>')
             else:
                 parts.append(
-                    f'<rect class="seg s{slots.get(name, 0)}" style="--i:{index}" x="{x:.1f}" '
+                    f'<rect class="seg" style="{wear}" x="{x:.1f}" '
                     f'y="{base - segment + gap:.1f}" '
                     f'width="{bar_w:.1f}" height="{max(segment - gap, 0.5):.1f}"/>'
                 )
@@ -108,9 +100,13 @@ def stacked_columns(
 
 
 def horizontal_bars(
-    rows: Sequence[tuple[str, float, str]], width: int = 460, row_height: int = 30
+    rows: Sequence[tuple[str, float, str]],
+    width: int = 460,
+    row_height: int = 30,
+    colors: Mapping[str, str] | None = None,
 ) -> str:
-    """Ranked bars in one hue: name, value and its printed label per row, largest first."""
+    """Ranked bars: name, value and its printed label per row, largest first, each in its own
+    colour when one is known for it and in the deck's blue otherwise."""
     if not rows:
         return _empty_plot(width, 120, "times appear with the first merged issue")
     label_w, height = 170, row_height * len(rows) + 6
@@ -127,8 +123,10 @@ def horizontal_bars(
             f'<text class="row-name" x="{label_w - 10}" y="{y + 17}" text-anchor="end">'
             f"{escape(name if len(name) <= 24 else name[:23] + '…')}</text>"
         )
+        wear = (colors or {}).get(name, "#3987e5")
         parts.append(
-            f'<rect class="bar" style="--i:{index}" x="{label_w}" y="{y + 6}" width="{bar:.1f}" height="14" rx="4"/>'
+            f'<rect class="bar" style="--c:{wear};--i:{index}" x="{label_w}" y="{y + 6}" '
+            f'width="{bar:.1f}" height="14" rx="4"/>'
         )
         parts.append(
             f'<text class="row-value" x="{label_w + bar + 8:.1f}" y="{y + 17}">{escape(label)}</text>'
@@ -189,7 +187,7 @@ def _arc(cx: float, cy: float, outer: float, inner: float, start: float, end: fl
 
 
 def donut(
-    rows: Sequence[tuple[str, int]], slots: Mapping[str, int], caption: str, size: int = 240
+    rows: Sequence[tuple[str, int]], colors: Mapping[str, str], caption: str, size: int = 240
 ) -> str:
     """Shares of a whole as a ring of arcs with a 2px gap, the total in its centre."""
     total = sum(value for _, value in rows)
@@ -210,7 +208,7 @@ def donut(
             end = angle + 2 * math.pi - 1e-4
         tip = escape(f"{name}: {value} ({value / total:.0%})", quote=True)
         parts.append(
-            f'<path class="arc s{slots.get(name, 0)}" style="--i:{index}" '
+            f'<path class="arc" style="--c:{colors.get(name, FALLBACK)};--i:{index}" '
             f'd="{_arc(centre, centre, outer, inner, angle, end)}" tabindex="0" '
             f'data-tip="{tip}" aria-label="{tip}"/>'
         )
@@ -223,20 +221,21 @@ def donut(
     return "".join(parts)
 
 
-def area_line(
-    points: Sequence[tuple[datetime, int]],
+def cumulative_lines(
+    lines: Sequence[tuple[str, Sequence[tuple[datetime, int]]]],
     start: datetime,
     end: datetime,
     unit: str,
+    colors: Mapping[str, str],
     width: int = 600,
     height: int = 240,
 ) -> str:
-    """A running total as a stepped line over a glowing area, its head pulsing at ``end``."""
-    if not points:
+    """One stepped line per series, each in its own colour, its head at that series' last merge."""
+    if not lines:
         return _empty_plot(width, height, f"the first {unit} issue starts the line")
     left, right, top, bottom = 34, 14, 14, 26
     plot_w, plot_h = width - left - right, height - top - bottom
-    peak = _nice_max(max(value for _, value in points))
+    peak = _nice_max(max(point[1] for _, points in lines for point in points))
     seconds = max((end - start).total_seconds(), 1.0)
 
     def x(moment: datetime) -> float:
@@ -245,19 +244,9 @@ def area_line(
     def y(value: int) -> float:
         return top + plot_h - plot_h * value / peak
 
-    path = [f"M{left},{y(0):.1f}"]
-    previous = 0
-    for moment, value in points:
-        path.append(f"H{x(moment):.1f} V{y(value):.1f}")
-        previous = value
-    path.append(f"H{left + plot_w}")
-    line = " ".join(path)
     parts = [
         f'<svg class="chart area" viewBox="0 0 {width} {height}" role="img" '
-        f'aria-label="{escape(unit)} issues over time">'
-        '<defs><linearGradient id="glow" x1="0" x2="0" y1="0" y2="1">'
-        '<stop offset="0" stop-color="#3987e5" stop-opacity=".55"/>'
-        '<stop offset="1" stop-color="#3987e5" stop-opacity="0"/></linearGradient></defs>'
+        f'aria-label="{escape(unit)} issues over time, one line per series">'
     ]
     for tick in range(5):
         ty = top + plot_h - plot_h * tick / 4
@@ -272,18 +261,24 @@ def area_line(
             f'<text class="tick" x="{x(moment):.1f}" y="{height - 8}" text-anchor="middle">'
             f"{_time_label(moment, start, end)}</text>"
         )
-    parts.append(f'<path class="area-fill" d="{line} V{y(0):.1f} Z"/>')
-    parts.append(f'<path class="area-line" pathLength="1" d="{line}"/>')
-    for moment, value in points:
-        tip = escape(f"{moment:%Y-%m-%d %H:%M} UTC: {value} {unit}", quote=True)
+    for name, points in lines:
+        wear = f"--c:{colors.get(name, FALLBACK)}"
+        path = [f"M{left},{y(0):.1f}"]
+        path += [f"H{x(moment):.1f} V{y(value):.1f}" for moment, value in points]
         parts.append(
-            f'<circle class="hit dot" cx="{x(moment):.1f}" cy="{y(value):.1f}" r="7" tabindex="0" '
-            f'data-tip="{tip}" aria-label="{tip}"/>'
+            f'<path class="series-line" pathLength="1" style="{wear}" d="{" ".join(path)}"/>'
         )
-    parts.append(
-        f'<circle class="head" cx="{left + plot_w:.1f}" cy="{y(previous):.1f}" r="4"/>'
-        f'<circle class="head-pulse" cx="{left + plot_w:.1f}" cy="{y(previous):.1f}" r="4"/></svg>'
-    )
+        moment, value = points[-1]
+        parts.append(
+            f'<circle class="head" style="{wear}" cx="{x(moment):.1f}" cy="{y(value):.1f}" r="3.5"/>'
+        )
+        for moment, value in points:
+            tip = escape(f"{name} · {moment:%Y-%m-%d %H:%M} UTC: {value} {unit}", quote=True)
+            parts.append(
+                f'<circle class="hit dot" cx="{x(moment):.1f}" cy="{y(value):.1f}" r="7" '
+                f'tabindex="0" data-tip="{tip}" aria-label="{tip}"/>'
+            )
+    parts.append("</svg>")
     return "".join(parts)
 
 
@@ -294,7 +289,7 @@ class Span:
     lane: str
     start: datetime
     end: datetime
-    slot: int
+    color: str
     tip: str
     live: bool = False
 
@@ -341,7 +336,8 @@ def timeline(
         x0, x1 = x(span.start), x(span.end)
         tip = escape(span.tip, quote=True)
         parts.append(
-            f'<rect class="run-bar s{span.slot}{" live" if span.live else ""}" style="--i:{order}" '
+            f'<rect class="run-bar{" live" if span.live else ""}" '
+            f'style="--c:{span.color};--i:{order}" '
             f'x="{x0:.1f}" y="{ly + 7}" width="{max(x1 - x0, 4):.1f}" height="16" rx="4" '
             f'tabindex="0" data-tip="{tip}" aria-label="{tip}"/>'
         )

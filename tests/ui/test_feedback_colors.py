@@ -7,10 +7,14 @@ from dataclasses import replace
 import pytest
 from fastapi.testclient import TestClient
 
+from github_issue_worker.configuration import ModelColorsSettings
 from github_issue_worker.ui.app import create_app
 from github_issue_worker.ui.demo import MANAGER, NOW, DemoBackend
 from github_issue_worker.ui.model import ClaimView, WorkerState
-from github_issue_worker.ui.pages import _agent_row, _remote_row, _track, issues_fragment
+from github_issue_worker.ui.pages import Palette, _agent_row, _remote_row, _track, issues_fragment
+
+NO_COLOURS = Palette(entities={}, models={}, model_colors=ModelColorsSettings())
+"""A palette that colours nothing: these tests are about the wait and conflict states."""
 
 
 def test_feedback_wait_is_yellow_after_claim_release() -> None:
@@ -24,11 +28,11 @@ def test_feedback_wait_is_yellow_after_claim_release() -> None:
 @pytest.mark.parametrize("state", ["idle", "paused", "limited"])
 def test_waiting_agent_box_is_gray_and_active_agent_stays_active(state: WorkerState) -> None:
     worker = replace(DemoBackend().snapshot().workers[0], state=state, limited_until=None)
-    html = _agent_row((worker,), NOW, {}, {})
+    html = _agent_row((worker,), NOW, {}, NO_COLOURS)
     assert 'class="lane waiting"' in html
     if state == "limited":
         assert '<span class="flag limited">Usage limit</span>' in html
-    active = _agent_row((replace(worker, state="working"),), NOW, {}, {})
+    active = _agent_row((replace(worker, state="working"),), NOW, {}, NO_COLOURS)
     assert 'class="lane waiting"' not in active
 
 
@@ -41,7 +45,7 @@ def test_resource_wait_chip_preserves_reason_reset_and_conflict(state: WorkerSta
         limited_until=NOW,
         merge_conflict=True,
     )
-    html = _agent_row((worker,), NOW, {}, {})
+    html = _agent_row((worker,), NOW, {}, NO_COLOURS)
     assert f'class="flag {state}"' in html
     assert "Spending allowance reached" in html and "resets" in html
     assert 'class="conflict"' in html and "Merge conflict" in html
@@ -70,8 +74,10 @@ def test_live_refresh_clears_feedback_and_resource_wait_colors(
     )
     assert 'class="flag feedback"' not in client.get("/?fragment=1").text
     worker = replace(snapshot.workers[0], state="limited", merge_conflict=True)
-    assert 'class="lane waiting"' in _agent_row((worker,), NOW, {}, {})
-    active = _agent_row((replace(worker, state="working", merge_conflict=False),), NOW, {}, {})
+    assert 'class="lane waiting"' in _agent_row((worker,), NOW, {}, NO_COLOURS)
+    active = _agent_row(
+        (replace(worker, state="working", merge_conflict=False),), NOW, {}, NO_COLOURS
+    )
     assert 'class="lane waiting"' not in active and 'title="Merge conflict"' not in active
 
 
@@ -90,7 +96,7 @@ def test_remote_paused_claim_has_gray_box_and_red_merge_chip() -> None:
         merge_conflict=True,
         wait_reason="Rate limit",
     )
-    html = _remote_row((claim,), NOW, {}, {})
+    html = _remote_row((claim,), NOW, {}, NO_COLOURS)
     assert 'class="lane remote waiting"' in html
     assert "Rate limit" in html and 'title="Merge conflict"' in html
 
@@ -110,7 +116,7 @@ def test_demo_contains_feedback_resource_and_merge_conflict_examples() -> None:
 def test_waiting_instance_is_gray_while_another_instance_keeps_running(state: WorkerState) -> None:
     active = DemoBackend().snapshot().workers[0]
     waiting = replace(active, name=active.name + ".2", state=state, issue=None, repository=None)
-    html = _agent_row((active, waiting), NOW, {}, {})
+    html = _agent_row((active, waiting), NOW, {}, NO_COLOURS)
     assert 'class="lane waiting"' not in html
     assert 'class="run waiting"' in html
     assert 'class="now"' in html

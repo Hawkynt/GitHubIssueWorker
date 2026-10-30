@@ -95,9 +95,10 @@ def create_app(backend: Backend) -> FastAPI:
     ) -> str:
         snapshot = backend.snapshot()
         view = pages.CockpitView(by=by, days=days, time=time)
+        colors = backend.config().model_colors
         if fragment:
-            return pages.cockpit_fragment(snapshot, backend.history(), view)
-        return pages.cockpit_page(snapshot, backend.history(), view, notice)
+            return pages.cockpit_fragment(snapshot, backend.history(), view, colors)
+        return pages.cockpit_page(snapshot, backend.history(), view, notice, colors)
 
     @app.get("/repositories", response_class=HTMLResponse)
     def repositories(notice: str = "") -> str:

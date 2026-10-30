@@ -244,6 +244,7 @@ class RuntimeBackend:
             else claim.merge_conflict
             if claim
             else False,
+            agent_kind=slot.agent,
         )
 
     def _refresh_claims(self) -> None:

@@ -42,6 +42,9 @@ class WorkerView:
     blocker: str = ""
     """What its run waits on that only a person can do; empty when nothing."""
     blocker_url: str = ""
+    agent_kind: str = ""
+    """The configured kind of this worker — ``claude``, ``codex``, … — which says whose colour its
+    lane wears while no model is known yet (F14.19)."""
 
     @property
     def worker(self) -> str:
