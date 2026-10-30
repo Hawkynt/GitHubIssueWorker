@@ -189,7 +189,9 @@ class Runtime:
             host=watch.host,
             workspace=self.workspace,
             coordinator=watch.coordinator,
-            agent=lambda agent_run: execute(adapter, agent_run, run.run_timeout),
+            agent=lambda agent_run: self._observe(
+                slot, execute(adapter, agent_run, run.run_timeout)
+            ),
             verify=Verifier(build=run.build, test=run.test, timeout=run.run_timeout).verify,
             sessions=self.state.sessions(watch.name),
             clock=self.api.clock,
@@ -204,6 +206,14 @@ class Runtime:
                 gate=run.gate,
             ),
         ).run(handle, issue, comments, kind)
+
+    def _observe(self, slot: WorkerSlot, report: RunReport) -> RunReport:
+        """Remember which model the run reported, for status, the log and the UI."""
+        if report.model and report.model != slot.observed_model:
+            slot.observed_model = report.model
+            self.state.set_model(slot.name, report.model)
+            log.info("worker %s runs on %s", slot.name, report.model)
+        return report
 
     def manager(self) -> Manager:
         for settings in self.config.repositories:
@@ -247,6 +257,7 @@ def build_runtime(
             priority=worker.priority,
             tags=frozenset(worker.tags),
             model=worker.model,
+            observed_model=state.model(worker.name),
         )
         try:
             runtime.adapters[worker.name] = make_adapter(worker, home)

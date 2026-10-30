@@ -43,6 +43,8 @@ class WorkerSlot:
     tags: frozenset[str] = frozenset()
     model: str | None = None
     available: bool = True
+    observed_model: str | None = None
+    """The model the worker's last run reported, which may differ from the configured one."""
     reason: str = ""
     busy: bool = False
     current: tuple[str, int] | None = None
@@ -264,7 +266,14 @@ class Manager:
         slot.current = (watch.name, issue.number)
         self._own[(watch.name, issue.number)] = slot.name
         self._labelled.pop((watch.name, issue.number), None)
-        log.info("%s#%d: %s run by %s", watch.name, issue.number, kind, slot.name)
+        log.info(
+            "%s#%d: %s run by %s on %s",
+            watch.name,
+            issue.number,
+            kind,
+            slot.name,
+            slot.observed_model or slot.model or "its default model",
+        )
 
         def job() -> None:
             verdict = Verdict("failed", detail="the run crashed")
@@ -285,7 +294,15 @@ class Manager:
                         self._own.pop((watch.name, issue.number), None)
                     slot.busy = False
                     slot.current = None
-                log.info("%s#%d: %s %s", watch.name, issue.number, verdict.kind, verdict.detail)
+                log.info(
+                    "%s#%d: %s by %s on %s %s",
+                    watch.name,
+                    issue.number,
+                    verdict.kind,
+                    slot.name,
+                    slot.observed_model or slot.model or "its default model",
+                    verdict.detail,
+                )
 
         self.spawn(job)
 

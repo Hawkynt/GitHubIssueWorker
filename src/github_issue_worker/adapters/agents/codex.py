@@ -18,7 +18,9 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime, timedelta, tzinfo
+from pathlib import Path
 from typing import Any
 
 from github_issue_worker.adapters.agents import prepare, read_outcome
@@ -33,6 +35,7 @@ from github_issue_worker.ports.agents import (
 _LIMIT = re.compile(r"(hit|reached) (your |the )?usage limit|usage limit reset", re.IGNORECASE)
 _RESET = re.compile(r"try again at (?P<when>.+?)\.?\s*$", re.IGNORECASE)
 _ORDINAL = re.compile(r"(\d+)(st|nd|rd|th)\b")
+_MODEL = re.compile(r'"model"\s*:\s*"([^"]+)"')
 _DATE_FORMATS = ("%b %d, %Y %I:%M %p", "%B %d, %Y %I:%M %p")
 _TIME_FORMATS = ("%I:%M %p", "%H:%M")
 
@@ -72,6 +75,21 @@ class CodexAdapter:
         return Invocation(argv=argv, cwd=run.worktree, stdin=run.prompt, env=self._env)
 
     def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
+        report = self._report(run, exit_code, stdout, stderr)
+        return replace(report, model=self._session_model(report.session))
+
+    def _session_model(self, session: str | None) -> str | None:
+        """``codex exec --json`` does not say which model ran; Codex's own session file does."""
+        if not session:
+            return None
+        home = Path(self._env.get("CODEX_HOME") or Path.home() / ".codex")
+        for path in sorted((home / "sessions").rglob(f"*{session}*.jsonl"), reverse=True):
+            match = _MODEL.search(path.read_text(encoding="utf-8", errors="replace"))
+            if match:
+                return match.group(1)
+        return None
+
+    def _report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
         session: str | None = None
         usage: TokenUsage | None = None
         failures: list[str] = []
