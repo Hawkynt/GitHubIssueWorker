@@ -14,9 +14,14 @@ def test_marker_is_an_html_comment() -> None:
     assert MARKER_PREFIX.startswith("<!--")
 
 
-def test_version_flag_prints_name_and_version(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["--version"]) == 0
-    assert capsys.readouterr().out == f"{NAME} 0.1.0\n"
+@pytest.mark.parametrize("flag", ["--version", "-V"])
+def test_version_flag_prints_name_and_version(
+    flag: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main([flag]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == f"{NAME} 0.1.0\n"
+    assert captured.err == ""
 
 
 def test_unknown_command_fails_with_usage_exit_code() -> None:
