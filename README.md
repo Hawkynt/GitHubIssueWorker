@@ -694,7 +694,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   treated as issues.
 - [x] 🟥 **F2.3** Ignores every comment carrying the manager's marker (`<!-- ghiw:… -->`), whichever
   manager wrote it, so output under your account never triggers any worker.
-- [ ] 🟥 **F2.4** Ignores input from untrusted authors (see Security above) and logs it.
+- [x] 🟥 **F2.4** Ignores input from untrusted authors (see Security above) and logs it.
 - [x] 🟥 **F2.5** First watch of a repository records the current position and queues nothing unless
   `processBacklog` is on.
 - [ ] 🟥 **F2.6** Honours `X-RateLimit-Remaining`/`Reset` and secondary-limit `Retry-After`, and

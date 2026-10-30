@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+
+import pytest
 
 from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.issue_run import Verdict
@@ -207,3 +210,66 @@ def test_an_unavailable_worker_is_never_used() -> None:
     f.manager.tick()
     assert f.runs == []
     assert f.host.worker_label[1] == "worker:unserved"
+
+
+@pytest.mark.parametrize("is_bot", [False, True])
+def test_untrusted_issue_is_logged_once_with_its_opener(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch, is_bot: bool
+) -> None:
+    f = Fixture([slot("worker")])
+    monkeypatch.setattr(f.host, "role", lambda login: "admin" if login == OWNER.login else "read")
+    outsider_issue = replace(issue(1), author=Actor("outsider", is_bot=is_bot))
+    with caplog.at_level(logging.INFO):
+        for _ in range(3):
+            f.new_issues(outsider_issue)
+            f.manager.tick()
+    assert caplog.messages == [
+        "Hawkynt/ShiftDiff#1: ignored issue opened by untrusted author outsider"
+    ]
+    assert all(record.levelno == logging.INFO for record in caplog.records)
+    assert f.runs == []
+
+
+@pytest.mark.parametrize("is_bot", [False, True])
+def test_untrusted_comments_are_logged_once_per_comment_id(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    is_bot: bool,
+) -> None:
+    f = Fixture([slot("worker")], verdicts=[Verdict("needs-input")])
+    monkeypatch.setattr(f.host, "role", lambda login: "admin" if login == OWNER.login else "read")
+    f.new_issues(issue(1))
+    f.manager.tick()
+    f.host.issue_comments = [
+        Comment(n, 1, Actor("outsider", is_bot=is_bot), "answer", T0, T0) for n in (10, 11)
+    ]
+    with caplog.at_level(logging.INFO):
+        for _ in range(3):
+            f.new_issues(issue(1))
+            f.manager.tick()
+    assert caplog.messages == [
+        f"Hawkynt/ShiftDiff#1: ignored comment {n} by untrusted author outsider" for n in (10, 11)
+    ]
+    assert all(record.levelno == logging.INFO for record in caplog.records)
+    assert len(f.runs) == 1
+
+
+@pytest.mark.parametrize("is_bot", [False, True])
+def test_manager_marker_comments_are_not_logged_as_untrusted(
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    is_bot: bool,
+) -> None:
+    f = Fixture([slot("worker")], verdicts=[Verdict("needs-input")])
+    monkeypatch.setattr(f.host, "role", lambda login: "admin" if login == OWNER.login else "read")
+    f.new_issues(issue(1))
+    f.manager.tick()
+    f.host.issue_comments = [
+        Comment(10, 1, Actor("outsider", is_bot=is_bot), "<!-- ghiw:test -->", T0, T0)
+    ]
+    with caplog.at_level(logging.INFO):
+        for _ in range(3):
+            f.new_issues(issue(1))
+            f.manager.tick()
+    assert caplog.messages == []
+    assert len(f.runs) == 1
