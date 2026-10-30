@@ -168,7 +168,7 @@ with a 30-day trace, all time, median time to merge, merge rate. Each worker is 
 account and model, and a square per issue it holds, coloured by repository, with the issue (its
 description as tooltip), a track through the six steps of a run, and its branch, which opens the
 worktree. Other managers' workers follow in a remote row, their branches linked on GitHub. Below:
-a flight log of every run of the last day per worker, issues merged per day by model, agent or
+a flight log of every run of the last day per worker in priority order, issues merged per day by model, agent or
 repository over 30, 90 or 180 days, the model share, the running total of merges, time to merge,
 the busy hours by weekday, the weekly model mix and a ledger of every model used. Every chart has a
 tooltip per mark; the history survives restarts. The deck boots with one animated sequence and
@@ -1065,7 +1065,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   30-day trace, all time, median time from first run to merge, merge rate), issues merged per day
   split by model, agent or repository over 30/90/180 days, runs per model per week over 26 weeks,
   time to merge by model, agent or repository, a model ledger (runs, merged, median time, first
-  and last use), a 24-hour flight log of runs per worker with the running ones live, the model share
+  and last use), a 24-hour flight log of runs per worker in priority order regardless of activity with the running ones live, the model share
   as a ring, the running total of merges, and finished runs per weekday and hour. Colour follows the entity across views, a ninth series folds into "Other", every
   chart has a per-mark tooltip and a table view, the grid reflows down to phone width, and it
   refreshes live without losing the chosen view.
