@@ -110,11 +110,13 @@ The manager drives tools you already use, and must find each of them working:
 | Tool | Needed for | Check |
 | --- | --- | --- |
 | [`git`](https://git-scm.com) | clone, branch, commit, push, claims. Commit signing configured when your repositories require signatures | `git config commit.gpgsign` |
-| [`gh`](https://cli.github.com) | authentication only: the manager reads its token | `gh auth status` |
+| [`gh`](https://cli.github.com) | all GitHub API access, as `gh api`, authenticated as you | `gh auth status` |
 | at least one agent | the workers, run headless | see [Workers](#-workers) |
 
-When `gh` is configured under a different home directory than the one the manager runs in, point
-it at that with `GH_CONFIG_DIR`, or set `GH_TOKEN` directly.
+The manager never handles a token itself: every REST and GraphQL call is a `gh api` call, so `gh`'s
+own login, hosts and environment apply. When `gh` is configured under a different home directory
+than the one the manager runs in, point it at that with `GH_CONFIG_DIR`. `GH_TOKEN` works as it does
+for `gh` itself.
 
 ## 🚀 Quick start
 
@@ -606,8 +608,9 @@ untrusted until proven otherwise:
 - **No agent can reach outward.** Every agent run is denied `git push`, `gh`, and the GitHub API
   where the agent supports tool restrictions, and runs without a GitHub token either way. Pushing,
   claiming, commenting, labelling and merging are done by the manager after its own checks.
-- **No secrets in the worktree.** The run's environment is scrubbed of `GH_TOKEN`, `GITHUB_TOKEN`
-  and the manager's own credentials. The token is never written to disk, logs, checkpoints or claims.
+- **No secrets in the worktree.** The run's environment is scrubbed of `GH_TOKEN`, `GITHUB_TOKEN`,
+  `GH_CONFIG_DIR` and the manager's own credentials, so an agent cannot reach `gh`'s login either. No
+  token is ever written to disk, logs, checkpoints or claims.
   Agent credentials stay with the agent installations.
 - **The UI is local.** It binds to loopback unless you configure a token, and it can do nothing the
   CLI cannot.
@@ -640,9 +643,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
   invalid change to the file is reported and the running configuration kept.
 - [ ] 🟥 **F0.4** Structured log to console plus one log file per repository and per issue run.
   Secrets are redacted.
-- [ ] 🟥 **F0.5** Authentication resolves `GH_TOKEN`, then `GITHUB_TOKEN`, then `gh auth token`
-  (honouring `GH_CONFIG_DIR`). A missing or expired token fails at start with the command that fixes
-  it.
+- [ ] 🟥 **F0.5** All GitHub access goes through `gh api` (REST and GraphQL), with `gh`'s login,
+  `GH_CONFIG_DIR` and `GH_TOKEN` applying unchanged; the manager never reads or stores a token. Status,
+  headers (`ETag`, `Date`, rate limit, `Retry-After`) and body are parsed from `gh api -i`, including
+  `304` and error responses, which `gh` reports with a non-zero exit. `gh auth status` failing at start
+  stops the manager with the command that fixes it.
 - [ ] 🟥 **F0.6** Start-up preflight: `git` and `gh` are found and runnable, every worker's
   installation answers a version probe (a worker that does not is *unavailable* with the reason, and
   the manager runs with the rest), and commit signing is configured when a watched repository's
@@ -972,7 +977,7 @@ src/github_issue_worker/
                  Janitor (clean state after a PR), InputRequester, LimitMonitor
   ports/         GitHubApi, Git, ClaimStore, AgentAdapter, InstallationResolver, StateStore, Clock,
                  ProcessRunner  (typing.Protocol)
-  adapters/      GitHub REST/GraphQL over httpx; git, claims and checkpoints via the git CLI;
+  adapters/      GitHub REST/GraphQL through `gh api`; git, claims and checkpoints via the git CLI;
                  agents: claude, codex, antigravity, opencode, command, remote;
                  installations: path, executable, claudecodeportable, claudelocal;
                  JSON state store; configuration; logging
@@ -1006,15 +1011,14 @@ watched repository.
 | Dependency | Kind | Why |
 | --- | --- | --- |
 | Python 3.13+ | runtime | `asyncio`, `subprocess`, `json`, `dataclasses`. |
-| [`httpx`](https://www.python-httpx.org) | runtime | Async HTTP for the REST and GraphQL calls, with ETag and rate-limit handling under the manager's own control. |
 | [`FastAPI`](https://fastapi.tiangolo.com) + [`uvicorn`](https://www.uvicorn.org) | runtime | The local UI, on the manager's own event loop. |
 | `git` | runtime | Clones, worktrees, commits, signing, push, and the compare-and-swap that claims rely on. |
-| `gh` | runtime, optional | Source of the token only. `GH_TOKEN` replaces it. |
+| `gh` | runtime | Every GitHub API call, as `gh api -i`: authentication, hosts and login stay `gh`'s business. |
 | [`claude`](https://docs.claude.com/en/docs/claude-code), [`codex`](https://github.com/openai/codex), [`agy`](https://antigravity.google), [`opencode`](https://opencode.ai) | runtime, any subset | The agents. At least one is needed. |
 | `pytest`, `ruff`, `mypy`, `build`, `playwright` | development | Tests, lint and format, strict typing, packaging, UI screenshots. |
 
-No GitHub SDK: the handful of calls the manager makes are thin enough that a client library would add
-more surface than it removes.
+No GitHub SDK and no HTTP client: `gh api -i` already authenticates, and returns the status and
+headers the manager needs for conditional polling, server time and rate limits.
 
 ## ⚠️ Limitations
 
