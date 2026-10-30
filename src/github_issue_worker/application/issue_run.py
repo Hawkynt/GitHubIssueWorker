@@ -25,7 +25,15 @@ from github_issue_worker.ports.repository import Check, PullRequest, RepositoryH
 from github_issue_worker.ports.workspace import WorkspacePort
 from github_issue_worker.product import MARKER_PREFIX
 
-VerdictKind = Literal["merged", "needs-input", "awaiting-review", "paused", "failed", "lost"]
+VerdictKind = Literal[
+    "merged", "needs-input", "awaiting-review", "paused", "failed", "lost", "stopped"
+]
+
+
+class RunStopped(Exception):
+    """The maintainer stopped the agent (UI: stop & release). Not a failure to retry."""
+
+
 _MERGEABLE = frozenset({"clean", "unstable", "has_hooks"})
 UNDERSTANDING_MARKER = f"{MARKER_PREFIX}understanding -->"
 _UNDERSTANDING_HEADER = "**How I understand this issue**"
@@ -109,6 +117,10 @@ class IssueRun:
             return self._run(issue, comments, kind)
         except ClaimLost as lost:
             return Verdict("lost", detail=str(lost))
+        except RunStopped as stopped:
+            self.host.set_worker_label(issue.number, "worker:queued")
+            self.coordinator.release(self._handle, step="stopped")
+            return Verdict("stopped", detail=str(stopped))
         except _Stop as stop:
             return stop.verdict
 

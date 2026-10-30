@@ -24,7 +24,7 @@ from github_issue_worker.adapters.verifier import Verifier
 from github_issue_worker.adapters.workspace import Workspace
 from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.github_host import GitHubHost
-from github_issue_worker.application.issue_run import IssueRun, RunSettings, Verdict
+from github_issue_worker.application.issue_run import IssueRun, RunSettings, RunStopped, Verdict
 from github_issue_worker.application.manager import Manager, RepositoryWatch, WorkerSlot
 from github_issue_worker.application.poller import Poller, PollState
 from github_issue_worker.configuration import Configuration, RepositorySettings, WorkerSettings
@@ -40,6 +40,11 @@ log = logging.getLogger(__name__)
 
 def state_dir(home: Path) -> Path:
     return home / ".local" / "state" / "GitHubIssueWorker"
+
+
+def log_dir(state: Path, repository: str, issue: int) -> Path:
+    owner, name = repository.split("/", 1)
+    return state / "logs" / owner / name / str(issue)
 
 
 def cache_dir(home: Path) -> Path:
@@ -101,11 +106,23 @@ def make_adapter(worker: WorkerSettings, home: Path) -> AgentAdapter:
     raise Unavailable(f"{worker.name}: the {worker.agent} adapter is not implemented yet")
 
 
-def execute(adapter: AgentAdapter, run: AgentRun, timeout: float) -> RunReport:
+def execute(
+    adapter: AgentAdapter,
+    run: AgentRun,
+    timeout: float,
+    log: Path | None = None,
+    name: str | None = None,
+) -> RunReport:
+    """One agent run. Its output streams to ``log``; ``name`` lets the UI stop it (F14.4)."""
     invocation = adapter.invocation(run)
     result = run_invocation(
-        Invocation(invocation.argv, invocation.cwd, invocation.stdin, dict(invocation.env)), timeout
+        Invocation(invocation.argv, invocation.cwd, invocation.stdin, dict(invocation.env)),
+        timeout,
+        log=log,
+        name=name,
     )
+    if result.killed:
+        raise RunStopped("stopped by the maintainer")
     if result.timed_out:
         return RunReport(
             session=run.session, outcome=None, error=f"timed out after {timeout:.0f} s"
@@ -142,6 +159,7 @@ class Runtime:
     manager_id: str
     workspace: Workspace
     watches: dict[str, RepositoryWatch] = field(default_factory=dict)
+    state_path: Path = Path("state.json")
     adapters: dict[str, AgentAdapter] = field(default_factory=dict)
     slots: list[WorkerSlot] = field(default_factory=list)
 
@@ -191,7 +209,14 @@ class Runtime:
             workspace=self.workspace,
             coordinator=watch.coordinator,
             agent=lambda agent_run: self._observe(
-                slot, execute(adapter, agent_run, run.run_timeout)
+                slot,
+                execute(
+                    adapter,
+                    agent_run,
+                    run.run_timeout,
+                    log=self._new_log(slot, watch.name, issue.number),
+                    name=slot.name,
+                ),
             ),
             verify=Verifier(build=run.build, test=run.test, timeout=run.run_timeout).verify,
             sessions=self.state.sessions(watch.name),
@@ -208,6 +233,13 @@ class Runtime:
             ),
             progress=lambda step: setattr(slot, "step", step),
         ).run(handle, issue, comments, kind)
+
+    def _new_log(self, slot: WorkerSlot, repository: str, issue: int) -> Path:
+        """Each agent run's output gets its own file, kept for the issue's log page."""
+        stamp = self.api.clock.now().strftime("%Y%m%dT%H%M%S")
+        path = log_dir(self.state_path.parent, repository, issue) / f"{stamp}-{slot.name}.ndjson"
+        slot.log_path = path
+        return path
 
     def _observe(self, slot: WorkerSlot, report: RunReport) -> RunReport:
         """Remember which model the run reported, for status, the log and the UI."""
@@ -292,7 +324,8 @@ def build_runtime(
     cache: Path | None = None,
 ) -> Runtime:
     home = home or account_home(config.manager.home)
-    state = JsonStateStore(state_path or state_dir(home) / "state.json")
+    state_path = state_path or state_dir(home) / "state.json"
+    state = JsonStateStore(state_path)
     runtime = Runtime(
         config=config,
         home=home,
@@ -300,6 +333,7 @@ def build_runtime(
         state=state,
         manager_id=state.manager_id(config.manager.name or socket.gethostname()),
         workspace=Workspace(cache or cache_dir(home), remote_url, home),
+        state_path=state_path,
     )
     for worker in config.workers:
         slot = WorkerSlot(

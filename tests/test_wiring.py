@@ -119,7 +119,7 @@ def _run_commit_through_wired_issue_run(
 
     prompts: list[str] = []
 
-    def fake_execute(adapter: object, run: AgentRun, timeout: float) -> RunReport:
+    def fake_execute(adapter: object, run: AgentRun, timeout: float, **_: object) -> RunReport:
         if "## This run: understand the issue" in run.prompt:
             # The understanding run comes first and changes nothing (F4.5).
             return RunReport(

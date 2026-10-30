@@ -71,6 +71,21 @@ class GitHubHost:
     def issue(self, number: int) -> Issue:
         return parse_issue(self.api.request("GET", self._path(f"issues/{number}")).body)
 
+    def open_issues(self) -> list[Issue]:
+        """Every open issue, pull requests left out."""
+        found: list[Issue] = []
+        response = self.api.request(
+            "GET", self._path("issues"), params={"state": "open", "per_page": "100"}
+        )
+        while True:
+            found += [
+                parse_issue(item) for item in response.body or [] if "pull_request" not in item
+            ]
+            page = next_link(response.headers)
+            if page is None:
+                return found
+            response = self.api.request("GET", page)
+
     def comments(self, number: int) -> list[Comment]:
         found: list[Comment] = []
         response = self.api.request(
