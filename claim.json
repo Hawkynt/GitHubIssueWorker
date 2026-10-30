@@ -2,7 +2,7 @@
   "branch": "issue/3-accept-v-as-a-short-alias-for-version",
   "claimedAt": "2026-10-30T14:35:18Z",
   "consumedThrough": {
-    "comment": null,
+    "comment": 6525336957,
     "review": null
   },
   "expiresAt": "2026-11-06T14:36:03Z",
@@ -13,8 +13,8 @@
   },
   "issue": 3,
   "pausedUntil": null,
-  "renewedAt": "2026-10-30T14:36:03Z",
-  "state": "working",
-  "step": "needs-input",
+  "renewedAt": "2026-10-30T14:36:24Z",
+  "state": "released",
+  "step": "awaiting-review",
   "takeovers": 0
 }
