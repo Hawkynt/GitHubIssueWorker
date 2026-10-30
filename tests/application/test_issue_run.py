@@ -302,3 +302,20 @@ def test_the_run_reports_each_step_it_enters(tmp_path: Path) -> None:
     ).run(h.handle, ISSUE, (), RunKind.FIRST)
     assert verdict.kind == "merged"
     assert steps == ["implement", "verify", "push", "checks", "merge"]
+
+
+def test_a_run_stopped_by_the_maintainer_releases_the_issue(tmp_path: Path) -> None:
+    from github_issue_worker.application.issue_run import RunStopped
+
+    def stopped(run: AgentRun) -> RunReport:
+        raise RunStopped("stopped from the UI")
+
+    h = Harness(tmp_path, [stopped])
+    verdict = h.run()
+    assert verdict.kind == "stopped"
+    current = h.store.current(42)
+    assert (
+        current is not None and current.state is ClaimState.RELEASED and current.step == "stopped"
+    )
+    assert h.host.worker_label[42] == "worker:queued"
+    assert h.workspace.pushes == [] and len(h.agent.runs) == 1

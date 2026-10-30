@@ -143,3 +143,20 @@ def test_unexpected_errors_propagate() -> None:
     gh, _ = host({("GET", path): GitHubError(500, "boom")})
     with pytest.raises(GitHubError):
         gh.role("x")
+
+
+def test_open_issues_leave_pull_requests_out() -> None:
+    issue = {
+        "number": 3,
+        "title": "t",
+        "body": None,
+        "state": "open",
+        "user": {"login": "Hawkynt", "type": "User"},
+        "labels": [],
+        "created_at": "2026-10-30T12:00:00Z",
+        "updated_at": "2026-10-30T12:00:00Z",
+    }
+    gh, _ = host(
+        {("GET", f"repos/{REPO}/issues"): [issue, {**issue, "number": 4, "pull_request": {}}]}
+    )
+    assert [found.number for found in gh.open_issues()] == [3]

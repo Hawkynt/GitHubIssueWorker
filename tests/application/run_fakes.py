@@ -42,6 +42,9 @@ class FakeHost:
         issue = self.issues[number]
         return replace(issue, state="closed") if number in self.closed else issue
 
+    def open_issues(self) -> list[Issue]:
+        return [issue for number, issue in self.issues.items() if number not in self.closed]
+
     def comments(self, number: int) -> list[Comment]:
         return [comment for comment in self.issue_comments if comment.issue == number]
 

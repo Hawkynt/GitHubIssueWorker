@@ -60,12 +60,31 @@ class ClaimView:
 
 
 @dataclass(frozen=True, slots=True)
+class IssueView:
+    """An open issue of a watched repository and whoever works it."""
+
+    repository: str
+    number: int
+    title: str
+    state: str
+    """What is happening, in words: "worked here", "waiting for your answer", ..."""
+    worker: str | None = None
+    manager: str | None = None
+    local: bool = False
+    """Worked by a worker of this manager, which the UI can pause, stop and show the log of."""
+    model: str | None = None
+    step: str | None = None
+    since: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Snapshot:
     manager_id: str
     now: datetime
     workers: tuple[WorkerView, ...]
     repositories: tuple[RepositoryView, ...]
     claims: tuple[ClaimView, ...]
+    issues: tuple[IssueView, ...] = ()
 
 
 class ActionError(Exception):
@@ -88,5 +107,16 @@ class Backend(Protocol):
     def detect_workers(self) -> list[dict[str, object]]: ...
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None: ...
+
+    def stop_worker(self, name: str) -> None:
+        """Kill the worker's agent, release its issue and pause it (F14.4).
+
+        Raises `ActionError` when the worker is not working on an issue.
+        """
+        ...
+
+    def log(self, name: str) -> str | None:
+        """The output of the worker's current or last agent run, or None if it never ran."""
+        ...
 
     def release(self, repository: str, issue: int, force: bool) -> None: ...

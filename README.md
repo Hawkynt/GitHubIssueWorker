@@ -22,7 +22,7 @@
 > (Claude, Codex, Antigravity, OpenCode, local or cloud) share the work without doing anything twice
 > or leaving an issue stranded.
 
-![The Workers page: each worker's issue, model and step at a glance](docs/screenshots/workers.png)
+![The Issues page: every open issue, who works it on which model, here or remote](docs/screenshots/issues.png)
 
 ## 🧭 Vision
 
@@ -156,11 +156,23 @@ from now, `2026-11-06 10:00 UTC (in 6d 23h)`.
 Generated from the UI's demo scenario (`github-issue-worker ui --demo`) on every branch push, so they
 always show the current UI with the same believable sample fleet.
 
+**Issues**, the start page. Every open issue in the watched repositories, what is happening with
+it in words, and who works it: a worker of this machine with its model and step, which you can
+pause, stop & release (the agent is killed and the issue freed) or watch, or a worker of another
+manager, marked remote.
+
+![Issues page with local and remote workers and waiting issues](docs/screenshots/issues.png)
+
 **Workers.** Each worker is a lane: the agent, the account it bills against and the model it runs
 on; the issue it works, linked; a track through the six steps of a run; branch, worktree and time.
 Limited and unavailable workers say why.
 
 ![Workers page with five workers in different states](docs/screenshots/workers.png)
+
+**Log.** What a local agent says and does while it works: its messages, the commands and tools it
+runs, and their output, refreshed as it goes.
+
+![The log of a worker: messages, commands and their output](docs/screenshots/log.png)
 
 **Repositories.** The watch list with per-repository overrides; a repository is added only when
 your account can push to it.
@@ -1010,6 +1022,12 @@ operational items, demonstrated on a real repository. Commits that implement an 
   worktree path, time on the issue, last checkpoint and run cost, updated live.
 - [ ] 🟥 **F14.3** Repositories page: watch list with last poll, push-access result and per-state
   counts; add (verified before saving), edit per-repository overrides, remove.
+- [ ] 🟥 **F14.10** Issues page, the start page: every open issue of the watched repositories with
+  what is happening in words and who works it, local (this machine's worker, its model and step,
+  with log, pause and stop & release) or remote (another manager's worker). Stop & release kills
+  the agent's whole process group, releases the claim and pauses the worker.
+- [ ] 🟥 **F14.11** Log page: a local agent's run as a chat log (messages, tool calls and their
+  output, errors), read from the run's own output file while it is written and refreshed live.
 - [ ] 🟥 **F14.4** Worker actions: add from detected installations or by hand, edit every worker
   setting (agent, installation, account, priority, tags, model, budget, command and limit patterns),
   remove (releases the claim), pause, resume, release claim.

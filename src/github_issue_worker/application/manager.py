@@ -13,6 +13,7 @@ import threading
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Literal, Protocol
 
 from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
@@ -55,6 +56,8 @@ class WorkerSlot:
     issue_title: str | None = None
     started_at: datetime | None = None
     branch: str | None = None
+    log_path: Path | None = None
+    """Where the current (or last) agent run of this worker writes its output."""
 
 
 @dataclass

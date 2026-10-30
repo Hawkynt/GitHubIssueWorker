@@ -74,6 +74,13 @@ def create_app(backend: Backend) -> FastAPI:
     # --- pages -----------------------------------------------------------------------------------
 
     @app.get("/", response_class=HTMLResponse)
+    def issues(fragment: int = 0, notice: str = "") -> str:
+        snapshot = backend.snapshot()
+        if fragment:
+            return pages.issues_fragment(snapshot)
+        return pages.issues_page(snapshot, notice)
+
+    @app.get("/workers", response_class=HTMLResponse)
     def workers(fragment: int = 0, notice: str = "") -> str:
         snapshot = backend.snapshot()
         if fragment:
@@ -315,15 +322,42 @@ def create_app(backend: Backend) -> FastAPI:
         save(data)
         return back("/", f"Worker {name} removed; its issue goes back to the queue.")
 
+    def came_from(request: Request) -> str:
+        """Back to the page the action was taken on: Issues, Workers or a log."""
+        referer = request.headers.get("referer", "")
+        path = "/" + referer.split("://", 1)[-1].split("/", 1)[-1] if "://" in referer else ""
+        path = path.split("?", 1)[0]
+        return path if path in ("/", "/workers") or path.endswith("/log") else "/workers"
+
     @app.post("/workers/{name}/pause")
-    def pause_worker(name: str) -> RedirectResponse:
+    def pause_worker(name: str, request: Request) -> RedirectResponse:
         backend.set_worker_enabled(name, False)
-        return back("/", f"{name} takes no new issue until resumed.")
+        return back(came_from(request), f"{name} takes no new issue until resumed.")
 
     @app.post("/workers/{name}/resume")
-    def resume_worker(name: str) -> RedirectResponse:
+    def resume_worker(name: str, request: Request) -> RedirectResponse:
         backend.set_worker_enabled(name, True)
-        return back("/", f"{name} takes issues again.")
+        return back(came_from(request), f"{name} takes issues again.")
+
+    @app.post("/workers/{name}/stop", response_class=HTMLResponse, response_model=None)
+    def stop_worker(name: str, request: Request) -> Any:
+        try:
+            backend.stop_worker(name)
+        except ActionError as error:
+            return HTMLResponse(pages.issues_page(backend.snapshot(), problems=[str(error)]), 422)
+        return back(
+            came_from(request),
+            f"{name} was stopped and is paused; its issue is free for other workers.",
+        )
+
+    @app.get("/workers/{name}/log", response_class=HTMLResponse, response_model=None)
+    def worker_log(name: str, fragment: int = 0) -> Any:
+        snapshot = backend.snapshot()
+        worker = next((w for w in snapshot.workers if w.name == name), None)
+        if worker is None:
+            return back("/workers")
+        text = backend.log(name)
+        return pages.log_fragment(text) if fragment else pages.log_page(snapshot, worker, text)
 
     # --- claims ----------------------------------------------------------------------------------
 

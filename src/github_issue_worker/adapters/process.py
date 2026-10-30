@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 
 from github_issue_worker.ports.agents import Invocation
 
@@ -29,6 +30,8 @@ _BLOCKED = {
 
 
 _LIVE: set[subprocess.Popen[str]] = set()
+_NAMED: dict[str, subprocess.Popen[str]] = {}
+_KILLED: set[int] = set()
 _LIVE_LOCK = threading.Lock()
 
 
@@ -45,6 +48,8 @@ class ProcessResult:
     stdout: str
     stderr: str
     timed_out: bool = False
+    killed: bool = False
+    """Stopped from outside with `terminate`."""
 
 
 def agent_environment(extra: dict[str, str], empty_gh_config: str) -> dict[str, str]:
@@ -54,37 +59,74 @@ def agent_environment(extra: dict[str, str], empty_gh_config: str) -> dict[str, 
     return {**env, **_BLOCKED, "GH_CONFIG_DIR": empty_gh_config, **extra}
 
 
-def run_invocation(invocation: Invocation, timeout: float) -> ProcessResult:
-    """Run to completion or kill at ``timeout`` seconds. stdin always gets the prompt, then EOF."""
-    with tempfile.TemporaryDirectory(prefix="ghiw-no-gh-") as empty_gh_config:
-        return _run(invocation, timeout, empty_gh_config)
+def run_invocation(
+    invocation: Invocation, timeout: float, log: Path | None = None, name: str | None = None
+) -> ProcessResult:
+    """Run to completion or kill at ``timeout`` seconds. stdin always gets the prompt, then EOF.
+
+    stdout goes to ``log`` as it is written, so the run can be watched while it is going; ``name``
+    lets `terminate` kill this run from outside (the UI's stop).
+    """
+    with (
+        tempfile.TemporaryDirectory(prefix="ghiw-no-gh-") as empty_gh_config,
+        tempfile.TemporaryDirectory(prefix="ghiw-run-") as scratch,
+    ):
+        target = log or Path(scratch) / "stdout"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return _run(invocation, timeout, empty_gh_config, target, name)
 
 
-def _run(invocation: Invocation, timeout: float, empty_gh_config: str) -> ProcessResult:
-    process = subprocess.Popen(
-        invocation.argv,
-        cwd=invocation.cwd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=agent_environment(dict(invocation.env), empty_gh_config),
-        start_new_session=True,
-    )
+def terminate(name: str) -> bool:
+    """Kill the named run with everything it started. False when nothing by that name runs."""
     with _LIVE_LOCK:
-        _LIVE.add(process)
-    try:
-        stdout, stderr = process.communicate(invocation.stdin, timeout=timeout)
-        return ProcessResult(process.returncode, stdout, stderr)
-    except subprocess.TimeoutExpired:
-        _kill_group(process)
-        stdout, stderr = process.communicate()
-        return ProcessResult(process.returncode or -9, stdout, stderr, timed_out=True)
-    finally:
+        process = _NAMED.get(name)
+        if process is None:
+            return False
+        _KILLED.add(process.pid)
+    _kill_group(process)
+    return True
+
+
+def _run(
+    invocation: Invocation, timeout: float, empty_gh_config: str, log: Path, name: str | None
+) -> ProcessResult:
+    with log.open("w", encoding="utf-8") as output:
+        process = subprocess.Popen(
+            invocation.argv,
+            cwd=invocation.cwd,
+            stdin=subprocess.PIPE,
+            stdout=output,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=agent_environment(dict(invocation.env), empty_gh_config),
+            start_new_session=True,
+        )
         with _LIVE_LOCK:
-            _LIVE.discard(process)
+            _LIVE.add(process)
+            if name:
+                _NAMED[name] = process
+        timed_out = False
+        try:
+            try:
+                _, stderr = process.communicate(invocation.stdin, timeout=timeout)
+            except subprocess.TimeoutExpired:
+                _kill_group(process)
+                _, stderr = process.communicate()
+                timed_out = True
+        finally:
+            with _LIVE_LOCK:
+                _LIVE.discard(process)
+                if name and _NAMED.get(name) is process:
+                    del _NAMED[name]
+                killed = process.pid in _KILLED
+                _KILLED.discard(process.pid)
+    stdout = log.read_text(encoding="utf-8", errors="replace")
+    code = process.returncode if process.returncode is not None else -9
+    if timed_out:
+        code = code or -9
+    return ProcessResult(code, stdout, stderr, timed_out=timed_out, killed=killed)
 
 
 def _kill_group(process: subprocess.Popen[str]) -> None:
