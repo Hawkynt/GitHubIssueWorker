@@ -1,20 +1,20 @@
 {
   "branch": "issue/83-f14-6-issue-page-runs-journal-outcome-lo",
-  "claimedAt": "2026-10-31T11:02:00Z",
+  "claimedAt": "2026-10-31T12:18:31Z",
   "consumedThrough": {
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T11:55:55Z",
-  "generation": 1,
+  "expiresAt": "2026-11-07T12:18:31Z",
+  "generation": 2,
   "holder": {
     "manager": "hawky-desktop-96a3",
-    "worker": "claude"
+    "worker": "claude.2"
   },
   "issue": 83,
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T11:56:04Z",
+  "renewedAt": "2026-10-31T12:18:31Z",
   "runs": [
     {
       "agent": "claude",
@@ -37,7 +37,7 @@
       "worker": "claude"
     }
   ],
-  "state": "released",
+  "state": "working",
   "step": "needs-input",
   "takeovers": 0
 }
