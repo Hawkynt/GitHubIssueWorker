@@ -1,0 +1,21 @@
+{
+  "branch": "issue/83-f14-6-issue-page-runs-journal-outcome-lo",
+  "claimedAt": "2026-10-31T11:02:00Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T11:02:00Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "claude"
+  },
+  "issue": 83,
+  "model": "Claude Opus 5.5",
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T11:02:00Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
