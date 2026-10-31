@@ -1213,7 +1213,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   tinted with the colour of the model its worker runs, or with the default hue of the segment of the
   maker that agent kind serves while no model is known. Every segment key has a field on the Settings
   page (F14.8).
-- [ ] 🟧 **F14.20** Model colour wheel: the Settings page shows the four `modelColors` segments as
+- [x] 🟧 **F14.20** Model colour wheel: the Settings page shows the four `modelColors` segments as
   labelled arcs on one OKLCH hue wheel drawn in the colours the charts use. Dragging the middle of an
   arc moves its hue, dragging an end changes its width around the unchanged centre, and the arrow keys
   do the same on each handle (Shift for 10 degrees); the arc being edited is highlighted. While it
