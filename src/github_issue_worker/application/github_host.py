@@ -202,7 +202,7 @@ class GitHubHost:
         try:
             self._write("DELETE", self._path(f"git/refs/heads/{branch}"))
         except GitHubError as error:
-            if error.status != 422:  # already gone
+            if error.status not in (404, 422):  # already gone, e.g. deleted on merge
                 raise
 
     def waiting_for_approval(self, sha: str) -> list[WaitingRun]:

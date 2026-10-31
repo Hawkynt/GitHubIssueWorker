@@ -97,8 +97,11 @@ def test_merge_passes_the_expected_head() -> None:
     assert api.calls[0][2] == {"merge_method": "squash", "sha": "abc"}
 
 
-def test_a_branch_that_is_already_gone_is_fine() -> None:
-    gh, _ = host({("DELETE", f"repos/{REPO}/git/refs/heads/issue/7-x"): GitHubError(422, "gone")})
+@pytest.mark.parametrize("status", [404, 422])
+def test_a_branch_that_is_already_gone_is_fine(status: int) -> None:
+    # with delete_branch_on_merge GitHub removes it first and answers 404 "Reference does not exist"
+    path = f"repos/{REPO}/git/refs/heads/issue/7-x"
+    gh, _ = host({("DELETE", path): GitHubError(status, "Reference does not exist")})
     gh.delete_branch("issue/7-x")
 
 
