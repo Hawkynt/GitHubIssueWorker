@@ -24,6 +24,16 @@
       "started": "2026-10-30T19:11:36Z",
       "verdict": "needs-input",
       "worker": "codex.2"
+    },
+    {
+      "agent": "claude",
+      "finished": "2026-10-30T23:04:25Z",
+      "kind": "rework",
+      "manager": "hawky-desktop-96a3",
+      "model": "Qwen3.8 Flash Next IQ3_S",
+      "started": "2026-10-30T19:19:53Z",
+      "verdict": "crashed",
+      "worker": "local"
     }
   ],
   "state": "done",
