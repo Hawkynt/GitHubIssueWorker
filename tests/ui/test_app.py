@@ -438,6 +438,55 @@ def test_merged_over_time_draws_one_line_per_model_in_its_colour(client: TestCli
         assert f"--c:{worn.group(1)}" in panel
 
 
+def _total_panel(html: str) -> str:
+    return html.split('id="total"', 1)[1].split("</section>", 1)[0]
+
+
+def test_merged_over_time_shows_lines_and_an_unchecked_box_by_default(client: TestClient) -> None:
+    """Scenario 1: without the parameter the panel keeps its lines and the box is unchecked."""
+    panel = _total_panel(client.get("/workers").text)
+    box = re.search(r"<input type=checkbox name=total value=stacked[^>]*>", panel)
+    assert box and "checked" not in box.group(0)
+    assert 'class="series-line"' in panel and 'class="band"' not in panel
+
+
+def test_merged_over_time_stacks_the_totals_when_checked(client: TestClient) -> None:
+    """Scenario 2: checked, the panel draws one band per model in its colour instead of lines."""
+    panel = _total_panel(client.get("/workers?total=stacked").text)
+    box = re.search(r"<input type=checkbox name=total value=stacked[^>]*>", panel)
+    assert box and "checked" in box.group(0)
+    assert 'class="series-line"' not in panel and panel.count('class="band"') >= 3
+    for model in ("Claude Opus 5.5", "GPT 6.1 Sol", "Gemini 4 Argon (Medium)"):
+        worn = re.search(rf'<li><i class=key style="--c:([^"]+)"></i>{re.escape(model)}<', panel)
+        assert worn, model
+        assert f'class="band" style="--c:{worn.group(1)}"' in panel
+
+
+def test_the_stacked_total_ends_at_the_merged_count(client: TestClient) -> None:
+    """Scenario 3: the last tooltip's total is the count the panel's sub-line names."""
+    panel = _total_panel(client.get("/workers?total=stacked").text)
+    merged = re.search(r"(\d+) issues\.</p>", panel)
+    totals = [int(t) for t in re.findall(r"(\d+) in total", panel)]
+    assert merged and max(totals) == int(merged.group(1))
+
+
+def test_the_total_view_survives_the_other_switches_and_the_refresh(client: TestClient) -> None:
+    """Scenario 6: switches and the live fragment keep the stacked view, and the box keeps them."""
+    html = client.get("/workers?by=agent&days=90&time=repository&total=stacked").text
+    assert 'href="?by=model&amp;days=90&amp;time=repository&amp;total=stacked"' in html
+    panel = _total_panel(html)
+    for name, value in (("by", "agent"), ("days", "90"), ("time", "repository")):
+        assert f"<input type=hidden name={name} value={value}>" in panel
+    fragment = client.get("/workers?total=stacked&fragment=1").text
+    assert 'class="band"' in _total_panel(fragment)
+    assert 'href="?by=agent&amp;days=30&amp;time=model"' in client.get("/workers").text
+
+
+def test_an_unknown_total_view_is_refused(client: TestClient) -> None:
+    """Scenario 7: an invalid view is refused like the other cockpit parameters."""
+    assert client.get("/workers?total=pie").status_code == 422
+
+
 def test_a_crew_lane_wears_its_model_colour_or_its_makers_default_hue(client: TestClient) -> None:
     """Scenario 8: the lane background follows the model, and the agent's maker while none is known."""
     html = client.get("/workers").text

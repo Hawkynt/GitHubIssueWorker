@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from html import escape
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -40,6 +40,7 @@ from github_issue_worker.ui.charts import (
     horizontal_bars,
     ring_gauge,
     sparkline,
+    stacked_areas,
     stacked_columns,
     timeline,
 )
@@ -295,6 +296,9 @@ form.open { display: inline; }
 button.link { background: none; border: 0; padding: 0; color: var(--steel); cursor: pointer;
   font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace; font-size: 13px;
   text-decoration: underline; }
+form.toggle label { display: inline-flex; align-items: center; gap: .4rem; font-size: 13px;
+  color: var(--muted); cursor: pointer; }
+form.toggle input { accent-color: #4aa3ff; }
 .switches { display: flex; flex-wrap: wrap; gap: .5rem; }
 .switch { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden;
   background: #0a1220; }
@@ -328,6 +332,10 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
   font-variant-numeric: tabular-nums; }
 .series-line { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round;
   filter: drop-shadow(0 0 5px var(--c)); }
+.chart .band { fill: var(--c); fill-opacity: .55; stroke: #0c1524; stroke-width: 2;
+  stroke-linejoin: round; }
+.chart .total-line { fill: none; stroke: #e8f1ff; stroke-width: 1.5; stroke-linejoin: round;
+  filter: drop-shadow(0 0 5px #4aa3ff); }
 .chart .dot { fill: transparent; }
 .chart .dot:hover, .chart .dot:focus { fill: #6fb8ff; }
 .head { fill: var(--c); stroke: #0c1524; stroke-width: 1.5; filter: drop-shadow(0 0 6px var(--c)); }
@@ -595,24 +603,34 @@ TIPS = """
     document.body.classList.remove("boot");
     document.dispatchEvent(new Event("booted"));
   }, still ? 0 : 3200);
-  // A switch redraws only its own panel: fetch the view, swap that panel, keep the URL in step.
-  document.addEventListener("click", async (event) => {
-    const link = event.target.closest && event.target.closest(".switch a");
-    if (!link || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    const panel = link.closest("section[id]");
-    if (!panel) return;
-    event.preventDefault();
-    const query = new URLSearchParams(link.search);
+  // A switch or a toggle redraws only its own panel: fetch the view, swap that panel, keep the
+  // URL in step.
+  const swap = async (panel, query, fallback) => {
     history.replaceState(null, "", location.pathname + "?" + query);
     query.set("fragment", "1");
     const response = await fetch(location.pathname + "?" + query);
-    if (!response.ok) { location.href = link.href; return; }
+    if (!response.ok) { location.href = fallback; return; }
     const fresh = new DOMParser().parseFromString(await response.text(), "text/html")
       .getElementById(panel.id);
     if (!fresh) return;
     if (!still) fresh.classList.add("boot");
     panel.replaceWith(fresh);
     setTimeout(() => fresh.classList.remove("boot"), 2400);
+  };
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest && event.target.closest(".switch a");
+    if (!link || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const panel = link.closest("section[id]");
+    if (!panel) return;
+    event.preventDefault();
+    swap(panel, new URLSearchParams(link.search), link.href);
+  });
+  document.addEventListener("change", (event) => {
+    const form = event.target.closest && event.target.closest("form.toggle");
+    const panel = form && form.closest("section[id]");
+    if (!panel) return;
+    const query = new URLSearchParams(new FormData(form));
+    swap(panel, query, form.action + "?" + query);
   });
 })();
 </script>
@@ -1055,6 +1073,10 @@ def _worker_actions(worker: WorkerView, with_log: bool = True) -> str:
     return "".join(actions)
 
 
+TotalView = Literal["lines", "stacked"]
+"""How the running total of merges is drawn: a line per model, or the models stacked."""
+
+
 @dataclass(frozen=True, slots=True)
 class CockpitView:
     """What the cockpit's charts are split by and how far back they look."""
@@ -1062,9 +1084,18 @@ class CockpitView:
     by: SplitBy = "model"
     days: int = 30
     time: SplitBy = "model"
+    total: TotalView = "lines"
 
     def link(self, **change: object) -> str:
-        values = {"by": self.by, "days": self.days, "time": self.time, **change}
+        values: dict[str, object] = {
+            "by": self.by,
+            "days": self.days,
+            "time": self.time,
+            "total": self.total,
+            **change,
+        }
+        if values["total"] == "lines":
+            del values["total"]  # the default view keeps the links it always had
         return "?" + "&amp;".join(f"{key}={value}" for key, value in values.items())
 
 
@@ -1244,16 +1275,28 @@ def _share(history: list[RunRecord], palette: Palette) -> str:
     )
 
 
-def _total(history: list[RunRecord], now: datetime, palette: Palette) -> str:
+def _total(history: list[RunRecord], now: datetime, view: CockpitView, palette: Palette) -> str:
     lines = cumulative_by(history, "model")
     start = min((r.started for r in history), default=now - timedelta(days=1))
     merged = sum(len(points) for _, points in lines)
+    stacked = view.total == "stacked"
+    keep = "".join(
+        f"<input type=hidden name={name} value={value}>"
+        for name, value in (("by", view.by), ("days", view.days), ("time", view.time))
+    )
+    toggle = (
+        f'<form class=toggle method=get action="/workers">{keep}<label>'
+        f"<input type=checkbox name=total value=stacked{' checked' if stacked else ''}> "
+        "Stacked total</label><noscript><button>Show</button></noscript></form>"
+    )
+    chart = stacked_areas if stacked else cumulative_lines
+    shape = "the models stacked into the total" if stacked else "one line per model"
     return (
         '<section class=panel id="total" aria-label="Merged over time">'
-        "<header><h2>Merged over time</h2></header>"
-        f"<p class=sub>The running total since the first run, one line per model: {merged} issues.</p>"
+        f"<header><h2>Merged over time</h2>{toggle}</header>"
+        f"<p class=sub>The running total since the first run, {shape}: {merged} issues.</p>"
         f"{_legend({name: [len(points)] for name, points in lines}, palette.models)}"
-        f"{cumulative_lines(lines, start, now, 'merged', palette.models)}</section>"
+        f"{chart(lines, start, now, 'merged', palette.models)}</section>"
     )
 
 
@@ -1404,7 +1447,7 @@ def cockpit_fragment(
         + _flight_log(snapshot, history, models)
         + _throughput(history, snapshot.now, view, _palette(history, view.by, settings))
         + _share(history, models)
-        + _total(history, snapshot.now, models)
+        + _total(history, snapshot.now, view, models)
         + _time(history, view, _palette(history, view.time, settings))
         + _heat(history)
         + _mix(history, snapshot.now, models)

@@ -282,6 +282,94 @@ def cumulative_lines(
     return "".join(parts)
 
 
+def stacked_areas(
+    lines: Sequence[tuple[str, Sequence[tuple[datetime, int]]]],
+    start: datetime,
+    end: datetime,
+    unit: str,
+    colors: Mapping[str, str],
+    width: int = 600,
+    height: int = 240,
+) -> str:
+    """The running totals stacked as stepped bands, the first series at the bottom, so the top
+    edge of the stack is the total of all series at every moment."""
+    if not lines:
+        return _empty_plot(width, height, f"the first {unit} issue starts the line")
+    left, right, top, bottom = 34, 14, 14, 26
+    plot_w, plot_h = width - left - right, height - top - bottom
+    moments = sorted({moment for _, points in lines for moment, _ in points})
+    levels = []
+    for _, points in lines:
+        reached, count, row = dict(points), 0, []
+        for moment in moments:
+            count = reached.get(moment, count)
+            row.append(count)
+        levels.append(row)
+    stacked = [
+        [sum(column[: i + 1]) for column in zip(*levels, strict=True)] for i in range(len(lines))
+    ]
+    totals = stacked[-1]
+    peak = _nice_max(totals[-1])
+    seconds = max((end - start).total_seconds(), 1.0)
+
+    def x(moment: datetime) -> float:
+        return left + plot_w * (moment - start).total_seconds() / seconds
+
+    def y(value: int) -> float:
+        return top + plot_h - plot_h * value / peak
+
+    def edge(heights: Sequence[int]) -> list[tuple[float, float]]:
+        corners, previous = [(float(left), y(0))], 0
+        for moment, value in zip(moments, heights, strict=True):
+            corners += [(x(moment), y(previous)), (x(moment), y(value))]
+            previous = value
+        return [*corners, (float(width - right), y(previous))]
+
+    parts = [
+        f'<svg class="chart area" viewBox="0 0 {width} {height}" role="img" '
+        f'aria-label="{escape(unit)} issues over time, the series stacked into the total">'
+    ]
+    for tick in range(5):
+        ty = top + plot_h - plot_h * tick / 4
+        parts.append(
+            f'<line class="grid" x1="{left}" x2="{width - right}" y1="{ty:.1f}" y2="{ty:.1f}"/>'
+        )
+        parts.append(
+            f'<text class="tick" x="{left - 6}" y="{ty + 4:.1f}" text-anchor="end">{peak * tick / 4:g}</text>'
+        )
+    for moment in _time_ticks(start, end, 4):
+        parts.append(
+            f'<text class="tick" x="{x(moment):.1f}" y="{height - 8}" text-anchor="middle">'
+            f"{_time_label(moment, start, end)}</text>"
+        )
+    floor = [0] * len(moments)
+    for (name, _), ceiling in zip(lines, stacked, strict=True):
+        outline = edge(ceiling) + edge(floor)[::-1]
+        shape = "M" + " L".join(f"{cx:.1f},{cy:.1f}" for cx, cy in outline) + " Z"
+        parts.append(f'<path class="band" style="--c:{colors.get(name, FALLBACK)}" d="{shape}"/>')
+        floor = ceiling
+    path = [f"M{left},{y(0):.1f}"]
+    path += [
+        f"H{x(moment):.1f} V{y(total):.1f}" for moment, total in zip(moments, totals, strict=True)
+    ]
+    path.append(f"H{width - right}")
+    parts.append(f'<path class="total-line" d="{" ".join(path)}"/>')
+    index = {moment: i for i, moment in enumerate(moments)}
+    for (name, points), ceiling in zip(lines, stacked, strict=True):
+        for moment, value in points:
+            at = index[moment]
+            tip = escape(
+                f"{name} · {moment:%Y-%m-%d %H:%M} UTC: {value} {unit}, {totals[at]} in total",
+                quote=True,
+            )
+            parts.append(
+                f'<circle class="hit dot" cx="{x(moment):.1f}" cy="{y(ceiling[at]):.1f}" r="7" '
+                f'tabindex="0" data-tip="{tip}" aria-label="{tip}"/>'
+            )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
 @dataclass(frozen=True, slots=True)
 class Span:
     """One bar of a timeline: a run from ``start`` to ``end`` on a lane."""

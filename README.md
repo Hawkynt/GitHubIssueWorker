@@ -220,7 +220,7 @@ tooltip), a track through the six steps of a run, its branch, which opens the wo
 log and stop & release. When other managers hold issues, a remote row follows with a sub-row for
 each, its branch linked on GitHub. Below: a flight log of every run of the last day per worker,
 issues merged per day by model, agent or repository over 30, 90 or 180 days, the model share, the
-running total of merges per model, time to merge, the busy hours by weekday, the weekly model mix
+running total of merges per model (a line each, or stacked into the total), time to merge, the busy hours by weekday, the weekly model mix
 and a ledger of every model used. Every model carries one colour through all of it, drawn from its
 maker's hue segment and the model's own name, so `Opus 5` and `Opus 5.5` stay the same hue and a
 new model never repaints an old one. Every chart has a tooltip per mark; the history survives
@@ -1166,7 +1166,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
   split by model, agent or repository over 30/90/180 days, runs per model per week over 26 weeks,
   time to merge by model, agent or repository, a model ledger (runs, merged, median time, first
   and last use), a 24-hour flight log of runs per worker with the running ones live, the model share
-  as a ring, the running total of merges, and finished runs per weekday and hour. Colour follows the entity across views, a ninth series folds into "Other", every
+  as a ring, the running total of merges as one line per model or, with a checkbox, as the per-model
+  totals stacked into one area whose top edge is all merges, and finished runs per weekday and hour. Colour follows the entity across views, a ninth series folds into "Other", every
   chart has a per-mark tooltip and a table view, the grid reflows down to phone width, and it
   refreshes live without losing the chosen view.
 - [x] 🟧 **F14.14** Crew squares: each issue a worker holds is a square coloured by its repository

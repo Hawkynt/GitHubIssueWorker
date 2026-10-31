@@ -92,9 +92,10 @@ def create_app(backend: Backend) -> FastAPI:
         by: SplitBy = "model",
         days: Annotated[int, Query(ge=7, le=366)] = 30,
         time: SplitBy = "model",
+        total: pages.TotalView = "lines",
     ) -> str:
         snapshot = backend.snapshot()
-        view = pages.CockpitView(by=by, days=days, time=time)
+        view = pages.CockpitView(by=by, days=days, time=time, total=total)
         colors = backend.config().model_colors
         if fragment:
             return pages.cockpit_fragment(snapshot, backend.history(), view, colors)
