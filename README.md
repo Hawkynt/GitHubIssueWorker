@@ -1200,8 +1200,10 @@ operational items, demonstrated on a real repository. Commits that implement an 
   every page and live fragment; links to the UI's own pages open in the same tab.
 - [x] 🟧 **F14.18** Feedback colours: an issue waiting for a requested human answer has a
   yellow status chip even after its claim is released. Token, spending-allowance and rate-limit
-  waits have gray chips, with the reason and reset time when known. Idle, paused and resource-waiting
-  worker boxes are gray; a worker still executing stays active. A worker shows exactly one active
+  waits have gray chips, with the reason and reset time when known. Gray is reserved for a worker that
+  cannot work: paused, out of tokens or allowance, rate-limited or unavailable. An idle worker is
+  ready, so its box keeps its model tint fading into transparency; a worker still executing stays
+  active. A worker shows exactly one active
   progress chip, its current step; what needs the user marks that chip and no other. A merge
   conflict or CI waiting for approval turns the current chip red and makes it pulse rapidly, with
   the reason as its title, through refreshes, repair steps and restarts until resolution,
