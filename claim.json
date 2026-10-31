@@ -12,6 +12,7 @@
     "worker": "claude.2"
   },
   "issue": 83,
+  "mergeConflict": true,
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
   "renewedAt": "2026-10-31T12:23:00Z",
