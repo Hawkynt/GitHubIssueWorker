@@ -208,6 +208,111 @@ def test_another_managers_claim_is_left_alone() -> None:
     assert f.runs == []
 
 
+@pytest.mark.parametrize(
+    ("state", "step"),
+    [
+        (None, "triage"),
+        (ClaimState.WORKING, "implement"),
+        (ClaimState.PAUSED, "implement"),
+        (ClaimState.DONE, "close"),
+        (ClaimState.RELEASED, "needs-input"),
+        (ClaimState.RELEASED, "awaiting-review"),
+        (ClaimState.RELEASED, "failed"),
+        (ClaimState.RELEASED, "split"),
+        (ClaimState.RELEASED, "implement"),
+    ],
+)
+@pytest.mark.parametrize("edited", [False, True], ids=["new-comment", "edited-comment"])
+@pytest.mark.parametrize("reason", ["completed", "not_planned"])
+def test_given_a_closed_issue_when_comments_are_polled_then_no_run_or_claim_write(
+    state: ClaimState | None,
+    step: str,
+    edited: bool,
+    reason: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    f = Fixture([slot("worker")])
+    closed = replace(issue(1), state="closed", state_reason=reason)
+    if state is not None:
+        claim = POLICY.new_claim(1, Holder(ME, "worker"), T0, "issue/1-x")
+        f.store.force_create(claim.replace(state=state, step=step, paused_until=T0))
+    before = f.store.read(1)
+    created = T0 - timedelta(days=1) if edited else T0
+    comment = Comment(10, 1, OWNER, "please do more", created, T0)
+    f.host.issue_comments = [comment]
+    f.new_issues(closed)
+    f.manager.tick()
+
+    for _ in range(2):
+        f.polls.append(PollResult(comments=(comment,)))
+        f.manager.tick()
+
+    assert f.runs == []
+    assert f.store.read(1) == before
+    assert f.host.worker_label == {}
+    assert f.host.posted == [] and f.host.pulls == {} and f.host.merged == []
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
+def test_given_a_cached_open_issue_when_only_a_closed_issues_comment_is_polled_then_no_run(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    f = Fixture([slot("worker")])
+    old = replace(issue(1), created_at=T0 - timedelta(days=2))
+    f.new_issues(old)
+    f.manager.tick()
+    assert f.runs == []
+
+    f.host.issues[1] = replace(old, state="closed", updated_at=T0 + timedelta(minutes=1))
+    comment = Comment(10, 1, OWNER, "please do more", T0, T0)
+    f.host.issue_comments = [comment]
+    f.polls.append(PollResult(comments=(comment,)))
+    f.manager.tick()
+
+    assert f.runs == []
+    assert f.store.read(1) is None
+    assert f.host.posted == [] and f.host.worker_label == {}
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
+@pytest.mark.parametrize("waiting", [False, True], ids=["first-run", "rework"])
+def test_given_an_open_issue_when_a_trusted_comment_arrives_then_work_is_scheduled(
+    waiting: bool,
+) -> None:
+    f = Fixture([slot("worker")])
+    old = replace(issue(1), created_at=T0 - timedelta(days=2))
+    if waiting:
+        claim = POLICY.new_claim(1, Holder(ME, "worker"), T0, "issue/1-x")
+        f.store.force_create(claim.replace(state=ClaimState.RELEASED, step="needs-input"))
+    f.new_issues(old)
+    f.manager.tick()
+    assert f.runs == []
+
+    comment = Comment(10, 1, OWNER, "please do more", T0, T0)
+    f.host.issue_comments = [comment]
+    f.polls.append(PollResult(comments=(comment,)))
+    f.manager.tick()
+
+    expected = RunKind.REWORK if waiting else RunKind.FIRST
+    assert f.runs == [Recorded("worker", 1, expected)]
+
+
+def test_given_a_completed_closed_issue_when_reopened_then_a_reopen_run_is_scheduled() -> None:
+    f = Fixture([slot("worker")])
+    claim = POLICY.new_claim(1, Holder(ME, "worker"), T0, "issue/1-x")
+    f.store.force_create(claim.replace(state=ClaimState.DONE, step="close"))
+    comment = Comment(10, 1, OWNER, "please do more", T0, T0)
+    f.host.issue_comments = [comment]
+    f.new_issues(replace(issue(1), state="closed"))
+    f.manager.tick()
+    assert f.runs == []
+
+    f.new_issues(issue(1, minutes=1))
+    f.manager.tick()
+
+    assert f.runs == [Recorded("worker", 1, RunKind.REOPEN)]
+
+
 def test_an_unavailable_worker_is_never_used() -> None:
     f = Fixture([slot("claude", available=False, reason="not logged in")])
     f.new_issues(issue(1))

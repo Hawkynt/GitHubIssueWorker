@@ -1037,7 +1037,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F9.2** A reopened issue gets a fresh branch `issue/<n>-<slug>-r<k>` from the current base,
   a run that is primed with the previous journal and told why it was reopened, and a new PR that
   references the previous one.
-- [ ] 🟥 **F9.3** Comments on closed issues are ignored.
+- [x] 🟥 **F9.3** Comments on closed issues are ignored.
 - [ ] 🟧 **F9.4** Reviews and review comments on the worker's PR are treated as rework input, and
   each review thread is answered or resolved.
 

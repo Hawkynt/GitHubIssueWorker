@@ -217,6 +217,9 @@ class Manager:
         state = self.poll_states.get(watch.name, PollState())
         result, state = self.poll(watch.name, state, watch.process_backlog)
         self.poll_states[watch.name] = state
+        # The streams advance independently; a comment-only update needs fresh issue state.
+        for comment in result.comments:
+            self._known.pop((watch.name, comment.issue), None)
         for issue in result.issues:
             self._known[(watch.name, issue.number)] = issue
 
@@ -381,6 +384,8 @@ class Manager:
                     watch.coordinator.release(handle, step="skipped")
                     self._own.pop((watch.name, issue.number), None)
                     self._labelled.pop((watch.name, issue.number), None)
+                return
+            if issue.state != "open":
                 return
             self._own[(watch.name, issue.number)] = claim.holder.worker
             if slot is None or not slot.available or slot.busy:
