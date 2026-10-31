@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import stat
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -72,6 +73,58 @@ def test_a_claudelocal_worker_gets_no_budget_flag(tmp_path: Path) -> None:
     executable(tmp_path / "ClaudeLocal" / "Claude.bat")
     worker = claude_worker({"type": "claudelocal", "root": str(tmp_path / "ClaudeLocal")}, 2.5)
     assert "--max-budget-usd" not in argv(worker, tmp_path)
+
+
+def command_worker(
+    installation: dict[str, object] | None = None, **extra: object
+) -> WorkerSettings:
+    body: dict[str, object] = {
+        "name": "w",
+        "agent": "command",
+        "account": "a",
+        "command": ["mycli", "--message", "{prompt}"],
+        **extra,
+    }
+    if installation:
+        body["installation"] = installation
+    return parse(json.dumps({"accounts": {"a": {}}, "workers": [body]})).workers[0]
+
+
+def test_a_command_worker_runs_its_template_with_the_program_found_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Windows finds a program on PATH only by a PATHEXT extension.
+    mycli = executable(tmp_path / "bin" / ("mycli.cmd" if sys.platform == "win32" else "mycli"))
+    monkeypatch.setenv("PATH", str(mycli.parent))
+    worker = command_worker(limitExitCodes=[75], limitPatterns=["quota"])
+    adapter = make_adapter(worker, tmp_path)
+    assert adapter.kind == "command"
+    program, *arguments = argv(worker, tmp_path)
+    assert Path(program).name.lower() == mycli.name.lower()
+    assert arguments == ["--message", "Fix issue 5."]
+    run = AgentRun(worktree=tmp_path, prompt="x")
+    assert adapter.report(run, 75, "", "").limit is not None
+    assert adapter.report(run, 1, "", "quota gone").limit is not None
+
+
+def test_a_command_worker_with_an_executable_installation_gets_its_path_and_env(
+    tmp_path: Path,
+) -> None:
+    tool = executable(tmp_path / "opt" / "mycli-1.2")
+    worker = command_worker({"type": "executable", "path": str(tool), "env": {"MYCLI_HOME": "/p"}})
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    invocation = make_adapter(worker, tmp_path).invocation(AgentRun(worktree, "Fix issue 5."))
+    assert invocation.argv == [str(tool), "--message", "Fix issue 5."]
+    assert invocation.env == {"MYCLI_HOME": "/p"}
+
+
+def test_a_command_worker_whose_program_is_missing_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(wiring.Unavailable, match="mycli"):
+        make_adapter(command_worker(), tmp_path)
 
 
 class _DummyAdapter:

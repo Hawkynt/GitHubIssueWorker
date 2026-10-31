@@ -241,6 +241,26 @@ def test_workers_can_be_added_edited_paused_and_removed(
     assert "codex-2" not in {w.name for w in backend.config().workers}
 
 
+def test_a_command_worker_with_limit_patterns_and_exit_codes_is_saved_from_its_page(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    form = {
+        "name": "mycli",
+        "agent": "command",
+        "account": "openai-plus",
+        "command": "mycli, --message, {prompt}",
+        "limitPatterns": "quota exceeded, rate.?limit",
+        "limitExitCodes": "75, 3",
+        "installation.type": "path",
+    }
+    client.post("/workers/new", data=form)
+    saved = next(w for w in backend.config().workers if w.name == "mycli")
+    assert saved.command == ["mycli", "--message", "{prompt}"]
+    assert saved.limit_patterns == ["quota exceeded", "rate.?limit"]
+    assert saved.limit_exit_codes == [75, 3]
+    assert "75, 3" in client.get("/workers/mycli").text
+
+
 def test_an_invalid_worker_is_refused(client: TestClient) -> None:
     form = {
         "name": "x",

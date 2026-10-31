@@ -425,8 +425,25 @@ Every agent is driven through the same contract, so agents are interchangeable m
 | `codex` | `codex exec --json --dangerously-bypass-approvals-and-sandbox` | `codex exec resume <id>` | `--output-schema` | `error` / `turn.failed` message text, "try again at …" |
 | `antigravity` | `agy -p --output-format stream-json --dangerously-skip-permissions`, prompt as a pointer to `.ghiw/prompt.md` | `--conversation <uuid>` | — | message and log text |
 | `opencode` | `opencode run --format json`, model as `provider/model` | `--session <id>` | — | provider error events |
-| `command` | any CLI, from a configured argument template | template-defined | — | configured patterns + exit code |
+| `command` | any CLI, from the worker's argument template `command` | an argument containing `{session}` | — | `limitExitCodes`, else `limitPatterns` on a failed run |
 | `remote` | a vendor's cloud agent: submit, poll, collect the diff | vendor-defined | — | vendor API |
+
+**A `command` worker** runs any further CLI agent from its argument template, `workers[].command`:
+an argument list whose first entry names the program, found on `PATH` or given by an `executable`
+installation. In every argument `{prompt}` becomes the prompt text, `{worktree}` the worktree's
+absolute path, `{outcome}` the absolute path of `.ghiw/outcome.json` and `{session}` the id of the
+conversation being continued; other braces stay as they are. On a fresh run an argument containing
+`{session}` is left out, so a flag and its value belong in one argument (`--resume={session}`). The
+prompt is also written to `.ghiw/prompt.md`, and stdin stays empty. An exit code listed in
+`limitExitCodes` means a usage limit; a run that exits non-zero or writes no outcome is a usage limit
+when a line of its output matches one of `limitPatterns` (regular expressions, case-insensitive), and
+an error otherwise. Exit code 0 with a valid outcome file is a finished run.
+
+```json
+{ "name": "aider", "agent": "command", "account": "openrouter", "priority": 5,
+  "command": ["aider", "--yes-always", "--message", "{prompt}"],
+  "limitPatterns": ["rate limit", "quota exceeded"], "limitExitCodes": [75] }
+```
 
 **Which model ran** is read from where each agent reveals it: Claude's init event, Codex's own
 session file in its home, Antigravity's log in its profile, and for ClaudeLocal the gateway's model
@@ -771,7 +788,9 @@ first, and a moved UI listener reopens on its new address.
 | `workers[].priority` | 100 | Lower is preferred when several idle workers are eligible. |
 | `workers[].tags` | `[]` | Extra capabilities of this worker. |
 | `workers[].model`, `maxBudgetUsdPerRun` | agent default | Passed to agents that support them. |
-| `workers[].command`, `limitPatterns` | per kind | How a `command` agent is run and how its limits are recognised. |
+| `workers[].command` | — | A `command` worker's argument template, program first, with the `{prompt}`, `{worktree}`, `{outcome}` and `{session}` placeholders; see [Workers](#-workers). Required for `command` workers. |
+| `workers[].limitPatterns` | `[]` | Regular expressions (case-insensitive) that mark a failed `command` run as a usage limit when a line of its output matches. |
+| `workers[].limitExitCodes` | `[]` | Exit codes with which a `command` agent reports a usage limit. |
 | `fleet.claimValidity` | 7 days | Claim validity after the last renewal. |
 | `fleet.claimGrace` | 1 day | Added before another worker may take an unrenewed claim over (8 days in total). |
 | `fleet.checkpointInterval` | 5 min | Checkpoint cadence during a run. |
@@ -1136,7 +1155,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   provider/model`, with every permission allowed in the run's own configuration, for models behind
   any provider OpenCode supports, local ones included. Tested against a fake replaying captured
   OpenCode output; verified against a real installation in F15.8.
-- [ ] 🟥 **F12.7** `command` adapter: argument template with `{prompt}`, `{worktree}`, `{outcome}`,
+- [x] 🟥 **F12.7** `command` adapter: argument template with `{prompt}`, `{worktree}`, `{outcome}`,
   `{session}` placeholders, configured limit patterns and exit codes, for any further CLI agent.
 - [ ] 🟥 **F12.8** `workers` command: list workers with agent, installation, version, account,
   availability and reset time. `--detect` proposes one worker per installation it finds. `add-worker`
@@ -1190,7 +1209,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F14.11** Log page: a local agent's run as a chat log (messages, tool calls and their
   output, errors), read from the run's own output file while it is written and refreshed live.
 - [ ] 🟥 **F14.4** Worker actions: add from detected installations or by hand, edit every worker
-  setting (agent, installation, account, priority, tags, model, budget, command and limit patterns),
+  setting (agent, installation, account, priority, tags, model, budget, command, limit patterns and
+  limit exit codes),
   remove (releases the claim), pause, resume, release claim.
 - [x] 🟥 **F14.8** Settings page: every remaining configuration key, with its default and its source
   (file or default), inline validation through the F0.3 validator, atomic save and live apply (F0.7).
