@@ -198,6 +198,23 @@ comment, push and merge it would have made.
 startup checks, exactly one poll-and-work pass, and it waits for the work that pass started before
 exiting — it never serves the UI.
 
+`github-issue-worker list` shows each watched repository's last successful poll (UTC, or
+`never polled`), counts by issue lifecycle state, and its current open issues with number, title,
+state and current holder when claimed. It includes queued and remotely worked issues, excludes
+pull requests, and does not start workers. Counts and current issues come from the same read-only
+snapshot; the poll timestamp is persisted separately from the issue/comment cursors. A successful
+unchanged poll advances it; a failed poll does not.
+
+`github-issue-worker remove <repo>` accepts the same repository references as `add`. It stops
+watching only that repository and checkpoints and releases all its working or paused claims held
+by this manager, including claims retained across a restart. A running manager handles the request
+through an authenticated loopback control channel, independent of the optional UI: it stops the
+affected runs before publishing their checkpoints and releasing their claims, and acknowledges
+completion before the command reports success. When the manager is offline, the command performs
+the same operation directly. The watch-list change is saved only after release succeeds; failures
+are reported and can be retried without discarding recoverable work. Other managers' claims and
+other repositories are untouched. Repeating removal is harmless.
+
 `github-issue-worker status` shows what is going on, in headed sections: the manager, its workers
 (agent, account, and `limited until …` while the account waits for its reset), its accounts (each
 one `available` or `limited`, when the limit resets, and the issues its workers paused that wait on
@@ -576,6 +593,8 @@ for good. Every case the manager knows about releases the claim at once, with a 
 - the issue moves to a waiting state (NeedsInput, AwaitingReview, Failed) or is done;
 - a worker is removed from the manager's configuration (CLI or UI): its claim is released on the
   next start, or immediately when the manager is running;
+- a repository is removed from the watch list: its local runs stop, their work is checkpointed,
+  and this manager's claims in that repository are released before removal completes;
 - a worker stays *unavailable* (not installed, logged out, broken) for more than `releaseBrokenAfter`
   (default 1 hour);
 - you release it yourself: `github-issue-worker release <owner/repo#n>`, or the UI. Releasing another
