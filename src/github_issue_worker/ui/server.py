@@ -6,6 +6,7 @@ import logging
 import socket
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import uvicorn
@@ -42,13 +43,25 @@ class UiServer:
         for up to ``wait_for_port`` seconds."""
         give_up = time.monotonic() + wait_for_port
         while True:
+            if self._thread.ident is not None:  # a thread runs once; every attempt needs its own
+                self._server = uvicorn.Server(self._config)
+                self._thread = threading.Thread(target=self._server.run, daemon=True)
             if self._attempt(timeout):
                 return True
             if time.monotonic() + retry > give_up:
                 return False
             time.sleep(retry)
-            self._server = uvicorn.Server(self._config)
-            self._thread = threading.Thread(target=self._server.run, daemon=True)
+
+    def keep_trying(
+        self, retry: float = 15.0, on_listening: Callable[[], None] | None = None
+    ) -> None:
+        """Go on trying the port in the background for as long as the manager runs."""
+
+        def loop() -> None:
+            if self.start(wait_for_port=float("inf"), retry=retry) and on_listening:
+                on_listening()
+
+        threading.Thread(target=loop, daemon=True, name="ui-port").start()
 
     def _attempt(self, timeout: float) -> bool:
         self._thread.start()

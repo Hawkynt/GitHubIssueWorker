@@ -73,3 +73,21 @@ def test_the_ui_waits_for_a_port_that_is_still_taken() -> None:
         assert server.start(wait_for_port=10, retry=0.2)
     finally:
         server.stop()
+
+
+@pytest.mark.slow  # a real socket and a real server, about a second
+def test_a_ui_that_lost_the_race_for_its_port_keeps_trying() -> None:
+    port = free_port()
+    held = socket.socket()
+    held.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    held.bind(("127.0.0.1", port))
+    held.listen()
+    server = UiServer(DemoBackend(), "127.0.0.1", port)
+    assert not server.start(wait_for_port=0)  # gave up at once, as watch does after a minute
+    listening = threading.Event()
+    server.keep_trying(retry=0.2, on_listening=listening.set)
+    threading.Timer(0.5, held.close).start()
+    try:
+        assert listening.wait(10)
+    finally:
+        server.stop()

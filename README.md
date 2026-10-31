@@ -1136,7 +1136,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
 ### F14 — Local UI
 
 - [x] 🟥 **F14.1** The manager serves the UI on `127.0.0.1:<ui.port>`. A non-loopback bind is refused
-  without `ui.token`, and with one every request must carry it. `--no-ui` disables it.
+  without `ui.token`, and with one every request must carry it. `--no-ui` disables it. A port still
+  taken by a stopping manager is tried again until it is free, and an open page that loses its
+  manager says so, with the time its data is from, until it reconnects.
 - [ ] 🟥 **F14.2** Workers page: per worker the agent, the model it runs on, installation and
   version, account and usage state with reset time, current issue (link), step, local branch,
   worktree path, time on the issue, last checkpoint and run cost, updated live.

@@ -73,3 +73,24 @@ def test_buttons_answer_with_many_tabs_open(browser: Browser, server: UiServer) 
         page.click("form[action='/workers/local/resume'] button")
     assert "local takes issues again" in page.inner_text("main")
     context.close()
+
+
+def test_a_page_that_lost_its_manager_says_so_and_recovers(browser: Browser) -> None:
+    # The manager restarted without its UI; the open page went on showing a run as "merge".
+    port = free_port()
+    running = UiServer(DemoBackend(), "127.0.0.1", port)
+    assert running.start()
+    page = browser.new_page(reduced_motion="reduce")
+    page.goto(running.url + "/workers")
+    running.stop()
+    page.wait_for_selector("p.lost:not([hidden])", timeout=10_000)
+    assert "The manager is not answering" in page.inner_text("p.lost")
+    assert page.evaluate("document.body.classList.contains('disconnected')")
+    back = UiServer(DemoBackend(), "127.0.0.1", port)
+    assert back.start(wait_for_port=10)
+    try:
+        page.wait_for_selector("p.lost", state="hidden", timeout=10_000)
+        assert not page.evaluate("document.body.classList.contains('disconnected')")
+    finally:
+        back.stop()
+        page.close()
