@@ -4,8 +4,13 @@ import re
 from datetime import UTC, datetime, timedelta
 
 from github_issue_worker.application.manager import WorkerSlot
-from github_issue_worker.application.status import RepositoryClaims, render_status
-from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState, Holder
+from github_issue_worker.application.status import (
+    RepositoryClaims,
+    known_managers,
+    render_status,
+)
+from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState, Holder, RunEntry
+from github_issue_worker.domain.issue import Actor, Issue
 
 NOW = datetime(2026, 10, 30, 10, 0, tzinfo=UTC)
 POLICY = ClaimPolicy(validity=timedelta(days=7), grace=timedelta(days=1))
@@ -187,3 +192,72 @@ def test_no_workers_says_so() -> None:
 def test_the_same_claims_and_clock_render_the_same_text() -> None:
     repositories = [RepositoryClaims("o/a", (claim(12), claim(2, state=ClaimState.DONE)))]
     assert render(repositories) == render(repositories)
+
+
+def test_given_a_claim_with_recorded_model_when_slot_has_none_then_claim_model_is_shown() -> None:
+    held = claim(12).replace(model="claude-opus-5-5")
+    lines = section(render([RepositoryClaims("o/a", (held,))]), "o/a")
+    assert re.split(r"\s{2,}", lines[2].strip())[:3] == ["#12", "alpha", "Claude Opus 5.5"]
+
+
+def test_given_claims_and_runs_across_managers_when_rendered_then_known_managers_are_listed() -> (
+    None
+):
+    earlier = RunEntry(
+        manager="runner@cloud",
+        worker="gemini",
+        agent="antigravity",
+        model="Gemini 4 Argon",
+        kind="first",
+        verdict="needs-input",
+        started=NOW - timedelta(hours=2),
+        finished=NOW - timedelta(hours=1),
+    )
+    claims = (
+        claim(12).replace(runs=(earlier,)),
+        claim(14, manager="other@box", worker="w", renewed=timedelta(hours=3)),
+    )
+    managers = known_managers(claims, ME, "idle@laptop")
+    assert managers == ("idle@laptop", "manager@host", "other@box", "runner@cloud")
+    lines = section(render([RepositoryClaims("o/a", claims, managers=managers)]), "o/a")
+    assert lines[0] == "  Known managers: idle@laptop, manager@host, other@box, runner@cloud"
+
+
+def test_given_a_paused_claim_without_reset_time_when_rendered_then_it_shows_paused() -> None:
+    paused = claim(12, state=ClaimState.PAUSED, paused_until=None)
+    row = section(render([RepositoryClaims("o/a", (paused,))]), "o/a")[2]
+    assert row.split()[:4] == ["#12", "alpha", "-", "paused"]
+
+
+def test_given_open_unserved_issues_when_rendered_then_each_is_listed_with_routing() -> None:
+    unserved = (
+        Issue(
+            number=19,
+            title="GPU benchmark fails",
+            body="",
+            state="open",
+            author=Actor("hawkynt"),
+            labels=frozenset({"worker:unserved", "needs:gpu", "agent:claude", "bug"}),
+            is_pull_request=False,
+            created_at=NOW,
+            updated_at=NOW,
+        ),
+        Issue(
+            number=7,
+            title="Windows installer path",
+            body="",
+            state="open",
+            author=Actor("hawkynt"),
+            labels=frozenset({"worker:unserved", "needs:windows"}),
+            is_pull_request=False,
+            created_at=NOW,
+            updated_at=NOW,
+        ),
+    )
+    lines = section(render([RepositoryClaims("o/a", (), unserved=unserved)]), "o/a")
+    idx = lines.index("  Unserved issues")
+    assert lines[idx + 1 :] == [
+        "    ISSUE  ROUTING                  TITLE",
+        "    #7     needs:windows            Windows installer path",
+        "    #19    agent:claude, needs:gpu  GPU benchmark fails",
+    ]

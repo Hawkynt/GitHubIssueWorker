@@ -290,6 +290,67 @@ def test_status_without_watched_repositories_points_to_add(
     )
 
 
+def test_given_claims_and_unserved_issues_when_status_runs_then_it_prints_fleet_state(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from github_issue_worker.domain.issue import Actor, Issue
+
+    now = Clock().now()
+    policy = ClaimPolicy(timedelta(days=7), timedelta(days=1))
+    mine = policy.new_claim(
+        12,
+        Holder("manager@host", "alpha"),
+        now - timedelta(minutes=5),
+        "issue/12-x",
+        model="claude-opus-5-5",
+    )
+    remote = policy.new_claim(
+        18, Holder("other@box", "codex"), now - timedelta(hours=1), "issue/18-y"
+    ).replace(state=ClaimState.PAUSED, paused_until=now + timedelta(hours=3))
+    unserved_issue = Issue(
+        number=25,
+        title="Needs GPU worker",
+        body="",
+        state="open",
+        author=Actor("hawkynt"),
+        labels=frozenset({"worker:unserved", "needs:gpu"}),
+        is_pull_request=False,
+        created_at=now,
+        updated_at=now,
+    )
+    served_issue = Issue(
+        number=12,
+        title="Working issue",
+        body="",
+        state="open",
+        author=Actor("hawkynt"),
+        labels=frozenset({"worker:working"}),
+        is_pull_request=False,
+        created_at=now,
+        updated_at=now,
+    )
+    runtime = StatusRuntime([mine, remote])
+    runtime.slots = [
+        WorkerSlot(
+            name="alpha",
+            agent="claude",
+            account="personal",
+            observed_model="claude-opus-5-5",
+        )
+    ]
+    runtime.watch = lambda settings: SimpleNamespace(  # type: ignore[method-assign]
+        store=runtime._store,
+        host=SimpleNamespace(open_issues=lambda: [served_issue, unserved_issue]),
+    )
+    assert run_status(watched_config(tmp_path), runtime) == 0
+    out = capsys.readouterr().out
+    assert "  Known managers: manager@host, other@box" in out
+    assert "Claude Opus 5.5" in out
+    assert "paused until 2026-10-30 13:00 UTC (in 3h 0m)" in out
+    assert "  Unserved issues" in out
+    assert "#25" in out and "needs:gpu" in out and "Needs GPU worker" in out
+
+
 def test_watch_explains_a_missing_git_identity_instead_of_crashing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

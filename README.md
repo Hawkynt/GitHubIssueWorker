@@ -194,12 +194,14 @@ be configured: they find each other's claims in the repository.
 comment, push and merge it would have made.
 
 `github-issue-worker status` shows what is going on, in headed sections: the manager, its workers
-(agent, account, and `limited until …` while the account waits for its reset), then one section per
-watched repository with the claims held by this manager apart from those held by other managers.
-Each claim shows its worker, state, step, branch, how long ago it was renewed and when it expires;
-paused claims show when they resume and claims nobody renewed for validity plus grace show as
-`abandoned`. Finished claims (done or released) are only counted. Times are UTC with the distance
-from now, `2026-11-06 10:00 UTC (in 6d 23h)`.
+(agent, account, the model each runs on, and `limited until …` while the account waits for its
+reset), then one section per watched repository with the known managers, the claims held by this
+manager (with the worker's model) apart from those held by other managers, and any unserved issues
+(`worker:unserved`, with their routing labels and title). Each claim shows its worker or holder,
+state, step, branch, how long ago it was renewed and when it expires; paused claims show when they
+resume and claims nobody renewed for validity plus grace show as `abandoned`. Finished claims (done
+or released) are only counted. Times are UTC with the distance from now,
+`2026-11-06 10:00 UTC (in 6d 23h)`.
 
 ## 🖼️ Screenshots
 
@@ -1055,7 +1057,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   the cache is written, and each would-be write is logged.
 - [ ] 🟥 **F10.5** `release <owner/repo#n> [--force]`: release a claim with a checkpoint. Without
   `--force` only this manager's claims; with it any claim, recorded in the claim's history.
-- [ ] 🟧 **F10.6** `status`: this manager's workers with the model each runs on, and its claims
+- [x] 🟧 **F10.6** `status`: this manager's workers with the model each runs on, and its claims
   with the worker's model, and fleet-wide per repository: known managers, claims with holder, step
   and expiry, paused issues with their reset, unserved issues.
 - [ ] 🟧 **F10.7** Service recipes: a systemd user unit and a Windows scheduled task, documented and
