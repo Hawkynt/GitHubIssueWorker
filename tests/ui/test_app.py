@@ -265,6 +265,27 @@ def test_releasing_another_managers_claim_needs_typed_confirmation(client: TestC
     assert right.status_code == 303
 
 
+def test_saving_only_the_width_of_a_segment_keeps_its_default_hue(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    form = _settings_form(client)
+    form["modelColors.anthropic.width"] = "120"
+    client.post("/settings", data=form)
+    anthropic = backend.config().model_colors.anthropic
+    assert (anthropic.hue, anthropic.width) == (Configuration().model_colors.anthropic.hue, 120)
+    assert 'name="modelColors.anthropic.hue" value="70"' in client.get("/settings").text
+
+
+def test_saving_only_the_hue_of_a_segment_keeps_its_default_width(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    form = _settings_form(client)
+    form["modelColors.google.hue"] = "200"
+    client.post("/settings", data=form)
+    google = backend.config().model_colors.google
+    assert (google.hue, google.width) == (200, Configuration().model_colors.google.width)
+
+
 def _settings_form(client: TestClient) -> dict[str, str]:
     """The settings form as a browser would submit it unchanged."""
     html = client.get("/settings").text

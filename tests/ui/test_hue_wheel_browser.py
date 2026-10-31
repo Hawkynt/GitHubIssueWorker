@@ -226,6 +226,39 @@ def test_save_stores_what_the_wheel_set(
     page.close()
 
 
+def test_a_dragged_width_survives_save_and_reload_with_its_hue(
+    browser: Browser, server: UiServer, backend: DemoBackend
+) -> None:
+    default = ModelColorsSettings().anthropic
+    page = _open(browser, server)
+    end = default.hue + default.width / 2
+    _drag(page, "anthropic", end, end + 15)
+    width = default.width + 30
+    expect(_field(page, "anthropic", "width")).to_have_value(str(width))
+    page.get_by_role("button", name="Save settings").click()
+    expect(page.locator(".notice")).to_contain_text("Settings saved")
+    page.reload()
+    expect(_handle(page, "anthropic", "hue")).to_have_attribute("aria-valuenow", str(default.hue))
+    expect(_handle(page, "anthropic", "end")).to_have_attribute("aria-valuenow", str(width))
+    expect(_field(page, "anthropic", "hue")).to_have_value(str(default.hue))
+    page.close()
+
+
+def test_a_dragged_hue_survives_save_and_reload_with_its_width(
+    browser: Browser, server: UiServer, backend: DemoBackend
+) -> None:
+    default = ModelColorsSettings().google
+    page = _open(browser, server)
+    _drag(page, "google", default.hue, default.hue + 25)
+    page.get_by_role("button", name="Save settings").click()
+    expect(page.locator(".notice")).to_contain_text("Settings saved")
+    page.reload()
+    expect(_handle(page, "google", "hue")).to_have_attribute("aria-valuenow", str(default.hue + 25))
+    expect(_handle(page, "google", "end")).to_have_attribute("aria-valuenow", str(default.width))
+    expect(_field(page, "google", "width")).to_have_value(str(default.width))
+    page.close()
+
+
 def test_a_finger_drags_an_arc_without_scrolling_the_page(
     browser: Browser, server: UiServer
 ) -> None:

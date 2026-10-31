@@ -23,6 +23,7 @@ from pydantic import (
     Field,
     PlainSerializer,
     ValidationError,
+    model_validator,
 )
 from pydantic.alias_generators import to_camel
 
@@ -115,6 +116,22 @@ class ModelColorsSettings(_Settings):
     google: HueSegment = Field(default_factory=lambda: HueSegment(hue=155, width=55))
     other: HueSegment = Field(default_factory=lambda: HueSegment(hue=320, width=120))
     """Makers not named above share this segment, each keeping a fixed part of it."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _keep_maker_defaults(cls, data: Any) -> Any:
+        """A segment that sets only its hue or only its width keeps its maker's default for the
+        other, never ``HueSegment``'s own: a saved width alone must not turn the hue into 0."""
+        if not isinstance(data, dict):
+            return data
+        defaults = cls.model_construct()
+        completed = dict(data)
+        for name, info in cls.model_fields.items():
+            for key in {name, info.alias or name}:
+                given = completed.get(key)
+                if isinstance(given, dict):
+                    completed[key] = {**getattr(defaults, name).model_dump(), **given}
+        return completed
 
 
 class PathInstallation(_Settings):

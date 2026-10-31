@@ -68,6 +68,22 @@ def test_every_maker_has_a_hue_segment_by_default() -> None:
     assert (colors.other.hue, colors.other.width) == (320, 120)
 
 
+@pytest.mark.parametrize("maker", ["anthropic", "openai", "google", "other"])
+def test_a_segment_setting_only_its_width_keeps_its_makers_default_hue(maker: str) -> None:
+    default = getattr(parse("{}").model_colors, maker)
+    loaded = parse(json.dumps({"modelColors": {maker: {"width": 33}}}))
+    segment = getattr(loaded.model_colors, maker)
+    assert (segment.hue, segment.width) == (default.hue, 33)
+
+
+@pytest.mark.parametrize("maker", ["anthropic", "openai", "google", "other"])
+def test_a_segment_setting_only_its_hue_keeps_its_makers_default_width(maker: str) -> None:
+    default = getattr(parse("{}").model_colors, maker)
+    loaded = parse(json.dumps({"modelColors": {maker: {"hue": 33}}}))
+    segment = getattr(loaded.model_colors, maker)
+    assert (segment.hue, segment.width) == (33, default.width)
+
+
 def test_a_hue_off_the_wheel_is_refused() -> None:
     paths = error_paths('{"modelColors": {"anthropic": {"hue": 400}}}')
     assert paths == ["modelColors.anthropic.hue"]
