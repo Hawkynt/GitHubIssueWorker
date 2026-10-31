@@ -1,20 +1,20 @@
 {
   "branch": "issue/79-f11-12-maxtakeovers-takeovers-without-pr",
-  "claimedAt": "2026-10-31T11:02:20Z",
+  "claimedAt": "2026-10-31T11:47:31Z",
   "consumedThrough": {
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T11:03:52Z",
-  "generation": 1,
+  "expiresAt": "2026-11-07T11:47:31Z",
+  "generation": 2,
   "holder": {
     "manager": "hawky-desktop-96a3",
-    "worker": "codex.2"
+    "worker": "claude.3"
   },
   "issue": 79,
-  "model": "GPT 6.1 Sol",
+  "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T11:04:00Z",
+  "renewedAt": "2026-10-31T11:47:31Z",
   "runs": [
     {
       "agent": "codex",
@@ -27,7 +27,7 @@
       "worker": "codex.2"
     }
   ],
-  "state": "released",
+  "state": "working",
   "step": "needs-input",
   "takeovers": 0
 }
