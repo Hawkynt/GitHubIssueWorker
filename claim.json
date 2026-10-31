@@ -1,19 +1,20 @@
 {
   "branch": "issue/71-f5-3-link-the-issue-branch-to-the-issue",
-  "claimedAt": "2026-10-31T09:07:58Z",
+  "claimedAt": "2026-10-31T11:51:19Z",
   "consumedThrough": {
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T09:11:23Z",
-  "generation": 1,
+  "expiresAt": "2026-11-07T11:51:19Z",
+  "generation": 2,
   "holder": {
     "manager": "hawky-desktop-96a3",
-    "worker": "codex"
+    "worker": "claude.2"
   },
   "issue": 71,
+  "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T09:11:30Z",
+  "renewedAt": "2026-10-31T11:51:19Z",
   "runs": [
     {
       "agent": "codex",
@@ -26,7 +27,7 @@
       "worker": "codex"
     }
   ],
-  "state": "released",
+  "state": "working",
   "step": "needs-input",
   "takeovers": 0
 }
