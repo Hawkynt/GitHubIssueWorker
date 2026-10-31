@@ -1,4 +1,4 @@
-"""What ``status`` prints (F10.6, F13.7): workers and claims as headed, aligned plain text.
+"""What ``status`` prints (F10.6, F13.7): workers, accounts and claims as headed, aligned text.
 
 Rendering is pure: the command gathers slots, account limits and claims, and this module turns them
 into text against one ``now``, so the same inputs always give the same output.
@@ -10,6 +10,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from github_issue_worker.application.accounts import AccountUsage, account_usage
 from github_issue_worker.application.manager import WorkerSlot
 from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState
 from github_issue_worker.domain.model_name import display_model
@@ -158,6 +159,24 @@ def _repository(
     return lines
 
 
+def _accounts(usage: Sequence[AccountUsage], now: datetime) -> list[str]:
+    """Each account's state, its reset while limited and the issues paused on it (F13.7)."""
+    lines = ["Accounts"]
+    if not usage:
+        return [*lines, "  no accounts configured"]
+    rows = [["ACCOUNT", "STATE", "RESETS", "WAITING"]]
+    for account in usage:
+        rows.append(
+            [
+                account.name,
+                account.state,
+                when(account.limited_until, now) if account.limited_until else "-",
+                ", ".join(f"{repo}#{issue}" for repo, issue in account.waiting) or "-",
+            ]
+        )
+    return lines + table(rows, "  ")
+
+
 def render_status(
     manager_id: str,
     slots: Sequence[WorkerSlot],
@@ -165,6 +184,7 @@ def render_status(
     repositories: Sequence[RepositoryClaims],
     policy: ClaimPolicy,
     now: datetime,
+    accounts: Sequence[str] = (),
 ) -> str:
     """The whole ``status`` output, one section per block, blocks separated by a blank line."""
     sections = [["Manager", f"  {manager_id}"]]
@@ -178,6 +198,14 @@ def render_status(
     else:
         workers.append("  no workers configured")
     sections.append(workers)
+    paused = (
+        (repository.repository, claim.issue, claim.holder.worker)
+        for repository in repositories
+        for claim in repository.claims
+        if claim.state is ClaimState.PAUSED and claim.holder.manager == manager_id
+    )
+    account_of = {slot.name: slot.account for slot in slots}
+    sections.append(_accounts(account_usage(accounts, account_of, limited_until, paused, now), now))
     for repository in repositories:
         sections.append(_repository(repository, manager_id, policy, now, slots))
     if not repositories:

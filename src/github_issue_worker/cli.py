@@ -351,6 +351,7 @@ def _status(
             repositories,
             ClaimPolicy(fleet.claim_validity, fleet.claim_grace),
             runtime.api.clock.now(),
+            tuple(config.accounts),
         ),
         end="",
     )
