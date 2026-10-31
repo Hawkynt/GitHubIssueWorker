@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import secrets
 from typing import Annotated, Any
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import (
@@ -68,7 +68,7 @@ def create_app(backend: Backend) -> FastAPI:
         return dict(parse_qsl(raw, keep_blank_values=True))
 
     def back(path: str, notice: str = "") -> RedirectResponse:
-        target = f"{path}?notice={notice}" if notice else path
+        target = f"{path}?notice={quote(notice)}" if notice else path
         return RedirectResponse(target, status_code=303)
 
     def save(data: dict[str, Any]) -> Configuration:

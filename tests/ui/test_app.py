@@ -702,3 +702,12 @@ def test_remote_rows_show_the_model_the_other_manager_wrote_into_the_claim(
     remote = crew.split('aria-label="Remote"', 1)[1]
     assert "claude on <span class=nowrap>laptop-01ab</span>, Claude Sonnet 5.5" in remote
     assert "local on <span class=nowrap>ci-runner-03</span>, Qwen3.8 Flash Next IQ3_S" in remote
+
+
+def test_a_notice_naming_an_issue_reaches_the_page_whole(client: TestClient) -> None:
+    # "#91" in a bare query string would start the URL's fragment and cut the notice there.
+    response = client.post(
+        "/claims/release",
+        data={"repository": "acme/billing-cli", "issue": "91", "confirm": "acme/billing-cli#91"},
+    )
+    assert "Released acme/billing-cli#91." in response.text
