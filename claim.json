@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T11:34:47Z",
+  "expiresAt": "2026-11-07T11:52:27Z",
   "generation": 1,
   "holder": {
     "manager": "hawky-desktop-96a3",
@@ -14,7 +14,7 @@
   "issue": 70,
   "model": "Qwen3.8 Flash Next IQ3_S",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T11:34:47Z",
+  "renewedAt": "2026-10-31T11:52:27Z",
   "state": "working",
   "step": "triage",
   "takeovers": 0
