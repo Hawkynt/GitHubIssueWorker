@@ -1,0 +1,21 @@
+{
+  "branch": "issue/73-f6-8-keep-each-run-s-transcript-worker-a",
+  "claimedAt": "2026-10-31T11:19:02Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T11:19:02Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "codex.2"
+  },
+  "issue": 73,
+  "model": "GPT 6.1 Sol",
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T11:19:02Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
