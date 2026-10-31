@@ -209,6 +209,7 @@ class GitHubHost:
                 str(run.get("name") or "workflow"),
                 run.get("html_url", ""),
                 str(run.get("event") or ""),
+                (run.get("head_repository") or {}).get("full_name") == self.repository,
             )
             for run in (data or {}).get("workflow_runs", [])
             if run.get("status") == "completed" and run.get("conclusion") == "action_required"

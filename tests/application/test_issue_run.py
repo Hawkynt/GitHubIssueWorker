@@ -451,3 +451,13 @@ def test_while_ci_waits_for_approval_the_run_looks_again_within_ten_seconds(
     assert h.run().kind == "merged"
     assert slept[0] == 10.0  # blocked: soon again
     assert slept[1] == 30.0  # no longer blocked: the normal interval
+
+
+def test_ci_of_the_repositorys_own_branch_is_approved_without_asking(tmp_path: Path) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
+    h.host.states = ["blocked", "clean"]
+    h.host.approvals = [[WaitingRun(9, "CI", "https://x/runs/9", "pull_request", own=True)], []]
+    seen: list[object] = []
+    assert h.run(blocked=seen.append).kind == "merged"
+    assert h.host.approved == [9]
+    assert all(blocker is None for blocker in seen)  # nobody was asked

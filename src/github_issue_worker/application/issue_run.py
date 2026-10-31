@@ -442,6 +442,12 @@ class IssueRun:
     def _report_approvals(self, current: PullRequest) -> bool:
         """CI that GitHub holds back for approval would wait silently; say so where it shows."""
         waiting = self.host.waiting_for_approval(current.head_sha)
+        # Runs of this repository's own branch (the manager's pushes, the screenshot bot) are
+        # approved here; only a fork's need a person.
+        for run in waiting:
+            if run.own:
+                self._fenced(partial(self.host.approve_run, run.id))
+        waiting = [run for run in waiting if not run.own]
         if not waiting:
             self.blocked(None)
             return False

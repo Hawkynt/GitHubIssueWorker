@@ -209,6 +209,16 @@ def test_runs_waiting_for_approval_are_found_and_approved() -> None:
                         "status": "completed",
                         "conclusion": "action_required",
                         "html_url": "https://x/runs/7",
+                        "head_repository": {"full_name": "someone/fork"},
+                    },
+                    {
+                        "id": 9,
+                        "name": "CI",
+                        "event": "pull_request",
+                        "status": "completed",
+                        "conclusion": "action_required",
+                        "html_url": "https://x/runs/9",
+                        "head_repository": {"full_name": REPO},
                     },
                     # approved a moment ago and running: no longer waiting, whatever the filter
                     {
@@ -223,8 +233,9 @@ def test_runs_waiting_for_approval_are_found_and_approved() -> None:
             }
         }
     )
-    ((waiting),) = gh.waiting_for_approval("abc")
-    assert (waiting.id, waiting.name, waiting.url) == (7, "CI", "https://x/runs/7")
-    assert waiting.event == "pull_request"
+    fork, own = gh.waiting_for_approval("abc")
+    assert (fork.id, fork.name, fork.url, fork.own) == (7, "CI", "https://x/runs/7", False)
+    assert fork.event == "pull_request"
+    assert (own.id, own.own) == (9, True)
     gh.approve_run(7)
     assert ("POST", f"repos/{REPO}/actions/runs/7/approve", None) in api.calls

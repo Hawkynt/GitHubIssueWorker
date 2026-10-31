@@ -1180,6 +1180,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
   pull request's CI is held back for approval, the worker's sub-row shows *Blocked* with the
   waiting runs linked and an *Approve CI* button, the crew panel shows *Needs you*, and the Issues
   page says "blocked"; the blocker clears once the runs start.
+  Runs of the repository's own branches (the manager's pushes, the screenshot bot) are approved by
+  the manager itself; only runs of a fork wait for a person.
 - [x] 🟥 **F14.9** `ui.token` is write-only in the UI, and a non-loopback `ui.bind` cannot be saved
   without one.
 - [x] 🟧 **F14.15** One deck for every page: Issues, Repositories, Fleet, Settings, the worker form
