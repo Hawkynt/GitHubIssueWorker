@@ -73,6 +73,8 @@ class ClaimView:
     paused_until: datetime | None = None
     merge_conflict: bool = False
     wait_reason: str = ""
+    model: str = ""
+    """The model its holder runs, as the holder's manager wrote it into the claim."""
 
 
 @dataclass(frozen=True, slots=True)

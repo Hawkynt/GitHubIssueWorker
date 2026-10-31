@@ -486,3 +486,49 @@ def test_a_worker_whose_runs_never_reported_a_model_uses_its_agents_default(
     )
     runtime.sync_slots()
     assert [slot.observed_model for slot in runtime.slots] == ["Qwen3.8-Flash-Next IQ3_S"] * 2
+
+
+def test_local_runs_are_published_into_their_claims_once(tmp_path: Path) -> None:
+    # Runs from before the history was shared exist only locally; other managers need them too.
+    from github_issue_worker.application.history import RunRecord
+
+    clock = FakeClock(datetime(2026, 10, 30, tzinfo=UTC))
+    store = InMemoryClaimStore()
+    coordinator = Coordinator(store, clock, ClaimPolicy(timedelta(days=7), timedelta(days=1)))
+    handle = coordinator.claim(3, Holder("m", "claude"), "issue/3-x")
+    assert handle is not None
+    coordinator.complete(handle)
+    watch = RepositoryWatch(name="o/a", host=FakeHost(), coordinator=coordinator, store=store)
+    runtime = Runtime(
+        config=parse("{}"),
+        home=tmp_path,
+        api=None,  # type: ignore[arg-type]
+        state=JsonStateStore(tmp_path / "state.json"),
+        manager_id="m",
+        workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+        state_path=tmp_path / "state.json",
+    )
+    started = datetime(2026, 10, 30, 9, 0, 0, 123456, tzinfo=UTC)
+    finished = started + timedelta(minutes=12)
+    for issue, repository in ((3, "o/a"), (4, "o/a"), (3, "o/b")):
+        runtime.history.append(
+            RunRecord(
+                repository,
+                issue,
+                "claude",
+                "claude",
+                "Claude Opus 5.5",
+                "first",
+                "merged",
+                started,
+                finished,
+                started,
+            )
+        )
+    runtime.publish_history(watch)
+    runtime.publish_history(watch)  # hourly: nothing twice
+    claim = store.current(3)
+    assert claim is not None
+    assert [(run.manager, run.model, run.verdict) for run in claim.runs] == [
+        ("m", "Claude Opus 5.5", "merged")
+    ]  # issue 4 has no claim to carry it, o/b is another repository

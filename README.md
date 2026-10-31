@@ -499,9 +499,23 @@ The claim's `claim.json` records:
   "pausedUntil": null,
   "consumedThrough": { "comment": 2398177412, "review": null },
   "takeovers": 0,
-  "branch": "issue/42-retry-on-timeout"
+  "branch": "issue/42-retry-on-timeout",
+  "model": "GPT 6.1 Sol",
+  "runs": [
+    {
+      "manager": "laptop-01ab", "worker": "claude", "agent": "claude",
+      "model": "Claude Opus 5.5", "kind": "first", "verdict": "needs-input",
+      "started": "2026-10-29T15:40:02Z", "finished": "2026-10-29T15:52:40Z"
+    }
+  ]
 }
 ```
+
+`model` is the model the holder runs, so other managers can show it. `runs` lists every finished
+run on the issue, by any manager, appended with a compare-and-swap like every claim write. The
+cockpit's statistics come from the `runs` of all claims in the watched repositories, so managers
+on different machines that watch the same repositories compute the same numbers; time to merge runs
+from the issue's first run since its last merge, wherever that ran.
 
 **One claim per worker, held up to seven days.** A worker holds at most one claim. The claim is valid
 until `expiresAt`, seven days after its last renewal. The manager renews it at every step, every
@@ -1160,8 +1174,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
   page loaded has a background of its own, distinct from errors and notices, in light and dark; it
   clears when the value is edited back, and a save refused by validation keeps the typed values
   marked. Tested in a real browser.
-- [x] 🟧 **F14.13** Cockpit: every finished run is appended to `history.jsonl` in the state
-  directory and survives restarts and damaged lines. Readouts (merged today, last 7 days with a
+- [x] 🟧 **F14.13** Cockpit: every finished run is appended to its issue's claim (`runs`) and to
+  `history.jsonl` in the state directory, and survives restarts and damaged lines. The statistics
+  come from the claims of the watched repositories, merged with local runs they do not carry, so
+  every manager computes the same numbers; a manager publishes its older local runs into the
+  claims during the hourly sweep. Claims carry their holder's model for remote rows. Readouts (merged today, last 7 days with a
   30-day trace, all time, median time from first run to merge, merge rate), issues merged per day
   split by model, agent or repository over 30/90/180 days, runs per model per week over 26 weeks,
   time to merge by model, agent or repository, a model ledger (runs, merged, median time, first

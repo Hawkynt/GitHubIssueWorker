@@ -55,6 +55,50 @@ def _parse_timestamp(value: str) -> datetime:
 
 
 @dataclass(frozen=True, slots=True)
+class RunEntry:
+    """One finished run on the issue, kept in the claim so every manager reads the same history."""
+
+    manager: str
+    worker: str
+    agent: str
+    model: str
+    kind: str
+    verdict: str
+    started: datetime
+    finished: datetime
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "manager": self.manager,
+            "worker": self.worker,
+            "agent": self.agent,
+            "model": self.model,
+            "kind": self.kind,
+            "verdict": self.verdict,
+            "started": _timestamp(self.started),
+            "finished": _timestamp(self.finished),
+        }
+
+    @staticmethod
+    def from_json(data: dict[str, Any]) -> RunEntry:
+        return RunEntry(
+            manager=str(data["manager"]),
+            worker=str(data["worker"]),
+            agent=str(data.get("agent", "")),
+            model=str(data.get("model", "")),
+            kind=str(data.get("kind", "")),
+            verdict=str(data["verdict"]),
+            started=_parse_timestamp(data["started"]),
+            finished=_parse_timestamp(data["finished"]),
+        )
+
+    @property
+    def key(self) -> tuple[str, str, datetime]:
+        """Which run this is: claims store times to the second, local history finer."""
+        return (self.manager, self.worker, self.started.replace(microsecond=0))
+
+
+@dataclass(frozen=True, slots=True)
 class Claim:
     """The content of ``refs/ghiw/claims/<issue>``."""
 
@@ -72,6 +116,10 @@ class Claim:
     takeovers: int = 0
     merge_conflict: bool = False
     wait_reason: str = ""
+    model: str = ""
+    """The model the holder runs, normalised, so other managers can show it."""
+    runs: tuple[RunEntry, ...] = ()
+    """Every finished run on the issue, by any manager, oldest first."""
 
     def replace(self, **changes: Any) -> Claim:
         return dataclasses.replace(self, **changes)
@@ -80,6 +128,8 @@ class Claim:
         return {
             **({"mergeConflict": True} if self.merge_conflict else {}),
             **({"waitReason": self.wait_reason} if self.wait_reason else {}),
+            **({"model": self.model} if self.model else {}),
+            **({"runs": [run.to_json() for run in self.runs]} if self.runs else {}),
             "issue": self.issue,
             "holder": {"manager": self.holder.manager, "worker": self.holder.worker},
             "generation": self.generation,
@@ -104,6 +154,8 @@ class Claim:
         return Claim(
             merge_conflict=data.get("mergeConflict", False),
             wait_reason=data.get("waitReason", ""),
+            model=str(data.get("model", "")),
+            runs=tuple(RunEntry.from_json(run) for run in data.get("runs") or ()),
             issue=int(data["issue"]),
             holder=Holder(manager=data["holder"]["manager"], worker=data["holder"]["worker"]),
             generation=int(data["generation"]),
@@ -128,8 +180,11 @@ class ClaimPolicy:
     validity: timedelta
     grace: timedelta
 
-    def new_claim(self, issue: int, holder: Holder, now: datetime, branch: str) -> Claim:
+    def new_claim(
+        self, issue: int, holder: Holder, now: datetime, branch: str, model: str = ""
+    ) -> Claim:
         return Claim(
+            model=model,
             issue=issue,
             holder=holder,
             generation=1,
@@ -152,10 +207,12 @@ class ClaimPolicy:
     def renewed(self, claim: Claim, now: datetime, **changes: Any) -> Claim:
         return claim.replace(renewed_at=now, expires_at=now + self.validity, **changes)
 
-    def taken_over(self, claim: Claim, holder: Holder, now: datetime) -> Claim:
-        """The claim after ``holder`` takes it, keeping the issue's branch and consumed events."""
+    def taken_over(self, claim: Claim, holder: Holder, now: datetime, model: str = "") -> Claim:
+        """The claim after ``holder`` takes it, keeping the issue's branch, consumed events and
+        finished runs, and wearing the new holder's model."""
         return claim.replace(
             holder=holder,
+            model=model,
             generation=claim.generation + 1,
             state=ClaimState.WORKING,
             claimed_at=now,

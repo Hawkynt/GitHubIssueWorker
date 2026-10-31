@@ -427,3 +427,17 @@ def test_a_finished_run_leaves_no_blocker_behind() -> None:
     f.new_issues(issue(1))
     f.manager.tick()
     assert f.manager.workers[0].blocker is None
+
+
+def test_the_claim_carries_the_model_and_every_finished_run_for_the_whole_fleet() -> None:
+    f = Fixture(
+        [slot("claude", observed_model="claude-opus-5-5")],
+        verdicts=[Verdict("needs-input"), Verdict("merged")],
+    )
+    f.new_issues(issue(1))
+    f.manager.tick()
+    claim = f.store.current(1)
+    assert claim is not None and claim.model == "Claude Opus 5.5"  # shown on other managers
+    assert [(run.manager, run.model, run.verdict) for run in claim.runs] == [
+        (ME, "Claude Opus 5.5", "needs-input")
+    ]

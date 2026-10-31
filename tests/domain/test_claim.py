@@ -10,6 +10,7 @@ from github_issue_worker.domain.claim import (
     ClaimState,
     ConsumedThrough,
     Holder,
+    RunEntry,
 )
 
 T0 = datetime(2026, 10, 30, 12, 0, 0, tzinfo=UTC)
@@ -127,3 +128,36 @@ def test_taking_over_a_paused_claim_clears_the_obsolete_wait_reason() -> None:
     waiting = claim(state=ClaimState.PAUSED, wait_reason="Token allowance", paused_until=T0)
     resumed = POLICY.taken_over(waiting, HOLDER, T0)
     assert resumed.wait_reason == "" and resumed.paused_until is None
+
+
+def _run(started_minutes: int, verdict: str = "merged", manager: str = "m1") -> RunEntry:
+    started = T0 + timedelta(minutes=started_minutes)
+    return RunEntry(
+        manager=manager,
+        worker="claude",
+        agent="claude",
+        model="Claude Opus 5.5",
+        kind="first",
+        verdict=verdict,
+        started=started,
+        finished=started + timedelta(minutes=10),
+    )
+
+
+def test_the_holders_model_and_the_finished_runs_travel_with_the_claim() -> None:
+    claim = POLICY.new_claim(1, Holder("m1", "claude"), T0, "issue/1-x", model="Claude Opus 5.5")
+    claim = claim.replace(runs=(_run(0, "needs-input"), _run(30)))
+    again = Claim.from_json(claim.to_json())
+    assert again == claim and again.model == "Claude Opus 5.5" and len(again.runs) == 2
+    old = claim.to_json()
+    del old["model"], old["runs"]
+    assert Claim.from_json(old).runs == () and Claim.from_json(old).model == ""  # older claims
+
+
+def test_a_takeover_keeps_the_issues_runs_but_wears_the_new_holders_model() -> None:
+    claim = POLICY.new_claim(1, Holder("m1", "claude"), T0, "issue/1-x", model="Claude Opus 5.5")
+    claim = claim.replace(runs=(_run(0),))
+    taken = POLICY.taken_over(
+        claim, Holder("m2", "codex"), T0 + timedelta(days=9), model="GPT 6.1 Sol"
+    )
+    assert taken.model == "GPT 6.1 Sol" and taken.runs == claim.runs

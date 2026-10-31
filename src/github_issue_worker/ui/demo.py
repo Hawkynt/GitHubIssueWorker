@@ -198,6 +198,7 @@ CLAIMS = (
         "issue/219-buffer-metrics-while-offline",
         paused_until=NOW + timedelta(hours=1, minutes=10),
         wait_reason="Rate control",
+        model="Claude Sonnet 5.5",
     ),
     ClaimView(
         "acme/design-tokens",
@@ -232,6 +233,7 @@ CLAIMS = (
         NOW - timedelta(days=2, hours=3),
         NOW + timedelta(days=4, hours=21),
         "issue/91-export-statements-as-csv",
+        model="Qwen3.8 Flash Next IQ3_S",
     ),
 )
 

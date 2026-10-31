@@ -14,7 +14,7 @@ from pathlib import Path
 from github_issue_worker.adapters.process import terminate
 from github_issue_worker.application.coordinator import ClaimHandle
 from github_issue_worker.application.github_host import GitHubHost
-from github_issue_worker.application.history import RunRecord
+from github_issue_worker.application.history import RunRecord, fleet_records, merged_history
 from github_issue_worker.application.manager import Manager, WorkerSlot
 from github_issue_worker.application.repository_suggestions import (
     PushableRepositories,
@@ -108,6 +108,7 @@ class RuntimeBackend:
         self._checkpoints: dict[tuple[str, int], ClaimView] = {}
         self._open: dict[str, list[Issue]] = {}
         self._history: list[RunRecord] = []
+        self._fleet: list[RunRecord] = []
         self._history_at = 0.0
         self._claims_at = 0.0
         self._refreshing = threading.Lock()
@@ -167,7 +168,9 @@ class RuntimeBackend:
                         worker=worker,
                         manager=manager,
                         local=local,
-                        model=display_model(known) if known else None,
+                        model=display_model(known)
+                        if known
+                        else (claim.model if claim and claim.model else None),
                         step=(slot.step if slot else claim.step if claim else None),
                         since=slot.started_at if slot else claim.renewed if claim else None,
                         merge_conflict=(
@@ -257,12 +260,15 @@ class RuntimeBackend:
             try:
                 found: list[ClaimView] = []
                 checkpoints: dict[tuple[str, int], ClaimView] = {}
+                fleet: list[RunRecord] = []
                 for name, watch in list(self._runtime.watches.items()):
+                    claims = []
                     for number in watch.store.issues():
                         stored = watch.store.read(number)
                         if stored is None:
                             continue
                         claim = stored.claim
+                        claims.append(claim)
                         view = ClaimView(
                             repository=name,
                             issue=number,
@@ -276,10 +282,13 @@ class RuntimeBackend:
                             paused_until=claim.paused_until,
                             merge_conflict=claim.merge_conflict,
                             wait_reason=claim.wait_reason,
+                            model=claim.model,
                         )
                         checkpoints[(name, number)] = view
                         if claim.state.holds:
                             found.append(view)
+                    fleet += fleet_records(name, claims)
+                self._fleet = fleet
                 self._checkpoints = checkpoints
                 self._claims = tuple(found)
                 self._open = {
@@ -359,10 +368,11 @@ class RuntimeBackend:
         open_folder(path)
 
     def history(self) -> list[RunRecord]:
+        """Every run of the fleet the claims carry, plus older local ones (F14.13)."""
         if time.monotonic() - self._history_at > CLAIM_REFRESH:
             self._history = self._runtime.history.load()
             self._history_at = time.monotonic()
-        return self._history
+        return merged_history(self._history, self._fleet)
 
     def log(self, name: str) -> str | None:
         slot = next((s for s in self._manager.workers if s.name == name), None)
