@@ -43,8 +43,9 @@ def test_demo_wait_and_conflict_colors_are_readable_in_both_schemes(
         )
         expect(limited.locator(".flag.limited").first).to_have_css("color", "rgb(180, 188, 199)")
         conflict = page.locator('[aria-label="codex"] .track .conflict')
-        assert conflict.inner_text() == "merge"
-        assert conflict.get_attribute("title") == "Merge conflict"
+        assert conflict.inner_text() == "checks"  # the current step, never a later one
+        assert (conflict.get_attribute("title") or "").startswith("Merge conflict")
+        assert page.locator('[aria-label="codex"] .track [aria-current]').count() == 1
         expect(conflict).to_have_css("border-top-color", "rgb(224, 122, 107)")
         expect(page.locator('[aria-label="claude"] .track .now').first).to_have_css(
             "border-top-color", "rgb(111, 179, 232)"
@@ -102,8 +103,9 @@ def test_current_conflict_and_wait_chips_do_not_pulse_back_to_active_color(
     page = browser.new_page(reduced_motion="no-preference")
     try:
         page.goto(server.url + "/workers")
+        # it pulses, but red and fast, never back to the blue of a step merely in progress
         expect(page.locator('[aria-label="claude"] .track .conflict')).to_have_css(
-            "animation-name", "none"
+            "animation-name", "alarm"
         )
         expect(page.locator(".lane.remote .run.waiting .track .now")).to_have_css(
             "animation-name", "none"

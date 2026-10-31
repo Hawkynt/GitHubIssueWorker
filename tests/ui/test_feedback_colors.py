@@ -48,15 +48,25 @@ def test_resource_wait_chip_preserves_reason_reset_and_conflict(state: WorkerSta
     html = _agent_row((worker,), NOW, {}, NO_COLOURS)
     assert f'class="flag {state}"' in html
     assert "Spending allowance reached" in html and "resets" in html
-    assert 'class="conflict"' in html and "Merge conflict" in html
+    assert "Merge conflict" in html
 
 
-def test_merge_chip_stays_red_during_repairs_and_clears_on_resolution() -> None:
+def test_a_merge_conflict_marks_the_current_chip_only_and_clears_on_resolution() -> None:
     for step in ("implement", "verify", "checks", "merge"):
         track = _track(step, merge_conflict=True)
-        assert ">merge</span>" in track and 'title="Merge conflict"' in track
-        assert 'class="conflict"' in track or 'class="now conflict"' in track
+        assert track.count('class="now conflict"') == 1  # exactly one chip needs the user
+        assert f'class="now conflict" aria-current="step" title="Merge conflict">{step}<' in track
     assert "conflict" not in _track("merge", merge_conflict=False)
+
+
+def test_there_is_only_ever_one_active_chip() -> None:
+    track = _track("checks", merge_conflict=True, blocked="CI waits")
+    assert track.count("aria-current") == 1
+    assert (
+        'class="now conflict blocked" aria-current="step" title="Merge conflict; Blocked: CI waits">'
+        in track
+    )
+    assert '<span class="">merge</span>' in track
 
 
 def test_live_refresh_clears_feedback_and_resource_wait_colors(

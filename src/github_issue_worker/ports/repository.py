@@ -47,6 +47,10 @@ class WaitingRun:
     id: int
     name: str
     url: str
+    event: str = ""
+    """What started it: ``pull_request`` is the run branch protection waits for."""
+    own: bool = False
+    """Its branch lives in this repository, not a fork: only people who can push started it."""
 
 
 @dataclass(frozen=True, slots=True)

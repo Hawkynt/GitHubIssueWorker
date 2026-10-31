@@ -29,7 +29,13 @@ from github_issue_worker.domain.split import (
 from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import AgentRun, RunReport
 from github_issue_worker.ports.clock import Clock
-from github_issue_worker.ports.repository import Blocker, Check, PullRequest, RepositoryHost
+from github_issue_worker.ports.repository import (
+    Blocker,
+    Check,
+    PullRequest,
+    RepositoryHost,
+    WaitingRun,
+)
 from github_issue_worker.ports.workspace import WorkspacePort
 from github_issue_worker.product import MARKER_PREFIX
 
@@ -65,6 +71,12 @@ _REBASE = frozenset({"dirty", "behind"})
 _FAILED = frozenset({"failure", "timed_out", "cancelled", "action_required", "startup_failure"})
 _NOT_STARTED = ("job was not started", "spending limit", "billing")
 """Signs that CI never ran the job, which no change to the code can repair (seen live)."""
+
+
+def _described(run: WaitingRun) -> str:
+    """ "CI's pull request run": which of the workflow's runs waits, by what started it."""
+    kind = {"pull_request": "pull request", "workflow_dispatch": "dispatched", "push": "push"}
+    return f"{run.name}'s {kind.get(run.event, run.event or 'held')} run"
 
 
 def _never_started(check: Check) -> bool:
@@ -417,27 +429,38 @@ class IssueRun:
                 return "ci", "The pull request's checks fail:\n\n" + "\n".join(lines)
             if self.clock.now() >= deadline:
                 return "timeout", ""
-            self._report_approvals(current)
-            self.sleep(self.settings.check_interval.total_seconds())
+            waiting = self._report_approvals(current)
+            # Someone may approve any moment: look again soon, so the blocker goes as soon as
+            # the runs start.
+            interval = self.settings.check_interval.total_seconds()
+            self.sleep(min(interval, 10.0) if waiting else interval)
 
     def _conflict(self, conflict: bool) -> None:
         self._handle = self.coordinator.set_merge_conflict(self._handle, conflict)
         self.conflict_changed(conflict)
 
-    def _report_approvals(self, current: PullRequest) -> None:
+    def _report_approvals(self, current: PullRequest) -> bool:
         """CI that GitHub holds back for approval would wait silently; say so where it shows."""
         waiting = self.host.waiting_for_approval(current.head_sha)
+        # Runs of this repository's own branch (the manager's pushes, the screenshot bot) are
+        # approved here; only a fork's need a person.
+        for run in waiting:
+            if run.own:
+                self._fenced(partial(self.host.approve_run, run.id))
+        waiting = [run for run in waiting if not run.own]
         if not waiting:
             self.blocked(None)
-            return
-        names = ", ".join(sorted({run.name for run in waiting}))
+            return False
+        names = ", ".join(sorted({_described(run) for run in waiting}))
         self.blocked(
             Blocker(
-                reason=f"CI ({names}) waits for approval to run",
+                reason=f"{names} {'waits' if len(waiting) == 1 else 'wait'} for approval to run; "
+                "the merge needs it, whatever else already runs",
                 url=waiting[0].url or current.url,
                 approvals=tuple(run.id for run in waiting),
             )
         )
+        return True
 
     def _merge(
         self, issue: Issue, pull: PullRequest, branch: str, tree: Path, base: str
