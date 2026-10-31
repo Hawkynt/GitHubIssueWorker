@@ -460,3 +460,29 @@ def test_splitting_is_on_by_default_and_can_be_switched_off_per_repository() -> 
         json.dumps({"defaults": {"splitIssues": False}, "repositories": [{"repository": "o/a"}]})
     )
     assert repository_run(off, off.repositories[0]).split_issues is False
+
+
+class _Named:
+    kind = "claude"
+
+    def default_model(self) -> str | None:
+        return "Qwen3.8-Flash-Next IQ3_S"
+
+
+def test_a_worker_whose_runs_never_reported_a_model_uses_its_agents_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A local run that crashed before reporting was recorded as "unknown model".
+    import github_issue_worker.wiring as wiring
+
+    monkeypatch.setattr(wiring, "make_adapter", lambda worker, home: _Named())
+    runtime = Runtime(
+        config=_instances_config(executable(tmp_path / "bin" / "claude"), 2),
+        home=tmp_path,
+        api=None,  # type: ignore[arg-type]
+        state=JsonStateStore(tmp_path / "state.json"),
+        manager_id="m",
+        workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+    )
+    runtime.sync_slots()
+    assert [slot.observed_model for slot in runtime.slots] == ["Qwen3.8-Flash-Next IQ3_S"] * 2
