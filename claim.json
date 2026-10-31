@@ -15,6 +15,18 @@
   "model": "Qwen3.8 Flash Next IQ3_S",
   "pausedUntil": null,
   "renewedAt": "2026-10-31T11:59:55Z",
+  "runs": [
+    {
+      "agent": "claude",
+      "finished": "2026-10-31T11:59:57Z",
+      "kind": "first",
+      "manager": "hawky-desktop-96a3",
+      "model": "Qwen3.8 Flash Next IQ3_S",
+      "started": "2026-10-31T11:29:18Z",
+      "verdict": "merged",
+      "worker": "local"
+    }
+  ],
   "state": "done",
   "step": "done",
   "takeovers": 0
