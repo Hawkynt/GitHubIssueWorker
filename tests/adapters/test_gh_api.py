@@ -33,9 +33,30 @@ class FakeGh:
         return self.replies.pop(0)
 
 
-def api(gh: FakeGh, local: FakeClock | None = None) -> tuple[GhApi, ServerClock]:
-    clock = ServerClock(local=local or FakeClock(LOCAL))
-    return GhApi(run=gh, clock=clock, home=Path("/home/me")), clock
+def api(
+    gh: FakeGh,
+    local: FakeClock | None = None,
+    sleeps: list[float] | None = None,
+    max_retries: int = 3,
+) -> tuple[GhApi, ServerClock]:
+    local_clock = local or FakeClock(LOCAL)
+    clock = ServerClock(local=local_clock)
+
+    def fake_sleep(seconds: float) -> None:
+        if sleeps is not None:
+            sleeps.append(seconds)
+        local_clock.advance(timedelta(seconds=seconds))
+
+    return (
+        GhApi(
+            run=gh,
+            clock=clock,
+            home=Path("/home/me"),
+            sleep=fake_sleep,
+            max_retries=max_retries,
+        ),
+        clock,
+    )
 
 
 def test_a_200_returns_status_lowercased_headers_and_json() -> None:
@@ -77,37 +98,132 @@ def test_an_error_status_raises_with_the_message() -> None:
     assert "Not Found" in str(caught.value)
 
 
-def test_retry_after_is_a_rate_limit_until_server_time_plus_delay() -> None:
+@pytest.mark.parametrize("status", ["403 Forbidden", "429 Too Many Requests"])
+def test_retry_after_backs_off_and_retries_until_the_request_succeeds(status: str) -> None:
     headers = {"Date": "Fri, 30 Oct 2026 13:45:10 GMT", "Retry-After": "60"}
-    gh = FakeGh((1, http("403 Forbidden", headers, '{"message": "secondary rate limit"}'), ""))
-    with pytest.raises(RateLimited) as caught:
-        api(gh)[0].request("GET", "repos/o/r/issues")
-    assert caught.value.until == LOCAL + timedelta(seconds=60)
+    gh = FakeGh(
+        (1, http(status, headers, '{"message": "secondary rate limit"}'), ""),
+        (0, http("200 OK", {}, '[{"number": 1}]'), ""),
+    )
+    sleeps: list[float] = []
+    response = api(gh, sleeps=sleeps)[0].request("GET", "repos/o/r/issues")
+    assert response.status == 200
+    assert response.body == [{"number": 1}]
+    assert sleeps == [60.0]
+    assert len(gh.calls) == 2
 
 
-def test_an_exhausted_primary_limit_is_a_rate_limit_until_reset() -> None:
+@pytest.mark.parametrize("status", ["403 Forbidden", "429 Too Many Requests"])
+def test_an_exhausted_primary_limit_backs_off_until_reset_and_retries(status: str) -> None:
     reset = int((LOCAL + timedelta(minutes=30)).timestamp())
-    headers = {"X-Ratelimit-Remaining": "0", "X-Ratelimit-Reset": str(reset)}
-    gh = FakeGh((1, http("403 Forbidden", headers, '{"message": "API rate limit exceeded"}'), ""))
-    with pytest.raises(RateLimited) as caught:
-        api(gh)[0].request("GET", "repos/o/r/issues")
-    assert caught.value.until == LOCAL + timedelta(minutes=30)
+    headers = {
+        "Date": "Fri, 30 Oct 2026 13:45:10 GMT",
+        "X-Ratelimit-Remaining": "0",
+        "X-Ratelimit-Reset": str(reset),
+    }
+    gh = FakeGh(
+        (1, http(status, headers, '{"message": "API rate limit exceeded"}'), ""),
+        (0, http("200 OK", {"X-Ratelimit-Remaining": "4999"}, '{"ok": true}'), ""),
+    )
+    local = FakeClock(LOCAL + timedelta(hours=2))
+    sleeps: list[float] = []
+    response = api(gh, local=local, sleeps=sleeps)[0].request("GET", "repos/o/r/issues")
+    assert response.status == 200
+    assert response.body == {"ok": True}
+    assert sleeps == [1800.0]
+    assert len(gh.calls) == 2
 
 
-def test_a_429_without_hints_waits_a_minute() -> None:
-    gh = FakeGh((1, http("429 Too Many Requests", {}, "{}"), ""))
-    with pytest.raises(RateLimited) as caught:
-        api(gh)[0].request("GET", "x")
-    assert caught.value.until == LOCAL + timedelta(minutes=1)
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [("200 OK", "[]"), ("304 Not Modified", "")],
+)
+def test_exhausted_remaining_on_a_response_waits_until_reset_before_the_next_request(
+    status: str, body: str
+) -> None:
+    reset = int((LOCAL + timedelta(seconds=45)).timestamp())
+    headers = {
+        "Date": "Fri, 30 Oct 2026 13:45:10 GMT",
+        "X-Ratelimit-Remaining": "0",
+        "X-Ratelimit-Reset": str(reset),
+    }
+    gh = FakeGh(
+        (0, http(status, headers, body), ""),
+        (0, http("200 OK", {"X-Ratelimit-Remaining": "4999"}, '[{"id": 1}]'), ""),
+        (0, http("200 OK", {"X-Ratelimit-Remaining": "4998"}, '[{"id": 2}]'), ""),
+    )
+    sleeps: list[float] = []
+    client, _ = api(gh, sleeps=sleeps)
+    first = client.request("GET", "repos/o/r/issues")
+    assert first.status == int(status.split()[0])
+    assert sleeps == []
+
+    second = client.request("GET", "repos/o/r/issues/comments")
+    assert second.status == 200
+    assert second.body == [{"id": 1}]
+    assert sleeps == [45.0]
+
+    third = client.request("GET", "repos/o/r/issues/comments")
+    assert third.status == 200
+    assert sleeps == [45.0]
+
+
+def test_exhausted_remaining_does_not_sleep_when_reset_has_already_passed() -> None:
+    reset = int((LOCAL + timedelta(seconds=10)).timestamp())
+    headers = {
+        "Date": "Fri, 30 Oct 2026 13:45:10 GMT",
+        "X-Ratelimit-Remaining": "0",
+        "X-Ratelimit-Reset": str(reset),
+    }
+    gh = FakeGh(
+        (0, http("200 OK", headers, "[]"), ""),
+        (0, http("200 OK", {"X-Ratelimit-Remaining": "4999"}, "[]"), ""),
+    )
+    local = FakeClock(LOCAL)
+    sleeps: list[float] = []
+    client, _ = api(gh, local=local, sleeps=sleeps)
+    client.request("GET", "repos/o/r/issues")
+    local.advance(timedelta(seconds=15))
+    client.request("GET", "repos/o/r/issues/comments")
+    assert sleeps == []
+
+
+def test_a_429_without_hints_waits_a_minute_and_retries() -> None:
+    gh = FakeGh(
+        (1, http("429 Too Many Requests", {}, "{}"), ""),
+        (0, http("200 OK", {}, '{"ok": true}'), ""),
+    )
+    sleeps: list[float] = []
+    response = api(gh, sleeps=sleeps)[0].request("GET", "x")
+    assert response.status == 200
+    assert response.body == {"ok": True}
+    assert sleeps == [60.0]
+    assert len(gh.calls) == 2
 
 
 def test_a_plain_403_is_an_error_not_a_rate_limit() -> None:
     gh = FakeGh(
         (1, http("403 Forbidden", {"X-Ratelimit-Remaining": "4000"}, '{"message": "no"}'), "")
     )
+    sleeps: list[float] = []
     with pytest.raises(GitHubError) as caught:
-        api(gh)[0].request("GET", "x")
+        api(gh, sleeps=sleeps)[0].request("GET", "x")
     assert not isinstance(caught.value, RateLimited)
+    assert sleeps == []
+    assert len(gh.calls) == 1
+
+
+def test_repeated_rate_limits_raise_rate_limited_after_retries_are_exhausted() -> None:
+    reset = int((LOCAL + timedelta(minutes=30)).timestamp())
+    headers = {"X-Ratelimit-Remaining": "0", "X-Ratelimit-Reset": str(reset)}
+    reply = (1, http("403 Forbidden", headers, '{"message": "API rate limit exceeded"}'), "")
+    gh = FakeGh(reply, reply, reply)
+    sleeps: list[float] = []
+    with pytest.raises(RateLimited) as caught:
+        api(gh, sleeps=sleeps, max_retries=2)[0].request("GET", "repos/o/r/issues")
+    assert caught.value.until == LOCAL + timedelta(minutes=30)
+    assert len(sleeps) == 2
+    assert len(gh.calls) == 3
 
 
 def test_no_http_response_at_all_means_gh_is_unusable() -> None:

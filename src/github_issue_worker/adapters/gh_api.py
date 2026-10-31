@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import time
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -49,10 +50,15 @@ class GhApi:
         run: GhRunner = run_gh,
         clock: ServerClock | None = None,
         home: Path | None = None,
+        sleep: Callable[[float], None] = time.sleep,
+        max_retries: int = 3,
     ) -> None:
         self._run = run
         self.clock = clock or ServerClock()
         self._home = home or account_home()
+        self._sleep = sleep
+        self._max_retries = max_retries
+        self._reset_at: datetime | None = None
 
     def request(
         self,
@@ -79,17 +85,44 @@ class GhApi:
             "LANGUAGE": "C",
             "GH_PROMPT_DISABLED": "1",
         }
-        _, stdout, stderr = self._run(argv, stdin, env)
-        response = self._parse(stdout)
-        if response is None:
-            raise GhUnavailable(stderr.strip() or "gh produced no HTTP response")
+        attempt = 0
+        while True:
+            if self._reset_at is not None:
+                self._wait_until(self._reset_at)
+                self._reset_at = None
 
-        if "date" in response.headers:
-            self.clock.observe(response.headers["date"])
+            _, stdout, stderr = self._run(argv, stdin, env)
+            response = self._parse(stdout)
+            if response is None:
+                raise GhUnavailable(stderr.strip() or "gh produced no HTTP response")
 
-        if response.status < 400:
-            return response
-        raise self._error(response)
+            if "date" in response.headers:
+                self.clock.observe(response.headers["date"])
+
+            if response.status < 400:
+                self._reset_at = self._exhausted_reset(response.headers)
+                return response
+
+            until = self._rate_limited_until(response)
+            if until is not None and attempt < self._max_retries:
+                attempt += 1
+                self._wait_until(until, minimum=1.0)
+                continue
+            raise self._error(response, until)
+
+    def _wait_until(self, until: datetime, minimum: float = 0.0) -> None:
+        delay = max((until - self.clock.now()).total_seconds(), minimum)
+        if delay > 0:
+            self._sleep(delay)
+
+    @staticmethod
+    def _exhausted_reset(headers: Mapping[str, str]) -> datetime | None:
+        if (
+            headers.get("x-ratelimit-remaining") == "0"
+            and headers.get("x-ratelimit-reset", "").isdigit()
+        ):
+            return datetime.fromtimestamp(int(headers["x-ratelimit-reset"]), tz=UTC)
+        return None
 
     @staticmethod
     def _parse(stdout: str) -> Response | None:
@@ -112,9 +145,8 @@ class GhApi:
             body = payload
         return Response(status=int(match.group(1)), headers=headers, body=body)
 
-    def _error(self, response: Response) -> GitHubError:
+    def _error(self, response: Response, until: datetime | None = None) -> GitHubError:
         message = response.body.get("message", "") if isinstance(response.body, dict) else ""
-        until = self._rate_limited_until(response)
         if until is not None:
             return RateLimited(response.status, message or "rate limited", until)
         return GitHubError(response.status, message or "request failed")
@@ -125,11 +157,9 @@ class GhApi:
             return None
         if "retry-after" in headers and headers["retry-after"].isdigit():
             return self.clock.now() + timedelta(seconds=int(headers["retry-after"]))
-        if (
-            headers.get("x-ratelimit-remaining") == "0"
-            and headers.get("x-ratelimit-reset", "").isdigit()
-        ):
-            return datetime.fromtimestamp(int(headers["x-ratelimit-reset"]), tz=UTC)
+        exhausted = self._exhausted_reset(headers)
+        if exhausted is not None:
+            return exhausted
         if response.status == 429:
             return self.clock.now() + _DEFAULT_WAIT
         return None
