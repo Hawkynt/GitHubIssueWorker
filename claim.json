@@ -1,0 +1,21 @@
+{
+  "branch": "issue/79-f11-12-maxtakeovers-takeovers-without-pr",
+  "claimedAt": "2026-10-31T11:02:20Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T11:02:20Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "codex.2"
+  },
+  "issue": 79,
+  "model": "GPT 6.1 Sol",
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T11:02:20Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
