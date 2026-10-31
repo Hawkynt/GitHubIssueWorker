@@ -328,6 +328,10 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
   font-variant-numeric: tabular-nums; }
 .series-line { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round;
   filter: drop-shadow(0 0 5px var(--c)); }
+.chart .band { fill: var(--c); fill-opacity: .55; stroke: #0c1524; stroke-width: 2;
+  stroke-linejoin: round; }
+.chart .total-line { fill: none; stroke: #e8f1ff; stroke-width: 1.5; stroke-linejoin: round;
+  filter: drop-shadow(0 0 5px #4aa3ff); }
 .chart .dot { fill: transparent; }
 .chart .dot:hover, .chart .dot:focus { fill: #6fb8ff; }
 .head { fill: var(--c); stroke: #0c1524; stroke-width: 1.5; filter: drop-shadow(0 0 6px var(--c)); }
