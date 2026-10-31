@@ -14,6 +14,18 @@
   "issue": 10,
   "pausedUntil": null,
   "renewedAt": "2026-10-30T15:26:56Z",
+  "runs": [
+    {
+      "agent": "local",
+      "finished": "2026-10-30T15:26:58Z",
+      "kind": "first",
+      "manager": "hawky-desktop-96a3",
+      "model": "Qwen3.8 Flash Next IQ3_S",
+      "started": "2026-10-30T14:58:23Z",
+      "verdict": "merged",
+      "worker": "local"
+    }
+  ],
   "state": "done",
   "step": "done",
   "takeovers": 0
