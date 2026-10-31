@@ -1,0 +1,21 @@
+{
+  "branch": "issue/76-f10-2-once-command-one-poll-and-work-pas",
+  "claimedAt": "2026-10-31T11:02:34Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T11:02:34Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "local"
+  },
+  "issue": 76,
+  "model": "Qwen3.8 Flash Next IQ3_S",
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T11:02:34Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
