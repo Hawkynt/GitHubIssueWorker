@@ -392,6 +392,90 @@ def create_app(backend: Backend) -> FastAPI:
         text = backend.log(name)
         return pages.log_fragment(text) if fragment else pages.log_page(snapshot, worker, text)
 
+    # --- one issue -------------------------------------------------------------------------------
+
+    def issue_page(
+        repository: str, number: int, problems: list[str], status: int = 422
+    ) -> HTMLResponse:
+        snapshot = backend.snapshot()
+        detail = backend.issue(repository, number)
+        if detail is None:
+            return HTMLResponse(pages.issues_page(snapshot, problems=problems), status)
+        return HTMLResponse(
+            pages.issue_page(
+                snapshot.manager_id,
+                detail,
+                snapshot.now,
+                backend.pull_request(repository, number),
+                problems=problems,
+            ),
+            status,
+        )
+
+    @app.get("/issues/{owner}/{name}/{number}", response_class=HTMLResponse, response_model=None)
+    def issue(owner: str, name: str, number: int, fragment: int = 0, notice: str = "") -> Any:
+        repository = f"{owner}/{name}"
+        detail = backend.issue(repository, number)
+        if detail is None:
+            return back("/", f"{repository}#{number} is not an open or claimed watched issue.")
+        snapshot = backend.snapshot()
+        if fragment:
+            return pages.issue_fragment(detail, snapshot.now)
+        return pages.issue_page(
+            snapshot.manager_id,
+            detail,
+            snapshot.now,
+            backend.pull_request(repository, number),
+            notice,
+        )
+
+    @app.post("/issues/{owner}/{name}/{number}/skip", response_model=None)
+    def skip_issue(owner: str, name: str, number: int) -> Any:
+        repository = f"{owner}/{name}"
+        try:
+            backend.skip(repository, number)
+        except ActionError as error:
+            return issue_page(repository, number, [str(error)])
+        return back(
+            pages.issue_href(repository, number),
+            f"{repository}#{number} is labelled worker:skip: no worker takes it, and a run in "
+            "progress stops at its next checkpoint.",
+        )
+
+    @app.post("/issues/{owner}/{name}/{number}/release", response_model=None)
+    async def release_issue(owner: str, name: str, number: int, request: Request) -> Any:
+        repository = f"{owner}/{name}"
+        reference = f"{repository}#{number}"
+        detail = backend.issue(repository, number)
+        if detail is None:
+            return back("/", f"{reference} is not an open or claimed watched issue.")
+        claim = detail.claim
+        if claim is None or not detail.held:
+            return issue_page(repository, number, [f"{reference} holds no claim."])
+        try:
+            if claim.mine and detail.log_worker:
+                backend.stop_worker(detail.log_worker)
+                done = (
+                    f"{detail.log_worker} was stopped and is paused; {reference} is free for "
+                    "other workers."
+                )
+            elif claim.mine:
+                backend.release(repository, number, False)
+                done = f"Released {reference}."
+            else:
+                confirm = (await form(request)).get("confirm", "")
+                if confirm.strip() != reference:
+                    return issue_page(
+                        repository,
+                        number,
+                        [f"Type {reference} exactly to release another manager's claim."],
+                    )
+                backend.release(repository, number, True)
+                done = f"Released {reference}."
+        except ActionError as error:
+            return issue_page(repository, number, [str(error)])
+        return back(pages.issue_href(repository, number), done)
+
     # --- claims ----------------------------------------------------------------------------------
 
     @app.post("/claims/release", response_class=HTMLResponse, response_model=None)

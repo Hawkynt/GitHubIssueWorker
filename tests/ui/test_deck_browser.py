@@ -21,6 +21,8 @@ PAGES = (
     "/workers/new",
     "/workers/claude",
     "/workers/claude/log",
+    "/issues/acme/telemetry-gateway/214",
+    "/issues/acme/billing-cli/91",
 )
 
 OVERFLOWING = """() => {
@@ -84,7 +86,7 @@ def test_every_page_fits_a_phone(browser: Browser, server: UiServer, path: str) 
     page.close()
 
 
-@pytest.mark.parametrize("path", ["/", "/fleet", "/workers"])
+@pytest.mark.parametrize("path", ["/", "/fleet", "/workers", "/issues/acme/telemetry-gateway/214"])
 def test_a_live_refresh_does_not_replay_the_boot(
     browser: Browser, server: UiServer, path: str
 ) -> None:

@@ -46,7 +46,15 @@ from github_issue_worker.ui.charts import (
 )
 from github_issue_worker.ui.forms import HELP, FormField, display, fields_of, is_set, value_at
 from github_issue_worker.ui.hue_wheel import LABELS, hue_wheel
-from github_issue_worker.ui.model import STEPS, ClaimView, IssueView, Snapshot, WorkerView
+from github_issue_worker.ui.model import (
+    LOG_TAIL,
+    STEPS,
+    ClaimView,
+    IssueDetail,
+    IssueView,
+    Snapshot,
+    WorkerView,
+)
 from github_issue_worker.ui.model_colors import (
     GREY,
     OTHER,
@@ -142,6 +150,11 @@ td .actions { justify-content: flex-start; }
 .log .thinking { color: var(--muted); }
 .log .error { color: var(--brick); }
 .log .done { font-weight: 600; }
+.facts-grid { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1rem; margin: 0; }
+.facts-grid dt { color: var(--muted); }
+.facts-grid dd { margin: 0; overflow-wrap: anywhere; }
+pre.journal { margin: 0; padding: .5rem .75rem; background: var(--sheet); border-radius: 4px;
+  white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; max-height: 28rem; overflow: auto; }
 .holder { white-space: nowrap; }
 .holder .quiet { display: block; font-size: 13px; }
 a.button { display: inline-block; text-decoration: none; }
@@ -1645,7 +1658,10 @@ def _claim_row(claim: ClaimView, now: datetime) -> str:
         )
         + "<button class=danger>Release</button></form></details>"
     )
-    issue = _out(f"https://github.com/{claim.repository}/issues/{claim.issue}", f"#{claim.issue}")
+    issue = (
+        _out(f"https://github.com/{claim.repository}/issues/{claim.issue}", f"#{claim.issue}")
+        + f"<br><small>{_page_link(claim.repository, claim.issue)}</small>"
+    )
     return (
         f"<tr><td>{issue}</td><td>{holder}</td><td>{state}</td>"
         f'<td>{e(claim.step)}</td><td class=nowrap title="{claim.renewed:%Y-%m-%d %H:%M} UTC">'
@@ -2015,9 +2031,13 @@ def _problems(problems: Iterable[str]) -> str:
 
 
 def _issue_row(issue: IssueView, workers: Mapping[str, WorkerView], now: datetime) -> str:
-    link = f"<span class=quiet>{e(issue.repository)}</span><br>" + _out(
-        f"https://github.com/{issue.repository}/issues/{issue.number}",
-        f"#{issue.number} {e(issue.title)}",
+    link = (
+        f"<span class=quiet>{e(issue.repository)}</span><br>"
+        + _out(
+            f"https://github.com/{issue.repository}/issues/{issue.number}",
+            f"#{issue.number} {e(issue.title)}",
+        )
+        + f"<br><small>{_page_link(issue.repository, issue.number)}</small>"
     )
     if issue.worker:
         where = "this machine" if issue.local else f"{issue.manager}, remote"
@@ -2143,3 +2163,257 @@ def log_page(snapshot: Snapshot, worker: WorkerView, text: str | None) -> str:
         f"<div id=live>{log_fragment(text)}</div>"
     )
     return page(f"Log of {worker.name}", "/workers", snapshot.manager_id, body, live=True)
+
+
+# --- one issue -----------------------------------------------------------------------------------
+
+
+def issue_href(repository: str, number: int) -> str:
+    """The UI's own page of an issue (F14.6); it opens in the same tab."""
+    return f"/issues/{repository}/{number}"
+
+
+def _page_link(repository: str, number: int) -> str:
+    return f'<a href="{e(issue_href(repository, number))}">Issue page</a>'
+
+
+def _holder(holder: str, mine: bool) -> str:
+    manager, _, worker = holder.rpartition("/")
+    return (
+        f"<span class=holder>{e(worker)}<span class=quiet>"
+        f"{'this manager' if mine else e(manager)}</span></span>"
+    )
+
+
+def _fact(label: str, value: str) -> str:
+    return f"<dt>{e(label)}</dt><dd>{value}</dd>"
+
+
+def _claim_panel(detail: IssueDetail, now: datetime) -> str:
+    issue, claim = detail.issue, detail.claim
+    facts = _fact("Now", e(issue.state))
+    if claim is None:
+        content = f"<dl class=facts-grid>{facts}</dl><p class=empty>Nobody holds it.</p>"
+    else:
+        state = e(claim.state)
+        if claim.paused_until:
+            state += f" <span class=quiet>until {when(claim.paused_until, now)}</span>"
+        if claim.wait_reason:
+            state += f" <span class=quiet>{e(claim.wait_reason)}</span>"
+        if claim.merge_conflict:
+            state += ' <span class="flag conflict">Merge conflict</span>'
+        model = f" <span class=quiet>on {e(claim.model)}</span>" if claim.model else ""
+        facts += (
+            _fact("Held by", _holder(claim.holder, claim.mine) + model)
+            + _fact("State", state)
+            + _fact("Step", e(claim.step))
+            + _fact("Branch", f"<span class=mono>{e(claim.branch)}</span>")
+            + _fact("Renewed", when_live(claim.renewed, now))
+            + _fact("Expires", when_live(claim.expires, now))
+        )
+        content = f"<dl class=facts-grid>{facts}</dl>"
+    return _panel("Claim", "Who works it, at which step, and until when.", content, "Claim")
+
+
+def _runs_panel(detail: IssueDetail) -> str:
+    if not detail.runs:
+        content = "<p class=empty>No run has finished on this issue yet.</p>"
+    else:
+        rows = "".join(
+            f"<tr><td class=nowrap>{run.started:%Y-%m-%d %H:%M}</td>"
+            f"<td class=nowrap>{span(run.finished - run.started)}</td>"
+            f"<td>{_holder(f'{run.manager or "?"}/{run.worker}', False)}</td>"
+            f"<td>{e(run.agent)}</td><td>{e(run.model)}</td><td>{e(run.kind)}</td>"
+            f"<td>{e(run.verdict)}</td></tr>"
+            for run in detail.runs
+        )
+        content = (
+            "<div class=scroll><table><thead><tr><th>Started</th><th>Took</th><th>By</th>"
+            "<th>Agent</th><th>Model</th><th>Kind</th><th>Verdict</th></tr></thead>"
+            f"<tbody>{rows}</tbody></table></div>"
+        )
+    return _panel(
+        "Runs",
+        "Every finished run, by any manager, oldest first: from the claim and this manager's "
+        "history.",
+        content,
+        "Runs",
+    )
+
+
+def _journal_panel(detail: IssueDetail) -> str:
+    if detail.journal is None:
+        content = (
+            "<p class=empty>The journal is not available on this machine: no worktree of this "
+            "issue here, or no journal in it.</p>"
+        )
+    else:
+        content = f"<pre class=journal>{e(detail.journal)}</pre>"
+    return _panel(
+        "Journal",
+        "<code>.ghiw/journal.md</code> of this machine's worktree: scenarios, decisions, what is "
+        "done and what is next.",
+        content,
+        "Journal",
+    )
+
+
+def _outcome_panel(detail: IssueDetail) -> str:
+    outcome = detail.outcome
+    if outcome is None:
+        content = (
+            "<p class=empty>There is no outcome yet on this machine, or it does not follow the "
+            "contract.</p>"
+        )
+    else:
+        parts = [f"<p><span class=flag>{e(outcome.kind)}</span> {e(outcome.summary)}</p>"]
+        if outcome.scenarios:
+            items = "".join(f"<li>{e(scenario)}</li>" for scenario in outcome.scenarios)
+            parts.append(f"<h3>Scenarios</h3><ul>{items}</ul>")
+        if outcome.questions:
+            questions = "".join(
+                f"<li>{e(question.text)}<ul>"
+                + "".join(f"<li>{e(option)}</li>" for option in question.options)
+                + "</ul>"
+                + (
+                    f"<p><strong>Recommended:</strong> {e(question.recommendation)}</p>"
+                    if question.recommendation
+                    else ""
+                )
+                + "</li>"
+                for question in outcome.questions
+            )
+            parts.append(f"<h3>Questions</h3><ol>{questions}</ol>")
+        content = "".join(parts)
+    return _panel(
+        "Outcome",
+        "<code>.ghiw/outcome.json</code> of this machine's worktree: how the last run ended.",
+        content,
+        "Outcome",
+    )
+
+
+def _log_panel(detail: IssueDetail) -> str:
+    claim = detail.claim
+    if detail.log_worker:
+        entries = transcript(detail.log or "")
+        listed = (
+            f"<ol class=log>{''.join(_entry(entry) for entry in entries)}</ol>"
+            if entries
+            else "<p class=empty>The agent has started; its first output appears here.</p>"
+        )
+        content = (
+            f'{listed}<p><a href="/workers/{e(detail.log_worker)}/log">The whole log of '
+            f"{e(detail.log_worker)}</a></p>"
+        )
+    elif claim is not None and claim.state in ("working", "paused") and not claim.mine:
+        manager = claim.holder.rpartition("/")[0]
+        content = (
+            f"<p class=empty>{e(claim.holder)} works it, so the log lives on the holder's "
+            f"manager, {e(manager)}.</p>"
+        )
+    else:
+        content = "<p class=empty>No agent of this machine is running on this issue.</p>"
+    return _panel(
+        "Log tail",
+        f"The last {LOG_TAIL} lines of the running agent's output, as on the Log page.",
+        content,
+        "Log tail",
+    )
+
+
+def _history_panel(detail: IssueDetail) -> str:
+    if not detail.history:
+        content = "<p class=empty>This issue was never claimed, or its claim is gone.</p>"
+    else:
+        rows = "".join(
+            f"<tr><td>{change.at:%Y-%m-%d %H:%M} UTC</td>"
+            f"<td>{e(change.what)}"
+            + (
+                f" <span class=quiet>&times; {change.renewals}</span>"
+                if change.renewals > 1
+                else ""
+            )
+            + f"</td><td class=mono>{e(change.holder)}</td><td>{change.generation}</td>"
+            f"<td>{e(change.state.value)}</td><td>{e(change.step)}</td></tr>"
+            for change in detail.history
+        )
+        content = (
+            "<div class=scroll><table><thead><tr><th>When</th><th>What</th><th>Holder</th>"
+            "<th>Generation</th><th>State</th><th>Step</th></tr></thead>"
+            f"<tbody>{rows}</tbody></table></div>"
+        )
+    return _panel(
+        "Claim history",
+        "Every version of the claim, newest first; consecutive renewals are one row.",
+        content,
+        "Claim history",
+    )
+
+
+def issue_fragment(detail: IssueDetail, now: datetime) -> str:
+    return (
+        _clock(now)
+        + "<div class=deck-grid>"
+        + _claim_panel(detail, now)
+        + _runs_panel(detail)
+        + _outcome_panel(detail)
+        + _journal_panel(detail)
+        + _log_panel(detail)
+        + _history_panel(detail)
+        + "</div>"
+    )
+
+
+def _issue_actions(detail: IssueDetail, pull_request: str | None) -> str:
+    issue = detail.issue
+    href = e(issue_href(issue.repository, issue.number))
+    reference = f"{issue.repository}#{issue.number}"
+    actions = []
+    if pull_request:
+        actions.append(_out(pull_request, "Open PR", " class=button"))
+    actions.append(
+        f'<form method=post action="{href}/skip"><button title="Label it worker:skip: no worker '
+        'takes it, and a run in progress stops at its next checkpoint">Skip</button></form>'
+    )
+    claim = detail.claim
+    if detail.held and claim is not None:
+        confirm = (
+            ""
+            if claim.mine
+            else f"<label>Type <code>{e(reference)}</code> to release another manager's claim "
+            '<input name="confirm" required></label>'
+        )
+        actions.append(
+            f'<details><summary>Release</summary><form method=post action="{href}/release">'
+            f"{confirm}<button class=danger>Release</button></form></details>"
+        )
+    if detail.log_worker:
+        actions.append(f'<a class=button href="/workers/{e(detail.log_worker)}/log">Log</a>')
+    return (
+        '<div class=actions style="justify-content:flex-start;margin-bottom:1rem">'
+        f"{''.join(actions)}</div>"
+    )
+
+
+def issue_page(
+    manager_id: str,
+    detail: IssueDetail,
+    now: datetime,
+    pull_request: str | None = None,
+    notice: str = "",
+    problems: Iterable[str] = (),
+) -> str:
+    issue = detail.issue
+    title = _out(
+        f"https://github.com/{issue.repository}/issues/{issue.number}",
+        f"#{issue.number} {e(issue.title)}",
+    )
+    body = (
+        f"<h1>{title}</h1>"
+        f"<p class=lede>{e(issue.repository)}: its runs, the journal and outcome of its "
+        "worktree on this machine, the tail of a local agent's log, and the claim's history.</p>"
+        f"{_notice(notice)}{_problems(problems)}{_issue_actions(detail, pull_request)}"
+        f"<div id=live>{issue_fragment(detail, now)}</div>"
+    )
+    return page(f"#{issue.number} {issue.title}", "/", manager_id, body, live=True)

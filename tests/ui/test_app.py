@@ -49,6 +49,7 @@ def test_every_page_renders(client: TestClient) -> None:
         "/settings",
         "/workers/new",
         "/workers/claude",
+        "/issues/acme/telemetry-gateway/214",
     ):
         response = client.get(path)
         assert response.status_code == 200, path

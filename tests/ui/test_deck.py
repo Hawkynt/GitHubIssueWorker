@@ -20,6 +20,8 @@ PAGES = (
     "/workers/new",
     "/workers/claude",
     "/workers/claude/log",
+    "/issues/acme/telemetry-gateway/214",
+    "/issues/acme/billing-cli/91",
 )
 
 
