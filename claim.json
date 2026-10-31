@@ -1,0 +1,21 @@
+{
+  "branch": "issue/78-f10-6-status-shows-models-and-fleet-wide",
+  "claimedAt": "2026-10-31T11:02:25Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T11:02:25Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "antigravity"
+  },
+  "issue": 78,
+  "model": "Gemini 4 Argon (Medium)",
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T11:02:25Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
