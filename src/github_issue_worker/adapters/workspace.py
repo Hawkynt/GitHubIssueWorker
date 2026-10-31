@@ -9,7 +9,9 @@ and with a lease (F7.2).
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -102,7 +104,9 @@ class Workspace:
 
     # --- worktrees -------------------------------------------------------------------------------
 
-    def worktree(self, repository: str, issue: int, branch: str, base: str) -> Path:
+    def worktree(
+        self, repository: str, issue: int, branch: str, base: str, resume: bool = True
+    ) -> Path:
         """The issue's worktree on ``branch``: reused when it exists, else created from the remote
         branch when another machine already pushed it, else from ``base``."""
         clone = self.clone(repository)
@@ -113,9 +117,74 @@ class Workspace:
         self._git(clone, "worktree", "prune")
         remote_branch = f"refs/remotes/origin/{branch}"
         start = remote_branch if self._has_ref(clone, remote_branch) else f"origin/{base}"
+        local_branch = f"refs/heads/{branch}"
+        if resume and self._has_ref(clone, local_branch):
+            start = local_branch
+        checkpoint = self._fetch_checkpoint(repository, issue, clone) if resume else None
+        if checkpoint:
+            start = f"{checkpoint}^"
         path.parent.mkdir(parents=True, exist_ok=True)
         self._git(clone, "worktree", "add", "--quiet", "-B", branch, str(path), start)
+        if checkpoint:
+            self._git(path, "restore", f"--source={checkpoint}", "--worktree", "--", ".")
         return path
+
+    def _fetch_checkpoint(self, repository: str, issue: int, clone: Path) -> str | None:
+        ref = f"refs/ghiw/wip/{issue}"
+        remote = self._git(clone, "ls-remote", self._remote_url(repository), ref).split()
+        if not remote:
+            return None
+        seen = f"refs/ghiw-seen/wip/{issue}"
+        self._git(
+            clone, "fetch", "--quiet", "--no-tags", self._remote_url(repository), f"+{ref}:{seen}"
+        )
+        return self._git(clone, "rev-parse", seen).strip()
+
+    def checkpoint(self, repository: str, issue: int, branch: str, base: str) -> str:
+        """Publish branch commits, dirty files and journal without changing HEAD or the index.
+
+        A temporary index builds the snapshot tree. Only the journal is included from the
+        ignored run directory; prompts, transient outcomes and credentials are not checkpoints.
+        """
+        clone = self.clone(repository)
+        ref = f"refs/ghiw/wip/{issue}"
+        previous = self._git(clone, "ls-remote", self._remote_url(repository), ref).split()
+        expected = previous[0] if previous else ""
+        path = self.worktree_path(repository, issue)
+        if not (path / ".git").exists():
+            if expected:
+                return expected
+            path = self.worktree(repository, issue, branch, base)
+        with tempfile.TemporaryDirectory(prefix="ghiw-checkpoint-") as scratch:
+            index = Path(scratch) / "index"
+            source = Path(self._git(path, "rev-parse", "--git-path", "index").strip())
+            if not source.is_absolute():
+                source = path / source
+            shutil.copyfile(source, index)
+            env = {"GIT_INDEX_FILE": str(index)}
+            self._git(path, "add", "-A", "--", ".", env=env)
+            if (path / ".ghiw" / "journal.md").is_file():
+                self._git(path, "add", "-f", "--", ".ghiw/journal.md", env=env)
+            tree = self._git(path, "write-tree", env=env).strip()
+            snapshot = self._git(
+                path,
+                "commit-tree",
+                "--no-gpg-sign",
+                tree,
+                "-p",
+                self.head(path),
+                "-m",
+                f"* checkpoint issue #{issue}",
+            ).strip()
+        self._git(
+            path,
+            "push",
+            "--quiet",
+            f"--force-with-lease={ref}:{expected}",
+            self._remote_url(repository),
+            f"{snapshot}:{ref}",
+        )
+        return snapshot
 
     def commits(self, worktree: Path, base: str) -> list[CommitInfo]:
         """The commits the branch adds on top of ``base``, oldest first."""
@@ -225,19 +294,26 @@ class Workspace:
     def _has_ref(self, cwd: Path, ref: str) -> bool:
         return self._try(cwd, "rev-parse", "--verify", "--quiet", ref).returncode == 0
 
-    def _try(self, cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    def _try(
+        self, cwd: Path, *args: str, env: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
         cwd.mkdir(parents=True, exist_ok=True)
         return subprocess.run(
             ["git", *args],
             cwd=cwd,
             capture_output=True,
             text=True,
-            env={**tool_environment(self._home), "LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0"},
+            env={
+                **tool_environment(self._home),
+                "LC_ALL": "C",
+                "GIT_TERMINAL_PROMPT": "0",
+                **(env or {}),
+            },
             check=False,
         )
 
-    def _git(self, cwd: Path, *args: str) -> str:
-        result = self._try(cwd, *args)
+    def _git(self, cwd: Path, *args: str, env: dict[str, str] | None = None) -> str:
+        result = self._try(cwd, *args, env=env)
         if result.returncode != 0:
             raise WorkspaceError(f"git {args[0]} failed: {result.stderr.strip()}")
         return result.stdout

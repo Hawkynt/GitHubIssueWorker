@@ -13,7 +13,7 @@ from github_issue_worker.domain.outcome import Outcome, Question
 from github_issue_worker.domain.run_limit import RunCutOff
 from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import AgentRun, RunReport, TokenUsage, UsageLimit
-from github_issue_worker.ports.repository import Check, WaitingRun
+from github_issue_worker.ports.repository import Check, PullRequest, WaitingRun
 from tests.application.run_fakes import FakeHost, FakeWorkspace, ScriptedAgent
 from tests.fakes import FakeClock, InMemoryClaimStore
 
@@ -718,3 +718,79 @@ def test_a_parked_issue_continues_in_the_same_conversation_on_the_next_trusted_c
     answer = Comment(90, 42, OWNER, "go on", T0, T0)
     assert h.run(RunKind.REWORK, comments=(answer,)).kind == "merged"
     assert h.agent.runs[1].session == "s1" and "go on" in h.agent.runs[1].prompt
+
+
+@pytest.mark.parametrize("cancel_stage", ["before", "agent", "verification", "checks"])
+def test_repository_removal_stops_the_run_without_releasing_before_checkpoint(
+    tmp_path: Path, cancel_stage: str
+) -> None:
+    import threading
+
+    stop = threading.Event()
+    h = Harness(tmp_path, [])
+
+    def act(run: AgentRun) -> RunReport:
+        h.workspace.add_commit(42, GOOD_COMMIT)
+        if cancel_stage == "agent":
+            stop.set()
+        return ok()
+
+    def verify(tree: Path) -> tuple[bool, str]:
+        if cancel_stage == "verification":
+            stop.set()
+        return True, "green"
+
+    def sleep(seconds: float) -> None:
+        stop.set()
+
+    if cancel_stage == "before":
+        stop.set()
+    if cancel_stage == "checks":
+        h.host.states = ["unknown"]
+    run = IssueRun(
+        h.host,
+        h.workspace,
+        h.coordinator,
+        act,
+        verify,
+        h.sessions,
+        h.clock,
+        sleep,
+        RunSettings(understand_first=False),
+        cancelled=stop.is_set,
+    )
+    verdict = run.run(h.handle, ISSUE, (), RunKind.FIRST)
+    assert verdict.kind == "stopped"
+    assert h.store.current(42).state.holds
+    assert not h.host.merged and not h.host.closed
+    if cancel_stage in ("before", "agent", "verification"):
+        assert not h.workspace.pushes and not h.host.pulls
+
+
+def test_current_claim_step_tracks_implementation_verification_and_shipping_for_list(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path, [])
+    observed = []
+
+    def act(run: AgentRun) -> RunReport:
+        observed.append(h.store.current(42).step)
+        h.workspace.add_commit(42, GOOD_COMMIT)
+        return ok()
+
+    h.agent.steps = [act]
+
+    def verify(tree: Path) -> tuple[bool, str]:
+        observed.append(h.store.current(42).step)
+        return True, "green"
+
+    h.verify = verify
+    original = h.host.create_pull_request
+
+    def open_pull(branch: str, base: str, title: str, body: str) -> PullRequest:
+        observed.append(h.store.current(42).step)
+        return original(branch, base, title, body)
+
+    h.host.create_pull_request = open_pull
+    assert h.run().kind == "merged"
+    assert observed == ["implement", "verify", "push"]

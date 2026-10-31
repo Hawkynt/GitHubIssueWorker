@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import stat
 import sys
@@ -17,6 +18,14 @@ from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState, Hol
 from github_issue_worker.ports.claims import StoredClaim
 from github_issue_worker.ports.github import GhUnavailable, Response
 from github_issue_worker.ports.repository import RepositoryInfo
+
+
+@pytest.fixture(autouse=True)
+def fake_local_control(monkeypatch: pytest.MonkeyPatch) -> None:
+    import github_issue_worker.cli as cli
+
+    monkeypatch.setattr(cli, "ControlLease", lambda *args: contextlib.nullcontext())
+    monkeypatch.setattr(cli, "ControlServer", lambda *args: contextlib.nullcontext())
 
 
 @pytest.mark.parametrize(
@@ -84,13 +93,40 @@ def test_add_refuses_a_repository_without_push_access(
     assert not config.exists()
 
 
-def test_remove_and_list(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_remove_and_list(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import github_issue_worker.adapters.control as control
+    from github_issue_worker.application.poller import PollState
+    from github_issue_worker.configuration import save
+    from tests.fakes import FakeClock, InMemoryClaimStore
+
     config = tmp_path / "config.json"
     config.write_text(json.dumps({"repositories": [{"repository": "o/a"}, {"repository": "o/b"}]}))
-    assert main(["--config", str(config), "remove", "o/a"]) == 0
+
+    def remove(repository: str, path: Path) -> None:
+        current = load(path)
+        current.repositories = [r for r in current.repositories if r.repository != repository]
+        save(current, path)
+
+    runtime = SimpleNamespace(
+        remove_repository=remove,
+        watch=lambda settings: SimpleNamespace(
+            host=SimpleNamespace(open_issues=lambda: []), store=InMemoryClaimStore()
+        ),
+        state=SimpleNamespace(poll_state=lambda repo: PollState()),
+        api=SimpleNamespace(clock=FakeClock(datetime(2026, 10, 31, tzinfo=UTC))),
+    )
+    monkeypatch.setattr(
+        control, "remove_or_request", lambda directory, path, repo, offline: offline()
+    )
+    assert (
+        main(["--config", str(config), "remove", "o/a"], runtime_factory=lambda *args: runtime) == 0
+    )
     capsys.readouterr()
-    assert main(["--config", str(config), "list"]) == 0
-    assert capsys.readouterr().out.split() == ["o/b"]
+    assert main(["--config", str(config), "list"], runtime_factory=lambda *args: runtime) == 0
+    out = capsys.readouterr().out
+    assert "o/b" in out and "o/a" not in out and "no current issues" in out
 
 
 class Api:

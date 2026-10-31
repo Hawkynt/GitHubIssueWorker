@@ -91,6 +91,7 @@ class JsonStateStore:
             comments_since=_time(raw.get("comments_since")),
             issues_etag=raw.get("issues_etag"),
             comments_etag=raw.get("comments_etag"),
+            last_polled_at=_time(raw.get("last_polled_at")),
         )
 
     def set_poll_state(self, repository: str, state: PollState) -> None:

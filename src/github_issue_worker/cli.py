@@ -17,6 +17,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from github_issue_worker.adapters.control import ControlError, ControlLease, ControlServer
 from github_issue_worker.adapters.home import account_home
 from github_issue_worker.adapters.installations import EXECUTABLES, portable_tool
 from github_issue_worker.adapters.manager_lock import (
@@ -25,6 +26,7 @@ from github_issue_worker.adapters.manager_lock import (
     manager_lock,
 )
 from github_issue_worker.adapters.workspace import WorkspaceError
+from github_issue_worker.application.coordinator import ClaimLost
 from github_issue_worker.configuration import (
     AccountSettings,
     Configuration,
@@ -35,7 +37,8 @@ from github_issue_worker.configuration import (
     load,
     save,
 )
-from github_issue_worker.ports.github import GhUnavailable
+from github_issue_worker.ports.claims import ClaimStoreError
+from github_issue_worker.ports.github import GhUnavailable, GitHubError
 from github_issue_worker.product import NAME, version
 
 if TYPE_CHECKING:
@@ -167,10 +170,26 @@ def _add(config: Configuration, path: Path, args: argparse.Namespace, hosts: Hos
     return 0
 
 
-def _remove(config: Configuration, path: Path, args: argparse.Namespace) -> int:
+def _control_directory(args: argparse.Namespace, home: Path) -> Path:
+    from github_issue_worker.wiring import state_dir
+
+    state, _ = _dirs(args)
+    return state.parent if state is not None else state_dir(home)
+
+
+def _remove(
+    path: Path, args: argparse.Namespace, home: Path, runtime_factory: RuntimeFactory
+) -> int:
+    from github_issue_worker.adapters.control import remove_or_request
+
     repository = normalize_repository(args.repository)
-    config.repositories = [r for r in config.repositories if r.repository != repository]
-    save(config, path)
+
+    def offline() -> None:
+        config = load(path)
+        runtime = runtime_factory(config, home, *_dirs(args))
+        runtime.remove_repository(repository, path)
+
+    remove_or_request(_control_directory(args, home), path, repository, offline)
     print(f"no longer watching {repository}")
     return 0
 
@@ -243,29 +262,40 @@ def _watch(
     prev_int = signal.signal(signal.SIGINT, interrupt)
     prev_term = signal.signal(signal.SIGTERM, interrupt)
     try:
-        count = len(manager.repositories)
-        print(f"{NAME} {version()} as {runtime.manager_id}, watching {count} repositories")
-        for row in manager.snapshot():
-            print(f"  worker {row['worker']}: {'ok' if row['available'] else row['reason']}")
-        server = None
-        if path is not None and not once and not no_ui:
-            server = _start_ui(runtime, manager, path, open_browser=first_run)
-        seen = _mtime(path)
-        while not stop.is_set():
-            try:
-                manager.tick()
-                if once or stop.is_set():
+        control = (
+            ControlServer(
+                _control_directory(args, home),
+                path,
+                lambda repository: runtime.remove_repository(repository, path, manager),
+            )
+            if path is not None
+            else contextlib.nullcontext()
+        )
+        with control:
+            count = len(manager.repositories)
+            print(f"{NAME} {version()} as {runtime.manager_id}, watching {count} repositories")
+            for row in manager.snapshot():
+                print(f"  worker {row['worker']}: {'ok' if row['available'] else row['reason']}")
+            server = None
+            if path is not None and not once and not no_ui:
+                server = _start_ui(runtime, manager, path, open_browser=first_run)
+            seen = _mtime(path)
+            while not stop.is_set():
+                try:
+                    with getattr(runtime, "configuration_lock", contextlib.nullcontext()):
+                        manager.tick()
+                    if once or stop.is_set():
+                        break
+                    stop.wait(runtime.config.poll_interval.total_seconds())
+                    seen = _reload_if_changed(runtime, manager, path, seen)
+                except KeyboardInterrupt:
+                    stop.set()
                     break
-                stop.wait(runtime.config.poll_interval.total_seconds())
-                seen = _reload_if_changed(runtime, manager, path, seen)
-            except KeyboardInterrupt:
-                stop.set()
-                break
-        while any(slot.busy for slot in manager.workers):
-            stop.wait(_DRAIN_WAIT_SECONDS)
-        if server is not None:
-            server.stop()
-        return 0
+            while any(slot.busy for slot in manager.workers):
+                stop.wait(_DRAIN_WAIT_SECONDS)
+            if server is not None:
+                server.stop()
+            return 0
     finally:
         signal.signal(signal.SIGINT, prev_int)
         signal.signal(signal.SIGTERM, prev_term)
@@ -288,10 +318,19 @@ def _reload_if_changed(
     try:
         runtime.apply(load(path), manager)
         logging.getLogger(__name__).info("configuration reloaded from %s", path)
-    except ConfigurationError as error:
+    except (
+        ConfigurationError,
+        WorkspaceError,
+        ClaimLost,
+        ClaimStoreError,
+        GitHubError,
+        GhUnavailable,
+        OSError,
+    ) as error:
         logging.getLogger(__name__).error(
-            "%s is invalid, keeping the running configuration: %s", path, error
+            "%s could not be applied, keeping the running configuration: %s", path, error
         )
+        return seen
     return current
 
 
@@ -336,6 +375,41 @@ def _ui(args: argparse.Namespace) -> int:
     with contextlib.suppress(KeyboardInterrupt):
         threading.Event().wait()
     server.stop()
+    return 0
+
+
+def _list(
+    config: Configuration, args: argparse.Namespace, home: Path, runtime_factory: RuntimeFactory
+) -> int:
+    from github_issue_worker.application.repository_listing import RepositoryListing, render_list
+    from github_issue_worker.domain.claim import ClaimPolicy
+
+    if not config.repositories:
+        print("no repositories watched")
+        return 0
+    runtime = runtime_factory(config, home, *_dirs(args))
+    repositories = []
+    for settings in config.repositories:
+        watch = runtime.watch(settings)
+        issues = tuple(watch.host.open_issues())
+        stored = (watch.store.read(number) for number in watch.store.issues())
+        repositories.append(
+            RepositoryListing(
+                settings.repository,
+                runtime.state.poll_state(settings.repository).last_polled_at,
+                issues,
+                tuple(entry.claim for entry in stored if entry),
+            )
+        )
+    fleet = config.fleet
+    print(
+        render_list(
+            repositories,
+            ClaimPolicy(fleet.claim_validity, fleet.claim_grace),
+            runtime.api.clock.now(),
+        ),
+        end="",
+    )
     return 0
 
 
@@ -454,9 +528,13 @@ def _parser() -> argparse.ArgumentParser:
 
     add = commands.add_parser("add", help="watch a repository you can push to")
     add.add_argument("repository")
-    remove = commands.add_parser("remove", help="stop watching a repository")
+    remove = commands.add_parser(
+        "remove", help="checkpoint local work, release claims and stop watching"
+    )
     remove.add_argument("repository")
-    commands.add_parser("list", help="list the watched repositories")
+    commands.add_parser(
+        "list", help="watched repositories: last poll, state counts and current issues"
+    )
 
     workers = commands.add_parser("workers", help="list workers, or detect agent installations")
     workers.add_argument(
@@ -560,27 +638,33 @@ def _run_command(
         if args.command == "add":
             return _add(config, path, args, host_factory or hosts)
         if args.command == "remove":
-            return _remove(config, path, args)
+            return _remove(path, args, home, runtime_factory or _build_runtime())
         if args.command == "list":
-            for repository in config.repositories:
-                print(repository.repository)
-            return 0
+            return _list(config, args, home, runtime_factory or _build_runtime())
         if args.command == "workers":
             return _workers(config, path, args, home)
         if args.command == "watch":
-            return _watch(
-                config,
-                args,
-                home,
-                runtime_factory or _build_runtime(),
-                path,
-                once=args.once,
-                no_ui=args.no_ui,
-            )
+            with ControlLease(_control_directory(args, home)):
+                return _watch(
+                    config,
+                    args,
+                    home,
+                    runtime_factory or _build_runtime(),
+                    path,
+                    once=args.once,
+                    no_ui=args.no_ui,
+                )
         if args.command == "once":
-            return _watch(
-                config, args, home, runtime_factory or _build_runtime(), path, once=True, no_ui=True
-            )
+            with ControlLease(_control_directory(args, home)):
+                return _watch(
+                    config,
+                    args,
+                    home,
+                    runtime_factory or _build_runtime(),
+                    path,
+                    once=True,
+                    no_ui=True,
+                )
         if args.command == "ui":
             return _ui(args)
         if args.command == "status":
@@ -588,8 +672,19 @@ def _run_command(
         if args.command == "release":
             return _release(config, args, home)
         if args.command == "work":
-            return _work(config, args, home)
-    except (ValueError, ConfigurationError) as error:
+            with ControlLease(_control_directory(args, home)):
+                return _work(config, args, home)
+    except (
+        ValueError,
+        ConfigurationError,
+        ControlError,
+        WorkspaceError,
+        ClaimLost,
+        ClaimStoreError,
+        GitHubError,
+        GhUnavailable,
+        OSError,
+    ) as error:
         print(str(error), file=sys.stderr)
         return 2
     parser.error(f"unknown command {args.command}")

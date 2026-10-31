@@ -100,6 +100,7 @@ class RepositoryWatch:
     store: ClaimStore
     mode: Literal["all", "labeled"] = "all"
     process_backlog: bool = False
+    stopping: threading.Event = field(default_factory=threading.Event)
     settings: object = None
     """Whatever the run factory needs for this repository (merge method, commands, ...)."""
     suspension_reason: str = ""
@@ -163,6 +164,22 @@ class Manager:
     )
     _initialized: set[str] = field(default_factory=set, init=False)
 
+    _jobs: dict[tuple[str, int], tuple[str, threading.Event]] = field(default_factory=dict)
+
+    def stop_repository(self, watch: RepositoryWatch) -> list[tuple[str, threading.Event]]:
+        """Stop scheduling; the caller drains these jobs before checkpointing or releasing."""
+        with self._lock:
+            watch.stopping.set()
+            return [job for (repo, _), job in self._jobs.items() if repo == watch.name]
+
+    def forget_repository(self, watch: RepositoryWatch) -> None:
+        with self._lock:
+            if watch in self.repositories:
+                self.repositories.remove(watch)
+            for key in list(self._own):
+                if key[0] == watch.name:
+                    del self._own[key]
+
     # --- the loop ------------------------------------------------------------------------------
 
     def start(self) -> None:
@@ -205,9 +222,11 @@ class Manager:
         return True
 
     def tick(self) -> None:
-        for watch in self.repositories:
+        for watch in list(self.repositories):
             try:
-                self._tick(watch)
+                with self._lock:
+                    if not watch.stopping.is_set():
+                        self._tick(watch)
             except Exception:
                 log.exception("%s: poll cycle failed", watch.name)
 
@@ -511,6 +530,9 @@ class Manager:
         )
 
         started = self.clock.now()
+        finished = threading.Event()
+        key = (watch.name, issue.number)
+        self._jobs[key] = (slot.name, finished)
 
         def job() -> None:
             verdict = Verdict("failed", detail="the run crashed")
@@ -524,23 +546,29 @@ class Manager:
                 log.exception("%s#%d: run crashed; the claim is kept", watch.name, issue.number)
                 crashed = True
             finally:
-                with self._lock:
-                    if crashed or verdict.kind == "suspended":
-                        pass
-                    elif verdict.kind == "paused":
-                        self.limits.set_limited(slot.account, verdict.until)
-                    else:
-                        self._own.pop((watch.name, issue.number), None)
-                    slot.busy = False
-                    slot.current = None
-                    slot.issue_title = None
-                    slot.started_at = None
-                    slot.branch = None
-                    slot.step = None
-                    slot.blocker = None
-                self._record(
-                    watch, slot, issue, kind, "crashed" if crashed else verdict.kind, started
-                )
+                try:
+                    self._record(
+                        watch, slot, issue, kind, "crashed" if crashed else verdict.kind, started
+                    )
+                finally:
+                    # A worker stays occupied through its last outward write. Otherwise a
+                    # second run could replace this job before removal has drained it.
+                    with self._lock:
+                        if crashed or verdict.kind == "suspended":
+                            pass
+                        elif verdict.kind == "paused":
+                            self.limits.set_limited(slot.account, verdict.until)
+                        else:
+                            self._own.pop((watch.name, issue.number), None)
+                        slot.busy = False
+                        slot.current = None
+                        slot.issue_title = None
+                        slot.started_at = None
+                        slot.branch = None
+                        slot.step = None
+                        slot.blocker = None
+                        self._jobs.pop(key, None)
+                    finished.set()
                 log.info(
                     "%s#%d: %s by %s on %s %s",
                     watch.name,
