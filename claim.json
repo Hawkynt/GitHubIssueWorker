@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T11:39:51Z",
+  "expiresAt": "2026-11-07T11:50:12Z",
   "generation": 1,
   "holder": {
     "manager": "hawky-desktop-96a3",
@@ -14,7 +14,7 @@
   "issue": 68,
   "model": "GPT 6.1 Sol",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T11:39:51Z",
+  "renewedAt": "2026-10-31T11:50:12Z",
   "state": "working",
   "step": "triage",
   "takeovers": 0
