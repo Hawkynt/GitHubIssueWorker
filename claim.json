@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T12:19:02Z",
+  "expiresAt": "2026-11-07T12:23:14Z",
   "generation": 2,
   "holder": {
     "manager": "hawky-desktop-96a3",
@@ -15,7 +15,7 @@
   "mergeConflict": true,
   "model": "GPT 6.1 Sol",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T12:19:02Z",
+  "renewedAt": "2026-10-31T12:23:14Z",
   "runs": [
     {
       "agent": "codex",
