@@ -626,3 +626,29 @@ def test_given_a_suspended_repository_when_starting_runtime_then_no_clone_or_wri
     with pytest.raises(RepositorySuspended):
         watch.coordinator.claim(1, Holder("manager", "w"), "issue/1")
     assert requests == [("GET", "repos/o/private")]
+
+
+class _SleepingAgent:
+    """An agent that is still working when its run reaches ``runTimeout``."""
+
+    kind = "fake"
+
+    def invocation(self, run: AgentRun) -> Invocation:
+        import sys
+
+        return Invocation(
+            argv=[sys.executable, "-c", "import time; time.sleep(30)"], cwd=run.worktree
+        )
+
+    def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
+        return RunReport(session=None, outcome=None, error=f"exit {exit_code}")
+
+
+def test_a_run_past_runtimeout_is_killed_and_reported_as_stopped_by_the_time_limit(
+    tmp_path: Path,
+) -> None:
+    report = wiring.execute(_SleepingAgent(), AgentRun(tmp_path, "work", session="s9"), 0.2)
+    assert report.cut_off is not None
+    assert report.cut_off.kind == "time" and report.cut_off.limit == "0.2 s"
+    assert report.outcome is None and report.limit is None
+    assert report.session == "s9"
