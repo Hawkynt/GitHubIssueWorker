@@ -34,6 +34,16 @@
       "started": "2026-10-30T18:19:51Z",
       "verdict": "crashed",
       "worker": "claude"
+    },
+    {
+      "agent": "claude",
+      "finished": "2026-10-30T18:47:11Z",
+      "kind": "continuation",
+      "manager": "hawky-desktop-96a3",
+      "model": "Claude Opus 5.5",
+      "started": "2026-10-30T18:44:46Z",
+      "verdict": "merged",
+      "worker": "claude"
     }
   ],
   "state": "done",
