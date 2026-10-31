@@ -2,7 +2,7 @@
   "branch": "issue/41-model-coloring",
   "claimedAt": "2026-10-30T19:19:50Z",
   "consumedThrough": {
-    "comment": null,
+    "comment": 6531558708,
     "review": null
   },
   "expiresAt": "2026-11-07T00:07:11Z",
@@ -13,8 +13,8 @@
   },
   "issue": 41,
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T00:07:11Z",
-  "state": "working",
-  "step": "needs-input",
+  "renewedAt": "2026-10-31T06:12:00Z",
+  "state": "done",
+  "step": "done",
   "takeovers": 0
 }
