@@ -1,0 +1,20 @@
+{
+  "branch": "issue/71-f5-3-link-the-issue-branch-to-the-issue",
+  "claimedAt": "2026-10-31T09:07:58Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T09:07:58Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "codex"
+  },
+  "issue": 71,
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T09:07:58Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
