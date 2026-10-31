@@ -50,14 +50,19 @@ def _try_lock(stream: BinaryIO) -> bool:
     return True
 
 
+def configuration_identity(configuration: Path) -> str:
+    """The canonical file path as a stable key: aliases and symlinks yield the same one."""
+    canonical = os.path.normcase(str(configuration.resolve()))
+    return hashlib.sha256(os.fsencode(canonical)).hexdigest()
+
+
 @contextmanager
 def manager_lock(configuration: Path) -> Iterator[Path]:
     """Acquire exclusive ownership or report the existing PID; fail closed on I/O errors."""
     with ExitStack() as files:
         try:
             target = configuration.resolve()
-            canonical = os.path.normcase(str(target))
-            key = hashlib.sha256(os.fsencode(canonical)).hexdigest()
+            key = configuration_identity(target)
             directory = Path(tempfile.gettempdir()) / "GitHubIssueWorker-locks"
             directory.mkdir(mode=0o700, parents=True, exist_ok=True)
             publication = files.enter_context((directory / f"{key}.guard").open("a+b"))

@@ -19,7 +19,11 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from github_issue_worker.adapters.home import account_home
 from github_issue_worker.adapters.installations import EXECUTABLES, portable_tool
-from github_issue_worker.adapters.manager_lock import ManagerLockError, manager_lock
+from github_issue_worker.adapters.manager_lock import (
+    ManagerLockError,
+    configuration_identity,
+    manager_lock,
+)
 from github_issue_worker.adapters.workspace import WorkspaceError
 from github_issue_worker.configuration import (
     AccountSettings,
@@ -423,8 +427,18 @@ def _build_runtime() -> RuntimeFactory:
 
 
 def _dirs(args: argparse.Namespace) -> tuple[Path | None, Path | None]:
+    """Explicit directories, else the configuration's own; the default one keeps the base dirs."""
+    from github_issue_worker.wiring import cache_dir, state_dir
+
+    path, home = args.config_path, args.home
+    scope = None
+    if configuration_identity(path) != configuration_identity(default_path(home=home)):
+        scope = Path("configurations") / configuration_identity(path)[:16]
     state = args.state_dir / "state.json" if args.state_dir else None
-    return state, args.cache_dir
+    if state is None and scope is not None:
+        state = state_dir(home) / scope / "state.json"
+    cache = args.cache_dir or (cache_dir(home) / scope if scope is not None else None)
+    return state, cache
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -509,6 +523,7 @@ def main(
     )
     home = home or account_home()
     path = args.config or default_path(home=home)
+    args.config_path, args.home = path, home
     try:
         if args.command in {"watch", "once"}:
             with manager_lock(path) as target:

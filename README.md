@@ -978,7 +978,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   scratch.
 - [ ] 🟥 **F3.5** Events that arrive while an issue is claimed are coalesced and delivered to the
   holder when its run ends. None is lost, and five quick comments produce one rework run.
-- [ ] 🟥 **F3.6** Single-manager lock per configuration on one machine. A second `watch` with the same
+- [x] 🟥 **F3.6** Single-manager lock per configuration on one machine. A second `watch` with the same
   configuration exits with the PID of the first. Managers with different configurations, on the same
   or other machines, are coordinated by claims.
 - [ ] 🟧 **F3.7** `priority:high`/`priority:low` labels reorder the queue.
