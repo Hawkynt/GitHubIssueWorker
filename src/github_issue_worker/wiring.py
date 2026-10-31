@@ -199,6 +199,11 @@ class Runtime:
                     else self.config.defaults.process_backlog
                 ),
                 settings=repository_run(self.config, settings),
+                max_active_issues_per_repository=(
+                    settings.max_active_issues_per_repository
+                    if settings.max_active_issues_per_repository is not None
+                    else self.config.defaults.max_active_issues_per_repository
+                ),
             )
             watch.coordinator = replace(coordinator, before_write=watch.require_access)
             host.before_write = watch.require_access
@@ -291,6 +296,11 @@ class Runtime:
                 watch = self.watches[name]
                 watch.settings = repository_run(config, settings)
                 watch.mode = settings.mode or config.defaults.mode
+                watch.max_active_issues_per_repository = (
+                    settings.max_active_issues_per_repository
+                    if settings.max_active_issues_per_repository is not None
+                    else config.defaults.max_active_issues_per_repository
+                )
             else:
                 watch = self.watch(settings)
                 manager.repositories.append(watch)

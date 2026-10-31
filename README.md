@@ -585,7 +585,12 @@ does. A manager not seen for an hour shows as offline, and its presence ref is p
 
 **Concurrency per repository** is a fleet-wide soft limit (`maxActiveIssuesPerRepository`, default
 4): a worker does not claim when it already sees that many live claims in the repository. Two
-managers racing can exceed it briefly. Merges need no lock, because each one is guarded by its
+managers racing can exceed it briefly. Working and paused claims count across all managers, even
+when their manager is offline or their issue is absent from the current poll. They count through
+claim validity and grace; released, done and abandoned claims do not count. Full repositories keep
+new candidates pending for later polls, while existing holders may continue or resume. Each manager
+uses its own effective default or repository override, including live configuration changes.
+Merges need no lock, because each one is guarded by its
 expected head `sha` and conflicts go back through rebase and re-verification.
 
 ## ⏳ Usage limits
@@ -773,7 +778,7 @@ first, and a moved UI listener reopens on its new address.
 | `ciRepairAttempts` | 3 | Red-CI repair rounds before asking. |
 | `processBacklog` | `false` | On first watch, also queue issues that were already open. Off, so adding a repository never starts a flood. |
 | `createMissingLabels` | `false` | Let triage create a label that does not exist yet. The `worker:*` labels are always created. |
-| `maxActiveIssuesPerRepository` | 4 | Fleet-wide soft limit of claimed issues in one repository. |
+| `maxActiveIssuesPerRepository` | 4 | Fleet-wide soft limit of live working and paused claims in one repository, including takeover grace. Defaults to 4; a repository override takes precedence. |
 | `runTimeout` | 2 h | Wall-clock limit of one agent run. |
 | `checksTimeout` | 2 h | How long a mergeable-looking pull request may wait for required checks or a review before it is labelled `worker:awaiting-review` and released. |
 | `build` / `test` | detected | Verification commands. Detected from `AGENTS.md`/`CONTRIBUTING.md`, then from the stack (`*.sln[x]`, `package.json`, `pyproject.toml`, `Cargo.toml`, …). |
@@ -1095,7 +1100,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   worker can serve is labelled `worker:unserved` with one explanatory comment, and re-queued when an
   eligible worker appears in presence.
 - [ ] 🟥 **F11.12** `maxTakeovers` takeovers without progress mark the issue failed with the evidence.
-- [ ] 🟧 **F11.13** `maxActiveIssuesPerRepository` is honoured fleet-wide from the visible claims.
+- [x] 🟧 **F11.13** `maxActiveIssuesPerRepository` is honoured fleet-wide from the visible claims.
 - [ ] 🟧 **F11.14** Done claims and checkpoint refs of closed issues are garbage-collected after 30
   days, by compare-and-swap delete.
 - [ ] 🟦 **F11.15** Simulation test: 3 managers with 4 workers each, 4 agent kinds, random crashes,

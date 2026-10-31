@@ -58,7 +58,9 @@ HELP: dict[str, str] = {
     "defaults.ciRepairAttempts": "Rounds of fixing red CI before asking.",
     "defaults.processBacklog": "Also work issues that were open before the repository was added.",
     "defaults.createMissingLabels": "Let triage create labels the repository does not have.",
-    "defaults.maxActiveIssuesPerRepository": "Claimed issues per repository across all machines.",
+    "defaults.maxActiveIssuesPerRepository": (
+        "Soft limit of live working and paused claims across all machines, including grace."
+    ),
     "defaults.runTimeout": "Longest single agent run.",
     "defaults.checksTimeout": "How long a pull request may wait for checks or a review.",
     "defaults.build": "Build command. Default: detected from the repository.",
