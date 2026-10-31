@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol
 
+from github_issue_worker.application.accounts import AccountUsage
 from github_issue_worker.application.history import RunRecord
 from github_issue_worker.configuration import Configuration
 
@@ -108,6 +109,8 @@ class Snapshot:
     repositories: tuple[RepositoryView, ...]
     claims: tuple[ClaimView, ...]
     issues: tuple[IssueView, ...] = ()
+    accounts: tuple[AccountUsage, ...] = ()
+    """Each account's usage state, its reset and the issues waiting on it (F13.7)."""
 
 
 class ActionError(Exception):

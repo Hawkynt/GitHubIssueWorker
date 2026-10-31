@@ -1159,7 +1159,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   fleet.
 - [ ] 🟥 **F13.6** At reset plus jitter, one minimal probe. On success, paused issues resume and the
   account's workers claim again, with no human action.
-- [ ] 🟧 **F13.7** The UI and `status` show each account's state, reset time and which issues wait on
+- [x] 🟧 **F13.7** The UI and `status` show each account's state, reset time and which issues wait on
   it.
 
 ### F14 — Local UI

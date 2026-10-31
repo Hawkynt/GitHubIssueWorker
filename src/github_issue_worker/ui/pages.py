@@ -1359,6 +1359,44 @@ def _crew(snapshot: Snapshot, palette: Palette) -> str:
     )
 
 
+def _usage(snapshot: Snapshot) -> str:
+    """Each account: limited or available, when its limit resets, which issues wait on it (F13.7)."""
+    rows = []
+    for account in snapshot.accounts:
+        until = account.limited_until
+        limited = until is not None and until > snapshot.now
+        state = (
+            '<span class="flag limited">Usage limit</span>'
+            if limited
+            else '<span class="flag idle">available</span>'
+        )
+        reset = (
+            when_live(until, snapshot.now) if limited and until else "<span class=quiet>-</span>"
+        )
+        waiting = ", ".join(
+            _out(f"https://github.com/{repository}/issues/{issue}", e(f"{repository}#{issue}"))
+            for repository, issue in account.waiting
+        )
+        rows.append(
+            f'<tr data-account="{e(account.name)}"><td class=nowrap>{e(account.name)}</td>'
+            f"<td>{state}</td><td class=nowrap>{reset}</td>"
+            f"<td>{waiting or '<span class=quiet>-</span>'}</td></tr>"
+        )
+    count = sum(1 for account in snapshot.accounts if account.state == "limited")
+    content = (
+        "<div class=scroll><table><thead><tr><th>Account</th><th>State</th><th>Resets</th>"
+        f"<th>Waiting</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+        if rows
+        else '<p class=empty>No accounts yet. Add one under <a href="/settings">Settings</a>.</p>'
+    )
+    return (
+        '<section class="panel wide" id="accounts" aria-label="Accounts"><header><h2>Accounts</h2>'
+        f"</header><p class=sub>{count} of {len(snapshot.accounts)} limited. A limited account "
+        "takes no new issue until its reset; the issues its workers paused wait on it.</p>"
+        f"{content}</section>"
+    )
+
+
 def _throughput(
     history: list[RunRecord], now: datetime, view: CockpitView, palette: Palette
 ) -> str:
@@ -1456,6 +1494,7 @@ def cockpit_fragment(
         + _readouts(history, snapshot.now)
         + "<div class=deck-grid>"
         + _crew(snapshot, _crew_palette(snapshot, models.models, settings))
+        + _usage(snapshot)
         + _flight_log(snapshot, history, models)
         + _throughput(history, snapshot.now, view, _palette(history, view.by, settings))
         + _share(history, models)
