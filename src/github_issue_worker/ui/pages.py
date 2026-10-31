@@ -102,7 +102,7 @@ h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
 .issue .repo { color: var(--muted); font-weight: 400; }
 .track { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; margin: .65rem 0 .35rem;
   max-width: 36rem; }
-.track span { font-size: 12px; color: var(--muted); padding-top: .4rem;
+.track span { font-size: 12px; color: var(--muted); padding-top: .4rem; border-radius: 2px;
   border-top: 5px solid var(--rule); }
 .track span.past { border-top-color: var(--steel); color: var(--ink); }
 .track span.now { border-top-color: var(--steel); color: var(--steel); font-weight: 650; }
@@ -116,6 +116,7 @@ h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
 .flag.conflict { background: var(--brick-soft); color: var(--brick); }
 .track span.conflict { border-top-color: var(--brick); color: var(--brick); }
 .track span.waiting { border-top-color: var(--wait); color: var(--wait); }
+.track span.blocked { border-top-color: var(--brick); color: var(--brick); font-weight: 650; }
 .run.waiting { background: var(--wait-soft); }
 .lane.waiting { background-color: var(--wait-soft); border-radius: 8px;
   background-image: linear-gradient(90deg,
@@ -413,8 +414,21 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
   @keyframes blink { 50% { opacity: .35; } }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .track span.now:not(.conflict):not(.waiting) { animation: beat 2.4s ease-in-out infinite; }
-  @keyframes beat { 50% { border-top-color: var(--steel-soft); } }
+  .track span.now:not(.conflict):not(.waiting):not(.blocked) {
+    animation: beat 2.4s ease-in-out infinite; }
+  @keyframes beat {
+    0%, 100% { box-shadow: inset 0 10px 12px -8px #4aa3ff99; text-shadow: none;
+      background-color: #4aa3ff0d; }
+    50% { border-top-color: #e2f2ff; color: #e2f2ff; background-color: #4aa3ff40;
+      box-shadow: inset 0 18px 22px -6px #4aa3ff, 0 0 22px 0 #4aa3ffcc;
+      text-shadow: 0 0 10px #4aa3ff, 0 0 3px #ffffff; } }
+  .track span.blocked { animation: alarm .6s ease-in-out infinite; }
+  @keyframes alarm {
+    0%, 100% { box-shadow: inset 0 8px 10px -8px var(--brick); text-shadow: none;
+      background-color: #e07a6b14; }
+    50% { border-top-color: #ffb0a5; color: #ffd2cb; background-color: #e07a6b55;
+      box-shadow: inset 0 14px 18px -8px var(--brick), 0 0 20px -2px var(--brick);
+      text-shadow: 0 0 8px var(--brick), 0 0 2px #ffffff; } }
 }
 """
 
@@ -766,7 +780,9 @@ def page(title: str, path: str, snapshot_id: str, body: str, live: bool = False)
 # --- workers -------------------------------------------------------------------------------------
 
 
-def _track(step: str | None, merge_conflict: bool = False, waiting: bool = False) -> str:
+def _track(
+    step: str | None, merge_conflict: bool = False, waiting: bool = False, blocked: str = ""
+) -> str:
     position = STEPS.index(step) if step in STEPS else -1
     cells = []
     for index, name in enumerate(STEPS):
@@ -775,6 +791,9 @@ def _track(step: str | None, merge_conflict: bool = False, waiting: bool = False
         if name == "merge" and merge_conflict:
             css = (css + " conflict").strip()
             title = ' title="Merge conflict"'
+        elif index == position and blocked:
+            css = (css + " blocked").strip()
+            title = f' title="Blocked: {e(blocked)}"'
         elif index == position and waiting:
             css = (css + " waiting").strip()
         current = ' aria-current="step"' if index == position else ""
@@ -887,7 +906,7 @@ def _instance(
         result = _run(
             palette.entities.get(worker.repository, FALLBACK),
             issue,
-            _track(worker.step, worker.merge_conflict, waiting),
+            _track(worker.step, worker.merge_conflict, waiting, worker.blocker),
             facts,
             label,
             actions,

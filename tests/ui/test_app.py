@@ -589,3 +589,11 @@ def test_a_run_blocked_on_ci_approval_says_so_and_can_be_approved(
     assert response.status_code == 200 and backend.approved == ["codex"]
     assert "Needs you" not in client.get("/workers").text
     assert "has no CI run waiting" in client.post("/workers/codex/approve-ci").text
+
+
+def test_a_blocked_runs_current_step_chip_is_marked_blocked(client: TestClient) -> None:
+    crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
+    codex = crew.split('aria-label="codex"', 1)[1].split("class=lane", 1)[0]
+    assert '<span class="now blocked" aria-current="step" title="Blocked: CI (CI) waits' in codex
+    claude = crew.split('aria-label="claude"', 1)[1].split("class=lane", 1)[0]
+    assert '<span class="now" aria-current="step">verify<' in claude  # active, not blocked
