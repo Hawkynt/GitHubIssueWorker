@@ -207,3 +207,82 @@ def test_the_takeover_evidence_names_count_step_holder_renewal_and_runs() -> Non
     assert "office-pc-7f3a/codex" in text
     assert "2026-10-30T12:00:00Z" in text
     assert "laptop-01ab/claude" in text and "needs-input" in text
+
+
+# --- the claim's history (F14.6) ------------------------------------------------------------------
+
+
+def test_claim_history_names_each_change_and_folds_consecutive_renewals() -> None:
+    from github_issue_worker.domain.claim import claim_history
+
+    created = claim()
+    steps = [created]
+    for hours in (1, 2, 3):
+        steps.append(POLICY.renewed(steps[-1], T0 + timedelta(hours=hours)))
+    steps.append(POLICY.renewed(steps[-1], T0 + timedelta(hours=4), step="implement"))
+    steps.append(
+        POLICY.renewed(
+            steps[-1],
+            T0 + timedelta(hours=5),
+            state=ClaimState.PAUSED,
+            paused_until=T0 + timedelta(hours=8),
+        )
+    )
+    steps.append(POLICY.renewed(steps[-1], T0 + timedelta(hours=6)))
+    steps.append(
+        POLICY.renewed(
+            steps[-1], T0 + timedelta(hours=8), state=ClaimState.WORKING, paused_until=None
+        )
+    )
+    other = Holder(manager="laptop", worker="claude")
+    steps.append(POLICY.taken_over(steps[-1], other, T0 + timedelta(days=9)))
+    steps.append(
+        steps[-1].replace(
+            state=ClaimState.RELEASED, step="released", renewed_at=T0 + timedelta(days=9, hours=1)
+        )
+    )
+
+    rows = claim_history(steps)
+
+    assert [(row.what, row.renewals) for row in rows] == [
+        ("released", 0),
+        ("taken over", 0),
+        ("resumed", 0),
+        ("renewed", 1),
+        ("paused", 0),
+        ("step", 0),
+        ("renewed", 3),
+        ("claimed", 0),
+    ]
+    newest = rows[0]
+    assert newest.holder == other and newest.generation == 2 and newest.step == "released"
+    assert rows[6].at == T0 + timedelta(hours=3)  # a folded row shows its newest renewal
+
+
+def test_claim_history_marks_a_recorded_run_and_a_merge_conflict() -> None:
+    from github_issue_worker.domain.claim import claim_history
+
+    created = claim()
+    entry = RunEntry("office-pc-7f3a", "codex", "codex", "GPT 6.1 Sol", "first", "merged", T0, T0)
+    with_run = created.replace(runs=(entry,))
+    conflicted = with_run.replace(merge_conflict=True)
+    assert [row.what for row in claim_history([created, with_run, conflicted])] == [
+        "merge conflict",
+        "run recorded",
+        "claimed",
+    ]
+
+
+def test_an_empty_claim_history_has_no_rows() -> None:
+    from github_issue_worker.domain.claim import claim_history
+
+    assert claim_history([]) == []
+
+
+def test_a_partial_claim_history_gives_its_oldest_version_no_row() -> None:
+    from github_issue_worker.domain.claim import claim_history
+
+    first = claim()
+    stepped = POLICY.renewed(first, T0 + timedelta(hours=1), step="implement")
+    rows = claim_history([first, stepped], complete=False)
+    assert [row.what for row in rows] == ["step"]

@@ -243,6 +243,13 @@ runs, and their output, refreshed as it goes.
 
 ![The log of a worker: messages, commands and their output](docs/screenshots/log.png)
 
+**Issue.** One issue in full: who holds its claim, at which step and until when; every finished run
+on it, by any manager; the outcome and the journal of its worktree on this machine; the tail of the
+running agent's log; and the claim's history, newest first, its renewals folded into one row. Skip
+it, release it or open its pull request from the top of the page.
+
+![Issue page with its claim, runs, journal, log tail and claim history](docs/screenshots/issue.png)
+
 **Repositories.** Readouts for the watch list, then one panel per repository with its overrides; a
 repository is added only when your account can push to it.
 
@@ -695,7 +702,7 @@ not a second program: what the UI changes, the manager does, with the same check
 | **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), with the box completing the owner and then, after the `/`, that owner's repositories your account can push to and does not watch yet; the list is read in the background and kept in memory for 10 minutes. Edit its per-repository overrides, remove one. |
 | **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, model colours, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. The model colours are edited on a colour wheel as well (F14.20). |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
-| **Issue** | One issue's runs, the journal, the outcome, the log tail, and the claim's history. | Skip it, release it, open the PR. |
+| **Issue** (`/issues/<owner>/<repo>/<number>`, linked from every row of Issues and Fleet) | One issue's holder, state, step, branch, renewal and expiry; every finished run of it, from its claim and this manager's history; the journal and the outcome from this machine's worktree of the issue; the last 200 lines of a local agent's log, as on the Log page; and the claim's history, newest first, read from the commits of its claim ref, with consecutive renewals folded into one row. Journal and outcome of an issue worked on another machine say they are not available here. | Skip it (adds `worker:skip`; a run in progress stops at its next checkpoint), release it (a run of this manager is stopped as by *stop & release*; another manager's claim only after typing `<repo>#<number>`), open its pull request. |
 
 Every page wears the cockpit's deck: one dark look whatever the system's colour scheme, its
 sections as panels, and the overview pages (Issues, Repositories, Fleet) open with readouts counted
@@ -1356,7 +1363,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   remain. Mouse, touch and keyboard, phone width, light and dark; tested in a real browser.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
-- [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
+- [x] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
 - [x] 🟥 **F14.7** Demo mode `ui --demo <scenario>` renders every page through the real UI code with
   deterministic sample data (several workers of every agent kind, limited and paused accounts,
   claims from other managers). `generate.yml` captures each page, commits changed screenshots and

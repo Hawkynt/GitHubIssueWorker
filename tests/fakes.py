@@ -26,6 +26,7 @@ class InMemoryClaimStore:
 
     def __init__(self) -> None:
         self._claims: dict[int, StoredClaim] = {}
+        self._history: dict[int, list[Claim]] = {}
         self._versions = itertools.count(1)
         self.interleave_before_write: Callable[[], None] | None = None
 
@@ -35,6 +36,7 @@ class InMemoryClaimStore:
 
     def force_create(self, claim: Claim) -> None:
         self._claims[claim.issue] = StoredClaim(f"v{next(self._versions)}", claim)
+        self._history.setdefault(claim.issue, []).append(claim)
 
     def issues(self) -> list[int]:
         return sorted(self._claims)
@@ -61,6 +63,10 @@ class InMemoryClaimStore:
         if current is None or current.version != expected:
             raise ClaimConflict("stale version")
         del self._claims[issue]
+        self._history.pop(issue, None)
+
+    def history(self, issue: int, limit: int) -> list[Claim]:
+        return self._history.get(issue, [])[-limit:]
 
     def _interleave(self) -> None:
         hook, self.interleave_before_write = self.interleave_before_write, None
@@ -70,4 +76,5 @@ class InMemoryClaimStore:
     def _store(self, claim: Claim) -> str:
         version = f"v{next(self._versions)}"
         self._claims[claim.issue] = StoredClaim(version, claim)
+        self._history.setdefault(claim.issue, []).append(claim)
         return version

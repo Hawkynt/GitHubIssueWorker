@@ -23,6 +23,9 @@ PAGES = (
     "/workers/claude",
     "/workers/claude/log",
     "/workers/claude/log?fragment=1",
+    "/issues/acme/telemetry-gateway/214",
+    "/issues/acme/telemetry-gateway/214?fragment=1",
+    "/issues/acme/billing-cli/91",
 )
 
 
