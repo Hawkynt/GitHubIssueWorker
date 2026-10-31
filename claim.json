@@ -1,20 +1,20 @@
 {
   "branch": "issue/68-f3-6-only-one-manager-per-configuration",
-  "claimedAt": "2026-10-31T11:37:39Z",
+  "claimedAt": "2026-10-31T12:16:08Z",
   "consumedThrough": {
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T11:50:12Z",
-  "generation": 1,
+  "expiresAt": "2026-11-07T12:16:08Z",
+  "generation": 2,
   "holder": {
     "manager": "hawky-desktop-96a3",
-    "worker": "codex.2"
+    "worker": "claude"
   },
   "issue": 68,
-  "model": "GPT 6.1 Sol",
+  "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T11:50:21Z",
+  "renewedAt": "2026-10-31T12:16:08Z",
   "runs": [
     {
       "agent": "codex",
@@ -27,7 +27,7 @@
       "worker": "codex.2"
     }
   ],
-  "state": "released",
+  "state": "working",
   "step": "needs-input",
   "takeovers": 0
 }
