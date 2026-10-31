@@ -24,6 +24,7 @@ class FakeHost:
     repo_labels: set[str] = field(default_factory=lambda: {"bug", "enhancement"})
     worker_label: dict[int, str | None] = field(default_factory=dict)
     added_labels: dict[int, list[str]] = field(default_factory=dict)
+    created_labels: list[str] = field(default_factory=list)
     posted: list[tuple[int, str]] = field(default_factory=list)
     pulls: dict[int, PullRequest] = field(default_factory=dict)
     pull_bodies: dict[int, tuple[str, str]] = field(default_factory=dict)
@@ -72,6 +73,10 @@ class FakeHost:
 
     def add_labels(self, issue: int, labels: list[str]) -> None:
         self.added_labels.setdefault(issue, []).extend(labels)
+
+    def create_label(self, name: str) -> None:
+        self.created_labels.append(name)
+        self.repo_labels.add(name)
 
     def comment(self, issue: int, body: str) -> None:
         self.posted.append((issue, body))

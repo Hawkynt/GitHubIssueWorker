@@ -126,6 +126,65 @@ def test_the_first_run_labels_an_unlabelled_issue_from_the_existing_labels(tmp_p
     assert h.host.added_labels[42] == ["bug"]
 
 
+def test_a_missing_label_is_never_created_when_create_missing_labels_is_off(
+    tmp_path: Path,
+) -> None:
+    outcome = Outcome("done", "x", labels=("bug", "invented"))
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok(outcome))])
+    h.run()
+    assert h.host.added_labels[42] == ["bug"]
+    assert h.host.created_labels == []
+
+
+def test_a_missing_label_is_created_and_applied_when_create_missing_labels_is_on(
+    tmp_path: Path,
+) -> None:
+    outcome = Outcome("done", "x", labels=("bug", "invented"))
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok(outcome))])
+    h.run(create_missing_labels=True)
+    assert h.host.created_labels == ["invented"]
+    assert h.host.added_labels[42] == ["bug", "invented"]
+
+
+def test_an_existing_label_is_applied_without_being_created_when_create_missing_labels_is_on(
+    tmp_path: Path,
+) -> None:
+    outcome = Outcome("done", "x", labels=("bug",))
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok(outcome))])
+    h.run(create_missing_labels=True)
+    assert h.host.created_labels == []
+    assert h.host.added_labels[42] == ["bug"]
+
+
+def test_a_label_created_by_an_earlier_run_is_applied_again_without_being_created_twice(
+    tmp_path: Path,
+) -> None:
+    outcome = Outcome("done", "x", labels=("invented",))
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok(outcome))])
+    h.host.repo_labels.add("invented")  # an earlier run already created it on the repository
+    h.run(create_missing_labels=True)
+    assert h.host.created_labels == []
+    assert h.host.added_labels[42] == ["invented"]
+
+
+def test_the_understanding_run_creates_a_missing_label_when_create_missing_labels_is_on(
+    tmp_path: Path,
+) -> None:
+    def steps(h: Harness) -> list:  # type: ignore[type-arg]
+        understand = lambda run: RunReport(  # noqa: E731
+            session="s1",
+            outcome=Outcome(
+                "done", "Understood.", restatement="Goal: retry.", labels=("bug", "invented")
+            ),
+        )
+        return [understand, step(h.workspace, ok())]
+
+    h = Harness(tmp_path, steps)
+    h.run(understand_first=True, create_missing_labels=True)
+    assert h.host.created_labels == ["invented"]
+    assert h.host.added_labels[42] == ["bug", "invented"]
+
+
 def test_a_question_parks_the_issue_and_keeps_the_worktree(tmp_path: Path) -> None:
     question = Question("Retry on 5xx too?", ("yes", "no"), "yes")
     outcome = Outcome("needs-input", "Two readings.", questions=(question,))

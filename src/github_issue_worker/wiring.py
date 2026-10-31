@@ -76,6 +76,7 @@ class RepositoryRun:
     forbidden_words: tuple[str, ...] = DEFAULT_FORBIDDEN_WORDS
     max_prose_lines: int = 2
     split_issues: bool = True
+    create_missing_labels: bool = False
 
     @property
     def gate(self) -> CommitGate:
@@ -102,6 +103,7 @@ def repository_run(config: Configuration, repository: RepositorySettings) -> Rep
         forbidden_words=tuple(pick("forbidden_words")),  # type: ignore[arg-type]
         max_prose_lines=int(pick("max_prose_lines")),  # type: ignore[call-overload]
         split_issues=bool(pick("split_issues")),
+        create_missing_labels=bool(pick("create_missing_labels")),
     )
 
 
@@ -254,6 +256,7 @@ class Runtime:
                 checks_timeout=timedelta(seconds=run.checks_timeout),
                 gate=run.gate,
                 split_issues=run.split_issues,
+                create_missing_labels=run.create_missing_labels,
             ),
             progress=lambda step: setattr(slot, "step", step),
             conflict_changed=lambda conflict: setattr(slot, "merge_conflict", conflict),

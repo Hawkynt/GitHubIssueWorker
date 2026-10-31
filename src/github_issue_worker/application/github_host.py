@@ -10,6 +10,7 @@ from github_issue_worker.application.poller import parse_comment, parse_issue
 from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.ports.github import GitHubApi, GitHubError, Response, next_link
 from github_issue_worker.ports.repository import (
+    CREATED_LABEL_COLOR,
     WORKER_LABELS,
     Check,
     PullRequest,
@@ -139,6 +140,19 @@ class GitHubHost:
     def add_labels(self, issue: int, labels: list[str]) -> None:
         if labels:
             self._write("POST", self._path(f"issues/{issue}/labels"), body={"labels": labels})
+
+    def create_label(self, name: str) -> None:
+        try:
+            self._write(
+                "POST",
+                self._path("labels"),
+                body={"name": name, "color": CREATED_LABEL_COLOR},
+            )
+        except GitHubError as error:
+            # Another manager may have created it since the label list was read (F4.2).
+            if error.status == 422 and "already_exists" in str(error):
+                return
+            raise
 
     def comment(self, issue: int, body: str) -> None:
         text = body if MARKER_PREFIX in body else f"{body}\n\n{MARKER}"

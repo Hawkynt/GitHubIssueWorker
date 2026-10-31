@@ -245,6 +245,27 @@ def test_per_repository_forbidden_words_overrides_defaults_when_building_the_com
     assert len(prompts) == 1
 
 
+def test_create_missing_labels_defaults_off_and_a_repository_override_turns_it_on() -> None:
+    raw: dict[str, object] = {
+        "repositories": [
+            {"repository": "Hawkynt/ShiftDiff"},
+            {"repository": "Hawkynt/GitHubIssueWorker", "createMissingLabels": True},
+        ]
+    }
+    config = parse(json.dumps(raw))
+    assert repository_run(config, config.repositories[0]).create_missing_labels is False
+    assert repository_run(config, config.repositories[1]).create_missing_labels is True
+
+
+def test_create_missing_labels_on_by_default_is_overridden_off_by_a_repository() -> None:
+    raw: dict[str, object] = {
+        "defaults": {"createMissingLabels": True},
+        "repositories": [{"repository": "Hawkynt/ShiftDiff", "createMissingLabels": False}],
+    }
+    config = parse(json.dumps(raw))
+    assert repository_run(config, config.repositories[0]).create_missing_labels is False
+
+
 @pytest.mark.parametrize(
     "trace_line",
     [
