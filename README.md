@@ -628,7 +628,7 @@ not a second program: what the UI changes, the manager does, with the same check
 | --- | --- | --- |
 | **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
 | **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), with the box completing the owner and then, after the `/`, that owner's repositories your account can push to and does not watch yet; the list is read in the background and kept in memory for 10 minutes. Edit its per-repository overrides, remove one. |
-| **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, model colours, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. |
+| **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, model colours, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. The model colours are edited on a colour wheel as well (F14.20). |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
 | **Issue** | One issue's runs, the journal, the outcome, the log tail, and the claim's history. | Skip it, release it, open the PR. |
 
@@ -1213,6 +1213,14 @@ operational items, demonstrated on a real repository. Commits that implement an 
   tinted with the colour of the model its worker runs, or with the default hue of the segment of the
   maker that agent kind serves while no model is known. Every segment key has a field on the Settings
   page (F14.8).
+- [ ] 🟧 **F14.20** Model colour wheel: the Settings page shows the four `modelColors` segments as
+  labelled arcs on one OKLCH hue wheel drawn in the colours the charts use. Dragging the middle of an
+  arc moves its hue, dragging an end changes its width around the unchanged centre, and the arrow keys
+  do the same on each handle (Shift for 10 degrees); the arc being edited is highlighted. While it
+  changes, its number fields follow live and a preview shows sample models of that maker in the
+  colours a chart would give them. The number fields stay and drive the wheel back, the unsaved
+  marking (F14.12) and *Save* work as for typed values, and without JavaScript the fields alone
+  remain. Mouse, touch and keyboard, phone width, light and dark; tested in a real browser.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
 - [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
