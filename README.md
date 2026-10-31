@@ -578,14 +578,14 @@ for good. Every case the manager knows about releases the claim at once, with a 
 A clean shutdown of the manager checkpoints but **keeps** its claims, because seven days are meant to
 cover a machine being off. `watch --release-on-exit` releases them instead.
 
-**Fencing.** Before every outward write (push, comment, label, merge) the manager confirms that the
-worker's claim is still the current value of the ref. If the claim has passed `expiresAt` (the
-machine was off for more than a week), it renews first and continues only if that compare-and-swap
-succeeds. A rejected renewal means another worker took over: the run is abandoned, and its local work
-is discarded, because the new holder resumes from the last checkpoint. Writes carry their own guards
-too: the issue branch is pushed with `--force-with-lease` against the commit this worker last pushed,
-and the merge passes the expected head `sha`, so a worker that lost its claim cannot overwrite or
-merge somebody else's work.
+**Fencing.** Before every outward write (push, branch link, comment, label, merge) the manager
+confirms that the worker's claim is still the current value of the ref. If the claim has passed
+`expiresAt` (the machine was off for more than a week), it renews first and continues only if that
+compare-and-swap succeeds. A rejected renewal means another worker took over: the run is abandoned,
+and its local work is discarded, because the new holder resumes from the last checkpoint. Writes
+carry their own guards too: the issue branch is pushed with `--force-with-lease` against the commit
+this worker last pushed, and the merge passes the expected head `sha`, so a worker that lost its
+claim cannot overwrite or merge somebody else's work.
 
 **No reservations.** A worker instance claims an issue only when, at that moment, it holds no other claim, it
 is eligible for the issue (routing labels), its installation is available, its account is not limited
@@ -1010,8 +1010,15 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F5.1** One cached clone per repository and manager, fetched before each run.
 - [ ] 🟥 **F5.2** One `git worktree` per claimed issue on branch `issue/<n>-<slug>`, created from the
   freshly fetched base branch, or from the latest checkpoint when continuing.
-- [ ] 🟥 **F5.3** The branch is linked to the issue (GraphQL `createLinkedBranch`), so it shows in the
-  issue's *Development* panel.
+- [x] 🟥 **F5.3** The branch is linked to the issue (GraphQL `createLinkedBranch`), so it shows in the
+  issue's *Development* panel. The link is made, fenced, before the branch's first push:
+  `createLinkedBranch` creates the remote branch at the base commit the work started from, and the
+  push then fast-forwards it under the usual lease. A branch already among the issue's linked
+  branches is reused as it is. A remote branch that exists without the link (pushed earlier or by
+  hand) keeps its commits: the API only links a branch it creates, so the manager asks once in the
+  issue for it to be linked by hand and goes on; a later run finds the link and asks no more. A
+  rejected link, a GraphQL `errors` answer with status `200` included, fails the run with a comment
+  saying why, before anything is pushed; the next run looks the link up again first.
 - [x] 🟥 **F5.4** Commits use your git identity and signing configuration. The manager never sets an
   author, committer or e-mail of its own.
 - [ ] 🟥 **F5.5** Clean state after every PR: on merge, unmerged close, release or loss of the claim,

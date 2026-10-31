@@ -30,6 +30,7 @@ from github_issue_worker.domain.split import (
 from github_issue_worker.domain.work import SKIP_LABEL, RunKind
 from github_issue_worker.ports.agents import AgentRun, RunReport
 from github_issue_worker.ports.clock import Clock
+from github_issue_worker.ports.github import GitHubError, RateLimited
 from github_issue_worker.ports.repository import (
     Blocker,
     Check,
@@ -66,6 +67,9 @@ _UNDERSTANDING_FOOTER = (
     "This is what the work will be measured against. If it is not what you meant, say so in a "
     "comment and the work adapts."
 )
+
+
+LINK_MARKER = f"{MARKER_PREFIX}link -->"
 
 
 def understanding_in(comments: list[Comment]) -> str | None:
@@ -154,6 +158,7 @@ class IssueRun:
         self.conflict_changed(handle.claim.merge_conflict)
         self._consumed = max((comment.id for comment in comments), default=None)
         self._understanding: str | None = None
+        self._linked = False
         try:
             return self._run(issue, comments, kind)
         except RepositorySuspended as suspended:
@@ -230,6 +235,8 @@ class IssueRun:
                     continue
 
                 self._checkpoint("push")
+                if not self._linked:
+                    pushed = self._link(issue, tree, branch, base, pushed)
                 pushed = self._push(tree, branch, pushed)
                 if pull is None:
                     pull = self.host.find_pull_request(branch) or self._open(
@@ -398,6 +405,40 @@ class IssueRun:
                 + "\n".join(problems)
             )
         return None
+
+    def _link(
+        self, issue: Issue, tree: Path, branch: str, base: str, pushed: str | None
+    ) -> str | None:
+        """Link the branch to the issue before its first push (F5.3); returns the remote head the
+        push leases against. ``createLinkedBranch`` only creates a branch, so a new one is created
+        linked at the base commit and the push fast-forwards it; an existing unlinked one is kept
+        and linking it by hand is asked for once."""
+        if branch in self.host.linked_branches(issue.number):
+            self._linked = True
+            return pushed
+        if pushed is None:
+            oid = self.workspace.fork_point(tree, base)
+            try:
+                self._fenced(partial(self.host.link_branch, issue.number, branch, oid))
+            except RateLimited:
+                raise
+            except GitHubError as error:
+                if error.status >= 500:
+                    raise  # GitHub's trouble, not the issue's: the run is retried
+                reason = f"the branch `{branch}` could not be linked to the issue: {error}"
+                raise _Stop(self._fail(issue, reason)) from error
+            self._linked = True
+            return oid
+        if not any(LINK_MARKER in comment.body for comment in self.host.comments(issue.number)):
+            text = (
+                f"The branch `{branch}` existed before it could be linked to this issue, and "
+                "GitHub links only a branch it creates itself, so it is kept as it is. Link it by "
+                "hand in the issue's *Development* panel to see it there; the work goes on "
+                f"meanwhile.\n\n{LINK_MARKER}"
+            )
+            self._fenced(partial(self.host.comment, issue.number, text))
+        self._linked = True
+        return pushed
 
     def _push(self, tree: Path, branch: str, expected: str | None, force: bool = False) -> str:
         self._checkpoint()

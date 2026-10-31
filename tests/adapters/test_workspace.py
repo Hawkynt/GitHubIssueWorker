@@ -88,6 +88,15 @@ def test_commits_lists_what_the_branch_adds(workspace: Workspace) -> None:
     assert [c.message.split("\n")[0] for c in commits] == ["+ first", "* second"]
 
 
+def test_the_fork_point_is_the_base_commit_the_branch_started_from(
+    workspace: Workspace, remote: Path
+) -> None:
+    started = git("rev-parse", "refs/heads/main", cwd=remote)
+    tree = workspace.worktree(REPO, 42, "issue/42-retry", "main")
+    commit(tree, "+ work\n\nbody", "a.txt")
+    assert workspace.fork_point(tree, "main") == started
+
+
 def test_the_manager_pushes_with_a_lease(workspace: Workspace, remote: Path) -> None:
     tree = workspace.worktree(REPO, 42, "issue/42-retry", "main")
     first = commit(tree, "+ one\n\nbody", "a.txt")

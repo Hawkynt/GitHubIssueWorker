@@ -41,3 +41,26 @@ def test_sub_issues_are_listed_by_the_live_endpoint() -> None:
     children = host.sub_issues(33)
     assert isinstance(children, list)
     assert all(child.number != 33 for child in children)
+
+
+def test_linked_branches_are_read_from_the_live_graphql_api() -> None:
+    # Issue 71 brought F5.3; its links may change, the query's shape must not.
+    host = GitHubHost(GhApi(), REPOSITORY.removeprefix("repos/"))
+    names = host.linked_branches(71)
+    assert isinstance(names, list) and all(isinstance(name, str) for name in names)
+
+
+def test_the_live_api_accepts_the_shape_of_create_linked_branch() -> None:
+    # A commit that cannot exist: GitHub rejects the link itself, never the mutation's shape,
+    # and nothing is created.
+    host = GitHubHost(GhApi(), REPOSITORY.removeprefix("repos/"))
+    with pytest.raises(GitHubError) as caught:
+        host.link_branch(71, "ghiw-e2e-never-created", "0" * 40)
+    message = str(caught.value)
+    for schema_error in (
+        "doesn't exist on type",
+        "Variable $",
+        "argumentNotAccepted",
+        "undefinedField",
+    ):
+        assert schema_error not in message

@@ -277,6 +277,7 @@ def test_runs_waiting_for_approval_are_found_and_approved() -> None:
         lambda h: h.approve_run(1),
         lambda h: h.create_sub_issue(1, "title", "body", []),
         lambda h: h.close_issue(1),
+        lambda h: h.link_branch(1, "issue/1", "a" * 40),
     ],
     ids=[
         "labels",
@@ -291,6 +292,7 @@ def test_runs_waiting_for_approval_are_found_and_approved() -> None:
         "approve",
         "sub-issue",
         "close",
+        "link",
     ],
 )
 def test_given_suspension_when_a_host_mutation_is_attempted_then_no_write_reaches_the_api(
@@ -322,3 +324,110 @@ def test_given_suspension_between_sub_issue_writes_when_attaching_then_no_second
     with pytest.raises(RepositorySuspended):
         gh.create_sub_issue(1, "title", "body", [])
     assert len(api.calls) == 1
+
+
+class GraphQLApi:
+    """Answers ``POST graphql`` by the operation the query names; records every request."""
+
+    def __init__(self, answers: dict[str, Any]) -> None:
+        self.answers = answers
+        self.calls: list[dict[str, Any]] = []
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Mapping[str, str] | None = None,
+        headers: Mapping[str, str] | None = None,
+        body: Any = None,
+    ) -> Response:
+        assert (method, path) == ("POST", "graphql")
+        self.calls.append(body)
+        for operation, answer in self.answers.items():
+            if operation in body["query"]:
+                if isinstance(answer, Exception):
+                    raise answer
+                return Response(200, {}, answer)
+        raise AssertionError(f"unexpected query: {body['query']}")
+
+
+LINKED = {
+    "data": {
+        "repository": {
+            "id": "R_repo",
+            "issue": {
+                "id": "I_issue",
+                "linkedBranches": {
+                    "nodes": [
+                        {"ref": {"name": "issue/42-retry-on-timeout"}},
+                        {"ref": None},
+                    ]
+                },
+            },
+        }
+    }
+}
+
+
+def test_linked_branches_reads_the_issues_development_panel() -> None:
+    api = GraphQLApi({"linkedBranches": LINKED})
+    gh = GitHubHost(api, REPO)
+
+    assert gh.linked_branches(42) == ["issue/42-retry-on-timeout"]
+    (call,) = api.calls
+    assert call["variables"] == {"owner": "Hawkynt", "name": "ShiftDiff", "number": 42}
+
+
+def test_linking_sends_create_linked_branch_for_the_repository_issue_and_branch() -> None:
+    created = {
+        "data": {
+            "createLinkedBranch": {
+                "linkedBranch": {"id": "LB_1", "ref": {"name": "issue/42-retry-on-timeout"}}
+            }
+        }
+    }
+    api = GraphQLApi({"createLinkedBranch": created, "linkedBranches": LINKED})
+    gh = GitHubHost(api, REPO)
+
+    gh.link_branch(42, "issue/42-retry-on-timeout", "a" * 40)
+
+    mutation = api.calls[-1]
+    assert "createLinkedBranch(input:" in mutation["query"]
+    assert mutation["variables"] == {
+        "input": {
+            "repositoryId": "R_repo",
+            "issueId": "I_issue",
+            "oid": "a" * 40,
+            "name": "issue/42-retry-on-timeout",
+        }
+    }
+
+
+def test_a_graphql_error_with_status_200_is_a_failed_link() -> None:
+    rejected = {
+        "data": {"createLinkedBranch": None},
+        "errors": [{"type": "UNPROCESSABLE", "message": "Name already exists on this repository"}],
+    }
+    api = GraphQLApi({"createLinkedBranch": rejected, "linkedBranches": LINKED})
+    gh = GitHubHost(api, REPO)
+
+    with pytest.raises(GitHubError, match="Name already exists"):
+        gh.link_branch(42, "issue/42-retry-on-timeout", "a" * 40)
+
+
+def test_a_link_answer_without_a_linked_branch_is_a_failed_link() -> None:
+    empty = {"data": {"createLinkedBranch": {"linkedBranch": None}}}
+    api = GraphQLApi({"createLinkedBranch": empty, "linkedBranches": LINKED})
+    gh = GitHubHost(api, REPO)
+
+    with pytest.raises(GitHubError, match="no linked branch"):
+        gh.link_branch(42, "issue/42-retry-on-timeout", "a" * 40)
+
+
+def test_a_graphql_error_reading_the_links_is_raised_not_read_as_unlinked() -> None:
+    api = GraphQLApi({"linkedBranches": {"data": None, "errors": [{"message": "Bad credentials"}]}})
+    gh = GitHubHost(api, REPO)
+
+    with pytest.raises(GitHubError, match="Bad credentials"):
+        gh.linked_branches(42)
