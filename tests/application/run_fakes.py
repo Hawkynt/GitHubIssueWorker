@@ -174,11 +174,16 @@ class FakeWorkspace:
     shas: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
     head_listener: Callable[[str, str], None] | None = None
 
-    def worktree(self, repository: str, issue: int, branch: str, base: str) -> Path:
+    def worktree(
+        self, repository: str, issue: int, branch: str, base: str, resume: bool = True
+    ) -> Path:
         path = self.root / str(issue)
         path.mkdir(parents=True, exist_ok=True)
         self.trees.setdefault(issue, [])
         return path
+
+    def checkpoint(self, repository: str, issue: int, branch: str, base: str) -> str:
+        return f"checkpoint-{issue}"
 
     def add_commit(self, issue: int, message: str) -> None:
         self.trees[issue].append(CommitInfo(f"c{next(self.shas)}", message))

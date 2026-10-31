@@ -702,3 +702,142 @@ def test_max_takeovers_is_wired_into_the_claim_policy_and_updated_live(tmp_path:
     f.manager.repositories = [watch]
     runtime.apply(parse(json.dumps(body)), f.manager)
     assert runtime.watches["o/r"].coordinator.policy.max_takeovers == 5
+
+
+def test_removal_releases_retained_claims_before_saving_only_the_selected_repository(
+    tmp_path: Path,
+) -> None:
+    from github_issue_worker.configuration import load, save
+    from tests.application.test_repository_removal import setup_watch
+
+    watch, store = setup_watch(tmp_path)
+    kept, kept_store = setup_watch(tmp_path)
+    kept.name = "o/kept"
+    kept_claims = {n: kept_store.read(n) for n in kept_store.issues()}
+    config = Configuration(
+        repositories=[RepositorySettings(repository="o/r"), RepositorySettings(repository="o/kept")]
+    )
+    path = tmp_path / "config.json"
+    save(config, path)
+    runtime = Runtime(
+        config,
+        tmp_path,
+        None,
+        JsonStateStore(tmp_path / "state.json"),
+        "here",
+        FakeWorkspace(tmp_path),
+        watches={"o/r": watch, "o/kept": kept},
+    )
+    checkpoints = []
+
+    def snapshot(repo: str, number: int, branch: str, base: str) -> str:
+        assert any(r.repository == "o/r" for r in load(path).repositories)
+        checkpoints.append(number)
+        return "saved"
+
+    runtime.workspace.checkpoint = snapshot
+    runtime.remove_repository("o/r", path)
+    assert checkpoints == [1, 2]
+    assert {n: kept_store.read(n) for n in kept_store.issues()} == kept_claims
+    assert [r.repository for r in load(path).repositories] == ["o/kept"]
+    assert store.current(1).state.value == "released"
+    runtime.remove_repository("o/r", path)
+    assert checkpoints == [1, 2]
+
+
+def test_removal_failure_retains_configuration_and_live_watch_for_retry(tmp_path: Path) -> None:
+    from github_issue_worker.configuration import load, save
+    from tests.application.test_repository_removal import setup_watch
+
+    watch, store = setup_watch(tmp_path)
+    config = Configuration(repositories=[RepositorySettings(repository="o/r")])
+    path = tmp_path / "config.json"
+    save(config, path)
+    runtime = Runtime(
+        config,
+        tmp_path,
+        None,
+        JsonStateStore(tmp_path / "state.json"),
+        "here",
+        FakeWorkspace(tmp_path),
+        watches={"o/r": watch},
+    )
+
+    def fail(*args: object) -> None:
+        raise OSError("offline")
+
+    runtime.workspace.checkpoint = fail
+    with pytest.raises(OSError, match="offline"):
+        runtime.remove_repository("o/r", path)
+    assert load(path).repositories[0].repository == "o/r"
+    assert "o/r" in runtime.watches and store.current(1).state.holds
+
+
+def test_live_removal_waits_for_stopped_run_before_checkpointing_and_acknowledging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    from github_issue_worker.application.issue_run import Verdict
+    from github_issue_worker.application.manager import Manager
+    from github_issue_worker.configuration import load, save
+    from tests.application.test_repository_removal import setup_watch
+
+    watch, store = setup_watch(tmp_path)
+    config = Configuration(repositories=[RepositorySettings(repository="o/r")])
+    path = tmp_path / "config.json"
+    save(config, path)
+    clock = FakeClock(datetime(2026, 10, 31, tzinfo=UTC))
+    runtime = Runtime(
+        config,
+        tmp_path,
+        None,
+        JsonStateStore(tmp_path / "state.json"),
+        "here",
+        FakeWorkspace(tmp_path),
+        watches={"o/r": watch},
+    )
+    worker = WorkerSlot("w1", "local", "a")
+    started, finished = threading.Event(), threading.Event()
+
+    def run(*args: object) -> Verdict:
+        started.set()
+        assert watch.stopping.wait(2)
+        finished.set()
+        return Verdict("stopped")
+
+    manager = Manager(
+        "here",
+        frozenset(),
+        [watch],
+        [worker],
+        lambda *a: None,
+        {},
+        runtime.state,
+        clock,
+        (),
+        run,
+        lambda job: threading.Thread(target=job).start(),
+    )
+    stored = store.read(1)
+    item = Issue(
+        1, "Work", "", "open", Actor("owner"), frozenset(), False, clock.now(), clock.now()
+    )
+    from github_issue_worker.application.coordinator import ClaimHandle
+
+    manager._start(
+        watch, worker, ClaimHandle(stored.version, stored.claim), item, (), RunKind.CONTINUATION
+    )
+    assert started.wait(2)
+
+    def checkpoint(*args: object) -> str:
+        assert finished.is_set()
+        assert not worker.busy
+        return "saved"
+
+    runtime.workspace.checkpoint = checkpoint
+    monkeypatch.setattr(wiring, "terminate", lambda name: False)
+    runtime.remove_repository("o/r", path, manager)
+    assert not manager.repositories and not runtime.watches
+    assert not load(path).repositories
+    assert store.current(1).state.value == "released"

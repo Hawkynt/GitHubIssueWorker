@@ -699,3 +699,32 @@ def test_given_a_failed_stalled_issue_then_only_a_trusted_comment_brings_it_back
     f.polls.append(PollResult(comments=(comment,)))
     f.manager.tick()
     assert f.runs == [Recorded("claude", 5, RunKind.REWORK)]
+
+
+def test_removing_a_repository_stops_scheduling_and_waits_through_run_recording() -> None:
+    jobs = []
+    f = Fixture([slot("w")])
+    f.manager.spawn = jobs.append
+    f.new_issues(issue(1))
+    f.manager.tick()
+    pending = f.manager.stop_repository(f.watch)
+    assert len(pending) == 1 and not pending[0][1].is_set()
+    assert f.watch.stopping.is_set()
+    f.manager.on_finished = lambda record: pytest.fail("recording is replaced below")
+    recorded = []
+    f.manager.on_finished = lambda record: recorded.append(not pending[0][1].is_set())
+    jobs.pop()()
+    assert pending[0][1].is_set() and recorded == [True]
+    f.new_issues(issue(2))
+    f.manager.tick()
+    assert not jobs
+
+
+def test_removal_keeps_worker_busy_until_claim_history_recording_has_finished() -> None:
+    f = Fixture([slot("w")])
+    observed = []
+    f.manager.on_finished = lambda record: observed.append(f.manager.workers[0].busy)
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert observed == [True]
+    assert not f.manager.workers[0].busy

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from github_issue_worker.application.poller import Poller, PollState
@@ -138,7 +139,9 @@ def test_not_modified_reports_nothing_and_keeps_the_state() -> None:
     )
     result, new_state = poller(github).poll(REPO, state, process_backlog=False)
     assert result.issues == () and result.comments == ()
-    assert new_state == state
+    from dataclasses import replace
+
+    assert new_state == replace(state, last_polled_at=NOW)
 
 
 def test_all_pages_are_read_and_only_the_first_is_conditional() -> None:
@@ -157,3 +160,47 @@ def test_all_pages_are_read_and_only_the_first_is_conditional() -> None:
     assert [issue.number for issue in result.issues] == [1, 2]
     assert github.requests[1][2] == {}
     assert new_state.issues_etag == '"p1"'
+
+
+def test_last_successful_poll_advances_on_unchanged_responses_and_survives_restart(
+    tmp_path: Path,
+) -> None:
+    from github_issue_worker.adapters.state_store import JsonStateStore
+
+    clock = FakeClock(NOW)
+    api = ScriptedGitHub(
+        {
+            f"repos/{REPO}/issues": [Response(304, {}), Response(304, {})],
+            f"repos/{REPO}/issues/comments": [Response(304, {}), Response(304, {})],
+        }
+    )
+    state = PollState(watched_since=NOW, issues_since=NOW)
+    path = tmp_path / "state.json"
+    store = JsonStateStore(path)
+    for _ in range(2):
+        clock.advance(timedelta(minutes=5))
+        _, state = poller(api, clock).poll(REPO, state, False)
+        store.set_poll_state(REPO, state)
+        assert JsonStateStore(path).poll_state(REPO).last_polled_at == clock.now()
+        assert state.watched_since == NOW and state.issues_since == NOW
+
+
+def test_failed_poll_does_not_advance_last_successful_poll(tmp_path: Path) -> None:
+    import pytest
+
+    from github_issue_worker.adapters.state_store import JsonStateStore
+
+    store = JsonStateStore(tmp_path / "state.json")
+    state = PollState(watched_since=NOW, last_polled_at=NOW)
+    store.set_poll_state(REPO, state)
+    api = ScriptedGitHub({f"repos/{REPO}/issues": [Response(304, {})]})
+    clock = FakeClock(NOW + timedelta(minutes=5))
+    with pytest.raises(KeyError):
+        _, updated = poller(api, clock).poll(REPO, state, False)
+        store.set_poll_state(REPO, updated)
+    assert store.poll_state(REPO).last_polled_at == NOW
+
+
+def test_watch_initialization_is_not_reported_as_a_successful_poll() -> None:
+    _, state = poller(ScriptedGitHub({})).poll(REPO, PollState(), False)
+    assert state.last_polled_at is None

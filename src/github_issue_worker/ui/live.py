@@ -364,8 +364,8 @@ class RuntimeBackend:
     # --- changing --------------------------------------------------------------------------------
 
     def save_config(self, config: Configuration) -> None:
-        save(config, self._path)
         self._runtime.apply(config, self._manager)
+        save(config, self._path)
 
     def check_repository(self, repository: str) -> None:
         try:

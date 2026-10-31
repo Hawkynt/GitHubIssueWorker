@@ -213,7 +213,10 @@ affected runs before publishing their checkpoints and releasing their claims, an
 completion before the command reports success. When the manager is offline, the command performs
 the same operation directly. The watch-list change is saved only after release succeeds; failures
 are reported and can be retried without discarding recoverable work. Other managers' claims and
-other repositories are untouched. Repeating removal is harmless.
+other repositories are untouched. Repeating removal is harmless. Use the same `--config` and
+`--state-dir` as `watch` (and the same `--cache-dir` when removing offline). If the manager is
+starting, stopping or unreachable while still running, removal reports an error asking for a retry
+rather than attempting an unsafe offline release.
 
 `github-issue-worker status` shows what is going on, in headed sections: the manager, its workers
 (agent, account, and `limited until …` while the account waits for its reset), its accounts (each
@@ -627,8 +630,10 @@ same new comment race for the claim, and the loser drops it.
 **Checkpoints.** The manager pushes a checkpoint to `refs/ghiw/wip/<issue>` after each step, every
 `checkpointInterval` (default 5 minutes) during a run, and before it pauses or releases. A checkpoint
 is a commit whose first parent is the issue branch's local head and whose tree is the full worktree,
-uncommitted changes included. A new holder checks out the branch commits and restores the rest as
-uncommitted work. The issue branch itself only ever receives verified, gate-checked commits.
+uncommitted changes included. Ignored build output and transient run files are excluded; the
+journal is included even though its directory is ignored. A new holder checks out the branch
+commits and restores the rest as uncommitted work. The issue branch itself only ever receives
+verified, gate-checked commits.
 
 **Presence** on `refs/ghiw/managers/<manager>` is renewed every 15 minutes. It feeds the UI's fleet
 view, the *unserved* check, and shared account limits. It never decides a takeover, only the claim
@@ -974,7 +979,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F1.2** `add` refuses a repository the authenticated account cannot push to
   (`permissions.push` is false), and says so.
 - [x] 🟥 **F1.3** `add` creates the `worker:*` labels that do not exist yet.
-- [ ] 🟥 **F1.4** `remove <repo>` and `list` (last poll, state counts, current issues). Removing a
+- [x] 🟥 **F1.4** `remove <repo>` and `list` (last poll, state counts, current issues). Removing a
   repository releases this manager's claims in it with a checkpoint.
 - [x] 🟥 **F1.5** Push access is re-checked on every start and every hour. A repository that lost it
   is suspended with a log entry, not skipped silently. Startup checks precede label creation,

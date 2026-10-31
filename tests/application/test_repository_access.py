@@ -237,6 +237,8 @@ def test_given_suspended_running_work_when_agent_returns_then_no_renewal_or_ship
     before = h.store.read(42)
 
     def finish(run: AgentRun) -> RunReport:
+        nonlocal before
+        before = h.store.read(42)
         watch.suspension_reason = "lost push access"
         return step(h.workspace, ok())(run)
 
@@ -252,6 +254,7 @@ def test_given_suspended_running_work_when_agent_returns_then_no_renewal_or_ship
         settings=RunSettings(understand_first=False),
     ).run(h.handle, h.issue, (), RunKind.FIRST)
     assert verdict.kind == "suspended"
+    assert before is not None and before.claim.step == "implement"
     assert h.store.read(42) == before
     assert h.workspace.trees[42]  # local work survives
     assert not h.workspace.pushes and not h.host.pulls and not h.host.merged

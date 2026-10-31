@@ -56,6 +56,27 @@ VerdictKind = Literal[
 ]
 
 
+def checkpoint_and_release(
+    host: RepositoryHost,
+    workspace: WorkspacePort,
+    coordinator: Coordinator,
+    handle: ClaimHandle,
+    repository: str,
+    base: str,
+) -> None:
+    """The shipping path for removal: checkpoint before freeing a stopped run (F1.4)."""
+    handle = coordinator.fence(handle)
+    claim = handle.claim
+    workspace.checkpoint(repository, claim.issue, claim.branch, base)
+    handle = coordinator.fence(handle)
+    host.set_worker_label(claim.issue, "worker:queued")
+    coordinator.release(handle, step="released")
+
+
+class RepositoryRemoved(Exception):
+    """The run stops; its manager checkpoints and releases after the run has exited."""
+
+
 class RunStopped(Exception):
     """The maintainer stopped the agent (UI: stop & release). Not a failure to retry."""
 
@@ -149,6 +170,7 @@ class IssueRun:
     """Told when the run waits on something only a person can do, and when that is over."""
 
     conflict_changed: Callable[[bool], None] = lambda conflict: None
+    cancelled: Callable[[], bool] = lambda: False
 
     def run(
         self, handle: ClaimHandle, issue: Issue, comments: tuple[Comment, ...], kind: RunKind
@@ -165,12 +187,25 @@ class IssueRun:
             return Verdict("suspended", detail=str(suspended))
         except ClaimLost as lost:
             return Verdict("lost", detail=str(lost))
+        except RepositoryRemoved:
+            return Verdict("stopped", detail="repository removed")
         except RunStopped as stopped:
+            if self.cancelled():
+                return Verdict("stopped", detail="repository removed")
             self.host.set_worker_label(issue.number, "worker:queued")
             self.coordinator.release(self._handle, step="stopped")
             return Verdict("stopped", detail=str(stopped))
         except _Stop as stop:
             return stop.verdict
+
+    def _check_cancelled(self) -> None:
+        if self.cancelled():
+            raise RepositoryRemoved
+
+    def _progress(self, step: str) -> None:
+        self._check_cancelled()
+        self._handle = self.coordinator.renew(self._handle, step=step)
+        self.progress(step)
 
     # --- the run ---------------------------------------------------------------------------------
 
@@ -179,7 +214,9 @@ class IssueRun:
         branch = self._handle.claim.branch
         self._fenced(lambda: self.host.set_worker_label(issue.number, "worker:working"))
         base = self.settings.base_branch or self.host.info().default_branch
-        tree = self.workspace.worktree(repo, issue.number, branch, base)
+        tree = self.workspace.worktree(
+            repo, issue.number, branch, base, resume=kind not in (RunKind.FIRST, RunKind.REOPEN)
+        )
         label_choices = None
         if not {name for name in issue.labels if not name.startswith("worker")}:
             label_choices = self.host.label_names() - {
@@ -357,6 +394,7 @@ class IssueRun:
         phase: str = "implement",
         may_split: bool = False,
     ) -> RunReport:
+        self._check_cancelled()
         key = (issue.number, self.settings.worker)
         prompt = build_prompt(
             self.host.repository,
@@ -378,6 +416,7 @@ class IssueRun:
                 model=self.settings.model,
             )
         )
+        self._check_cancelled()
         if report.session:
             self.sessions[key] = report.session
         self._handle = self.coordinator.renew(self._handle)
@@ -386,6 +425,7 @@ class IssueRun:
 
     def _check(self, tree: Path, base: str) -> str | None:
         """Why the work is not done yet, or None: verification, then commits, then the gate."""
+        self._check_cancelled()
         ok, output = self.verify(tree)
         self._checkpoint()
         if not ok:
@@ -514,6 +554,7 @@ class IssueRun:
             self.sleep(min(interval, 10.0) if waiting else interval)
 
     def _conflict(self, conflict: bool) -> None:
+        self._check_cancelled()
         self._handle = self.coordinator.set_merge_conflict(self._handle, conflict)
         self.conflict_changed(conflict)
 
@@ -550,6 +591,7 @@ class IssueRun:
         # The PR's own title carries the change-line prefix, also when another run opened it.
         subject = current.title or getattr(self, "_title", "") or self._subject(issue, tree, base)
         title = f"{subject} (#{pull.number})"
+        self._check_cancelled()
         self._handle = self.coordinator.fence(self._handle)
         merge_sha = (
             ""
@@ -659,7 +701,8 @@ class IssueRun:
         return Verdict("failed", detail=reason)
 
     def _checkpoint(self, step: str | None = None) -> None:
-        """Stop at the checkpoint when ``worker:skip`` is on the issue (F2.7)."""
+        """Stop at a checkpoint for repository removal or ``worker:skip`` (F1.4, F2.7)."""
+        self._check_cancelled()
         issue = self._issue.number
         if SKIP_LABEL in self._issue.labels or SKIP_LABEL in self.host.issue(issue).labels:
             self._handle = self.coordinator.fence(self._handle)
@@ -667,7 +710,7 @@ class IssueRun:
             self._handle = self.coordinator.release(self._handle, step="skipped")
             raise _Stop(Verdict("skipped", detail="labelled worker:skip"))
         if step is not None:
-            self.progress(step)
+            self._progress(step)
 
     def _fenced(self, write: Callable[[], object]) -> None:
         self._checkpoint()

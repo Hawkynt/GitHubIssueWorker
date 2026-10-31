@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -178,3 +179,127 @@ def test_the_journal_is_read_from_the_worktree_and_is_none_when_missing(tmp_path
     (tmp_path / ".ghiw").mkdir()
     (tmp_path / ".ghiw" / "journal.md").write_text("## Done\n- a\n", encoding="utf-8")
     assert workspace.journal(tmp_path) == "## Done\n- a\n"
+
+
+def test_removal_checkpoint_restores_commits_dirty_files_and_journal_on_another_machine(
+    workspace: Workspace, remote: Path, tmp_path: Path
+) -> None:
+    tree = workspace.worktree(REPO, 42, "issue/42-retry", "main")
+    head = commit(tree, "+ committed work", "committed.txt")
+    (tree / "file.txt").write_text("uncommitted change\n", encoding="utf-8")
+    (tree / "new.bin").write_bytes(bytes(range(256)))
+    (tree / ".ghiw").mkdir()
+    (tree / ".ghiw" / "journal.md").write_text(
+        "Continue the remaining scenarios.\n", encoding="utf-8"
+    )
+    (tree / ".ghiw" / "prompt.md").write_text("transient input", encoding="utf-8")
+    status = git("status", "--porcelain", cwd=tree)
+    checkpoint = workspace.checkpoint(REPO, 42, "issue/42-retry", "main")
+    assert git("rev-parse", f"{checkpoint}^", cwd=remote) == head
+    assert git("rev-parse", "HEAD", cwd=tree) == head
+    assert git("status", "--porcelain", cwd=tree) == status
+    assert workspace.remote_head(REPO, "issue/42-retry") is None
+
+    other = Workspace(tmp_path / "other-machine", lambda repo: str(remote), Path.home())
+    restored = other.worktree(REPO, 42, "issue/42-retry", "main")
+    assert git("rev-parse", "HEAD", cwd=restored) == head
+    assert (restored / "committed.txt").exists()
+    assert (restored / "file.txt").read_text(encoding="utf-8") == "uncommitted change\n"
+    assert (restored / "new.bin").read_bytes() == bytes(range(256))
+    assert (restored / ".ghiw" / "journal.md").read_text(
+        encoding="utf-8"
+    ) == "Continue the remaining scenarios.\n"
+    assert not (restored / ".ghiw" / "prompt.md").exists()
+    assert "file.txt" in git("diff", "--name-only", cwd=restored)
+    assert "?? new.bin" in git("status", "--porcelain", cwd=restored)
+
+
+def test_checkpoint_preserves_deletions_and_does_not_modify_the_index(workspace: Workspace) -> None:
+    tree = workspace.worktree(REPO, 9, "issue/9", "main")
+    (tree / "staged.txt").write_text("staged", encoding="utf-8")
+    git("add", "staged.txt", cwd=tree)
+    (tree / "file.txt").unlink()
+    before = git("status", "--porcelain", cwd=tree)
+    workspace.checkpoint(REPO, 9, "issue/9", "main")
+    assert git("status", "--porcelain", cwd=tree) == before
+
+
+def test_checkpoint_retries_reuse_remote_checkpoint_when_local_worktree_is_missing(
+    workspace: Workspace, remote: Path
+) -> None:
+    tree = workspace.worktree(REPO, 42, "issue/42", "main")
+    commit(tree, "+ saved")
+    saved = workspace.checkpoint(REPO, 42, "issue/42", "main")
+    workspace.remove(REPO, 42, "issue/42")
+    assert workspace.checkpoint(REPO, 42, "issue/42", "main") == saved
+
+
+def test_checkpoint_restores_deleted_files_as_uncommitted_deletions(
+    workspace: Workspace, remote: Path, tmp_path: Path
+) -> None:
+    tree = workspace.worktree(REPO, 9, "issue/9", "main")
+    (tree / "file.txt").unlink()
+    workspace.checkpoint(REPO, 9, "issue/9", "main")
+    other = Workspace(tmp_path / "other-deletion", lambda repo: str(remote), Path.home())
+    restored = other.worktree(REPO, 9, "issue/9", "main")
+    assert not (restored / "file.txt").exists()
+    assert (
+        " D file.txt" in git("status", "--porcelain", cwd=restored)
+        or git("status", "--porcelain", cwd=restored) == "D file.txt"
+    )
+    assert git("show", "HEAD:file.txt", cwd=restored) == "+ initial"
+
+
+def test_checkpoint_publication_rejects_a_concurrent_wip_change_without_losing_local_work(
+    workspace: Workspace, remote: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tree = workspace.worktree(REPO, 9, "issue/9", "main")
+    workspace.checkpoint(REPO, 9, "issue/9", "main")
+    (tree / "new.txt").write_text("keep me", encoding="utf-8")
+    original = workspace._git
+
+    def race(cwd: Path, *args: str, **kwargs: Any) -> str:
+        if args[0] == "push":
+            git("update-ref", "refs/ghiw/wip/9", "refs/heads/main", cwd=remote)
+        return original(cwd, *args, **kwargs)
+
+    monkeypatch.setattr(workspace, "_git", race)
+    with pytest.raises(WorkspaceError):
+        workspace.checkpoint(REPO, 9, "issue/9", "main")
+    assert (tree / "new.txt").read_text(encoding="utf-8") == "keep me"
+    assert git("rev-parse", "refs/ghiw/wip/9", cwd=remote) == git("rev-parse", "main", cwd=remote)
+
+
+def test_fresh_run_does_not_restore_a_prior_runs_checkpoint(workspace: Workspace) -> None:
+    tree = workspace.worktree(REPO, 9, "issue/9", "main")
+    (tree / "old.txt").write_text("old work", encoding="utf-8")
+    workspace.checkpoint(REPO, 9, "issue/9", "main")
+    workspace.remove(REPO, 9, "issue/9")
+    fresh = workspace.worktree(REPO, 9, "issue/9", "main", resume=False)
+    assert not (fresh / "old.txt").exists()
+
+
+def test_removal_checkpoint_preserves_local_branch_commits_when_worktree_was_removed(
+    workspace: Workspace, remote: Path
+) -> None:
+    tree = workspace.worktree(REPO, 9, "issue/9", "main")
+    head = commit(tree, "+ unpushed work")
+    clone = workspace.clone(REPO)
+    git("worktree", "remove", str(tree), cwd=clone)
+    saved = workspace.checkpoint(REPO, 9, "issue/9", "main")
+    assert git("rev-parse", f"{saved}^", cwd=remote) == head
+
+
+def test_checkpoint_includes_force_staged_ignored_source_without_changing_the_index(
+    workspace: Workspace, remote: Path, tmp_path: Path
+) -> None:
+    tree = workspace.worktree(REPO, 9, "issue/9", "main")
+    (tree / ".gitignore").write_text("ignored-source.txt\n", encoding="utf-8")
+    (tree / "ignored-source.txt").write_text("intentionally staged", encoding="utf-8")
+    git("add", "-f", "ignored-source.txt", cwd=tree)
+    before = git("diff", "--cached", cwd=tree)
+    workspace.checkpoint(REPO, 9, "issue/9", "main")
+    other = Workspace(tmp_path / "other-staging", lambda repo: str(remote), Path.home())
+    restored = other.worktree(REPO, 9, "issue/9", "main")
+    assert (restored / "ignored-source.txt").read_text(encoding="utf-8") == "intentionally staged"
+    assert git("diff", "--cached", cwd=tree) == before
