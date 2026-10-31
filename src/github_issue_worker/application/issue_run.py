@@ -1,4 +1,4 @@
-"""One worker's run on one claimed issue, from the first agent step to a verdict (F6-F9, F13.5).
+"""One worker's run on one claimed issue, from the first agent step to a verdict (F2.7, F6-F9).
 
 The agent works; this module checks and ships. Nothing reaches GitHub before the claim has been
 fenced, the work verified and every commit passed the commit gate.
@@ -26,7 +26,7 @@ from github_issue_worker.domain.split import (
     parent_of,
     sub_issue_body,
 )
-from github_issue_worker.domain.work import RunKind
+from github_issue_worker.domain.work import SKIP_LABEL, RunKind
 from github_issue_worker.ports.agents import AgentRun, RunReport
 from github_issue_worker.ports.clock import Clock
 from github_issue_worker.ports.repository import (
@@ -48,6 +48,7 @@ VerdictKind = Literal[
     "failed",
     "lost",
     "stopped",
+    "skipped",
     "split",
     "suspended",
 ]
@@ -146,6 +147,7 @@ class IssueRun:
         self, handle: ClaimHandle, issue: Issue, comments: tuple[Comment, ...], kind: RunKind
     ) -> Verdict:
         self._handle = handle
+        self._issue = issue
         self.conflict_changed(handle.claim.merge_conflict)
         self._consumed = max((comment.id for comment in comments), default=None)
         self._understanding: str | None = None
@@ -167,6 +169,7 @@ class IssueRun:
     def _run(self, issue: Issue, comments: tuple[Comment, ...], kind: RunKind) -> Verdict:
         repo = self.host.repository
         branch = self._handle.claim.branch
+        self._checkpoint()
         self._fenced(lambda: self.host.set_worker_label(issue.number, "worker:working"))
         base = self.settings.base_branch or self.host.info().default_branch
         tree = self.workspace.worktree(repo, issue.number, branch, base)
@@ -182,7 +185,7 @@ class IssueRun:
             and self.settings.understand_first
             and kind in (RunKind.FIRST, RunKind.REOPEN)
         ):
-            self.progress("understand")
+            self._checkpoint("understand")
             verdict = self._understand(tree, issue, comments, kind, branch, label_choices)
             if verdict is not None:
                 return verdict
@@ -196,7 +199,7 @@ class IssueRun:
 
         while True:
             if pull is None or feedback is not None:
-                self.progress("implement")
+                self._checkpoint("implement")
                 report = self._agent(tree, issue, comments, kind, branch, label_choices, feedback)
                 if report.limit is not None:
                     return self._pause(issue, report)
@@ -215,7 +218,7 @@ class IssueRun:
                 if outcome.kind != "done":
                     return self._ask(issue, outcome)
 
-                self.progress("verify")
+                self._checkpoint("verify")
                 problem = self._check(tree, base)
                 if problem:
                     corrections += 1
@@ -224,7 +227,7 @@ class IssueRun:
                     feedback = problem
                     continue
 
-                self.progress("push")
+                self._checkpoint("push")
                 pushed = self._push(tree, branch, pushed)
                 if pull is None:
                     pull = self.host.find_pull_request(branch) or self._open(
@@ -232,10 +235,10 @@ class IssueRun:
                     )
                 feedback = None
 
-            self.progress("checks")
+            self._checkpoint("checks")
             state, detail = self._await(pull, issue)
             if state == "merge":
-                self.progress("merge")
+                self._checkpoint("merge")
                 return self._merge(issue, pull, branch, tree, base)
             if state == "rebase":
                 if self.workspace.rebase(tree, base):
@@ -354,11 +357,13 @@ class IssueRun:
         if report.session:
             self.sessions[key] = report.session
         self._handle = self.coordinator.renew(self._handle)
+        self._checkpoint()
         return report
 
     def _check(self, tree: Path, base: str) -> str | None:
         """Why the work is not done yet, or None: verification, then commits, then the gate."""
         ok, output = self.verify(tree)
+        self._checkpoint()
         if not ok:
             return "The build or tests fail:\n\n" + output[-6000:]
         commits = self.workspace.commits(tree, base)
@@ -418,6 +423,7 @@ class IssueRun:
         deadline = self.clock.now() + self.settings.checks_timeout
         while True:
             self._handle = self.coordinator.fence(self._handle)
+            self._checkpoint()
             current = self.host.pull_request(pull.number)
             if current.mergeable_state == "dirty":
                 self._conflict(True)
@@ -572,6 +578,17 @@ class IssueRun:
         self.host.set_worker_label(issue.number, "worker:failed")
         self.coordinator.release(self._handle, step="failed", consumed=self._consumed)
         return Verdict("failed", detail=reason)
+
+    def _checkpoint(self, step: str | None = None) -> None:
+        """Stop at the checkpoint when ``worker:skip`` is on the issue (F2.7)."""
+        issue = self._issue.number
+        if SKIP_LABEL in self._issue.labels or SKIP_LABEL in self.host.issue(issue).labels:
+            self._handle = self.coordinator.fence(self._handle)
+            self.host.set_worker_label(issue, None)
+            self._handle = self.coordinator.release(self._handle, step="skipped")
+            raise _Stop(Verdict("skipped", detail="labelled worker:skip"))
+        if step is not None:
+            self.progress(step)
 
     def _fenced(self, write: Callable[[], object]) -> None:
         self._handle = self.coordinator.fence(self._handle)

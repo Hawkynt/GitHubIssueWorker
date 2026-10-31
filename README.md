@@ -895,7 +895,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   `processBacklog` is on.
 - [x] 🟥 **F2.6** Honours `X-RateLimit-Remaining`/`Reset` and secondary-limit `Retry-After`, and
   backs off instead of failing.
-- [ ] 🟧 **F2.7** `mode: labeled` acts only on issues carrying `worker`. `worker:skip` is honoured in
+- [x] 🟧 **F2.7** `mode: labeled` acts only on issues carrying `worker`. `worker:skip` is honoured in
   every mode and stops a run in progress at its next checkpoint.
 - [ ] 🟦 **F2.8** Optional webhook receiver as an alternative to polling, for hosts that are
   reachable.

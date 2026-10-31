@@ -461,3 +461,83 @@ def test_ci_of_the_repositorys_own_branch_is_approved_without_asking(tmp_path: P
     assert h.run(blocked=seen.append).kind == "merged"
     assert h.host.approved == [9]
     assert all(blocker is None for blocker in seen)  # nobody was asked
+
+
+def test_worker_skip_added_during_an_agent_run_stops_at_the_next_checkpoint_and_releases_the_claim(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    def skip_during_implement(h: Harness) -> list:  # type: ignore[type-arg]
+        def act(run: AgentRun) -> RunReport:
+            h.workspace.add_commit(42, GOOD_COMMIT)
+            h.host.issues[42] = replace(ISSUE, labels=frozenset({"worker:working", "worker:skip"}))
+            return ok()
+
+        return [act]
+
+    h = Harness(tmp_path, skip_during_implement)
+    verdict = h.run()
+
+    assert verdict.kind == "skipped"
+    current = h.store.current(42)
+    assert (
+        current is not None and current.state is ClaimState.RELEASED and current.step == "skipped"
+    )
+    assert h.host.worker_label[42] is None
+    assert h.workspace.pushes == []
+    assert h.host.pulls == {}
+    assert h.host.posted == []
+
+
+def test_worker_skip_added_during_understanding_stops_before_posting_restatement_or_implementing(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    def skip_during_understand(h: Harness) -> list:  # type: ignore[type-arg]
+        def understand(run: AgentRun) -> RunReport:
+            h.host.issues[42] = replace(ISSUE, labels=frozenset({"worker:working", "worker:skip"}))
+            return ok(Outcome("done", "Understood.", restatement="Goal: retry.", labels=("bug",)))
+
+        return [understand, step(h.workspace, ok())]
+
+    h = Harness(tmp_path, skip_during_understand)
+    verdict = h.run(understand_first=True)
+
+    assert verdict.kind == "skipped"
+    assert len(h.agent.runs) == 1
+    assert h.host.posted == []
+    assert h.host.added_labels == {}
+    assert h.host.worker_label[42] is None
+    current = h.store.current(42)
+    assert (
+        current is not None and current.state is ClaimState.RELEASED and current.step == "skipped"
+    )
+
+
+def test_worker_skip_added_while_waiting_for_checks_stops_at_the_next_poll_and_releases_the_claim(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
+    h.host.states = ["blocked", "clean"]
+    h.host.check_results = [[]]
+
+    original_sleep = h.clock.advance
+
+    def skip_while_waiting(delta: timedelta) -> None:
+        h.host.issues[42] = replace(ISSUE, labels=frozenset({"worker:working", "worker:skip"}))
+        original_sleep(delta)
+
+    h.clock.advance = skip_while_waiting  # type: ignore[method-assign]
+    verdict = h.run()
+
+    assert verdict.kind == "skipped"
+    assert h.host.merged == []
+    assert h.host.worker_label[42] is None
+    current = h.store.current(42)
+    assert (
+        current is not None and current.state is ClaimState.RELEASED and current.step == "skipped"
+    )

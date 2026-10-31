@@ -88,6 +88,16 @@ def test_labeled_mode_needs_the_worker_label() -> None:
     assert pending_run(context(mode="labeled", issue=labelled)) is RunKind.FIRST
 
 
+@pytest.mark.parametrize("mode", ["all", "labeled"])
+def test_worker_skip_is_honoured_in_every_mode_even_with_the_worker_label(
+    mode: str,
+) -> None:
+    skipped = replace(ISSUE, labels=frozenset({"worker", "worker:skip"}))
+    assert pending_run(context(mode=mode, issue=skipped)) is None
+    assert pending_run(context(mode=mode, issue=skipped, claim=held(ClaimState.RELEASED))) is None
+    assert pending_run(context(mode=mode, issue=skipped, claim=held(ClaimState.DONE))) is None
+
+
 def test_a_held_claim_is_left_to_its_holder() -> None:
     assert pending_run(context(claim=held(), comments=(comment(5),))) is None
     assert pending_run(context(claim=held(ClaimState.PAUSED))) is None

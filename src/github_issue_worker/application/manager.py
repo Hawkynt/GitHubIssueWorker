@@ -1,4 +1,4 @@
-"""The manager loop: poll, decide, claim, hand issues to idle workers (F3, F11.8, F11.11, F13).
+"""The manager loop: poll, decide, claim, hand issues to idle workers (F2.7, F3, F11.8, F13).
 
 Each worker slot holds at most one claim, and claims only when it is idle, eligible for the issue,
 its account is not limited and below its concurrency cap, so nothing is reserved by a worker that
@@ -33,7 +33,13 @@ from github_issue_worker.domain.split import (
     split_summary,
 )
 from github_issue_worker.domain.trust import is_trusted
-from github_issue_worker.domain.work import RunKind, WorkContext, new_input, pending_run
+from github_issue_worker.domain.work import (
+    SKIP_LABEL,
+    RunKind,
+    WorkContext,
+    new_input,
+    pending_run,
+)
 from github_issue_worker.ports.claims import ClaimStore
 from github_issue_worker.ports.clock import Clock
 from github_issue_worker.ports.repository import Blocker, RepositoryHost, RepositorySuspended
@@ -326,6 +332,15 @@ class Manager:
         kind = pending_run(context)
         if kind is None:
             self._pending[watch.name].discard(number)
+            if (watch.name, number) in self._labelled or (
+                SKIP_LABEL in issue.labels
+                and not (claim and claim.state.holds)
+                and any(
+                    label.startswith("worker:") and label != SKIP_LABEL for label in issue.labels
+                )
+            ):
+                watch.host.set_worker_label(number, None)
+                self._labelled.pop((watch.name, number), None)
             return
 
         eligible = [slot for slot in self.workers if self._serves(slot, issue)]
@@ -360,6 +375,13 @@ class Manager:
         claim = handle.claim
         with self._lock:
             slot = next((s for s in self.workers if s.name == claim.holder.worker), None)
+            if SKIP_LABEL in issue.labels:
+                if slot is None or not slot.busy:
+                    watch.host.set_worker_label(issue.number, None)
+                    watch.coordinator.release(handle, step="skipped")
+                    self._own.pop((watch.name, issue.number), None)
+                    self._labelled.pop((watch.name, issue.number), None)
+                return
             self._own[(watch.name, issue.number)] = claim.holder.worker
             if slot is None or not slot.available or slot.busy:
                 return
