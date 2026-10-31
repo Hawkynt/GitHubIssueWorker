@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from github_issue_worker.adapters.home import account_home
 from github_issue_worker.adapters.installations import EXECUTABLES, portable_tool
+from github_issue_worker.adapters.manager_lock import ManagerLockError, manager_lock
 from github_issue_worker.adapters.workspace import WorkspaceError
 from github_issue_worker.configuration import (
     AccountSettings,
@@ -451,7 +452,13 @@ def _parser() -> argparse.ArgumentParser:
         "--save", action="store_true", help="with --detect: add them to the config"
     )
 
-    watch = commands.add_parser("watch", help="run the manager until stopped")
+    ownership_help = (
+        "Only one manager may run per configuration on this machine. "
+        "A duplicate exits with a diagnostic containing the existing manager PID."
+    )
+    watch = commands.add_parser(
+        "watch", help="run the manager until stopped", description=ownership_help
+    )
     watch.add_argument("--once", action="store_true", help="one poll-and-work pass, then exit")
     watch.add_argument("--no-ui", action="store_true", help="do not serve the local UI")
     watch.add_argument("--config", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
@@ -461,7 +468,9 @@ def _parser() -> argparse.ArgumentParser:
     watch.add_argument("--state-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     watch.add_argument("--cache-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
 
-    once = commands.add_parser("once", help="one poll-and-work pass, then exit (for cron)")
+    once = commands.add_parser(
+        "once", help="one poll-and-work pass, then exit (for cron)", description=ownership_help
+    )
     once.add_argument("--config", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     once.add_argument(
         "-v", "--verbose", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS
@@ -500,6 +509,25 @@ def main(
     )
     home = home or account_home()
     path = args.config or default_path(home=home)
+    try:
+        if args.command in {"watch", "once"}:
+            with manager_lock(path) as target:
+                # Use the exact target locked, even if a symlink is retargeted during startup.
+                return _run_command(args, parser, target, home, host_factory, runtime_factory)
+        return _run_command(args, parser, path, home, host_factory, runtime_factory)
+    except ManagerLockError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+
+
+def _run_command(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    path: Path,
+    home: Path,
+    host_factory: HostFactory | None,
+    runtime_factory: RuntimeFactory | None,
+) -> int:
     try:
         config = load(path)
     except ConfigurationError as error:
