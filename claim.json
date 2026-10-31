@@ -1,0 +1,20 @@
+{
+  "branch": "issue/64-f1-4-remove-and-list-commands-show-and-r",
+  "claimedAt": "2026-10-31T09:04:06Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T09:04:06Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "codex"
+  },
+  "issue": 64,
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T09:04:06Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
