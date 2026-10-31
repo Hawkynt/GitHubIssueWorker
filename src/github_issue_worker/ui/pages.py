@@ -113,7 +113,8 @@ h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
 .flag { display: inline-block; padding: .1rem .5rem; border-radius: 3px; font-size: 13px;
   font-weight: 600; }
 .flag.feedback { background: var(--amber-soft); color: var(--amber); }
-.flag.limited, .flag.paused, .flag.idle { background: var(--wait-soft); color: var(--wait); }
+.flag.limited, .flag.paused { background: var(--wait-soft); color: var(--wait); }
+.flag.idle { background: var(--steel-soft); color: var(--steel); }
 .flag.conflict { background: var(--brick-soft); color: var(--brick); }
 .track span.conflict { border-top-color: var(--brick); color: var(--brick); }
 .track span.waiting { border-top-color: var(--wait); color: var(--wait); }
@@ -879,7 +880,7 @@ def _instance(
 ) -> str:
     """One sub-row: what this instance of the worker is doing, with its own log and stop."""
     label = worker.name
-    waiting = worker.state in ("idle", "paused", "limited")
+    waiting = worker.state in UNABLE
     if worker.state != "unavailable" and worker.issue is not None and worker.repository:
         name = e(worker.name)
         facts = []
@@ -941,15 +942,16 @@ def _instance(
         return _free(
             f'<span class="flag unavailable">Unavailable</span> <span class=quiet>{e(worker.reason)}</span>',
             label,
-        )
+        ).replace("class=run", 'class="run waiting"', 1)
     if worker.state == "paused":
         return _free(
             '<span class="flag paused">Paused</span> <span class=quiet>takes no new issue</span>',
             label,
         ).replace("class=run", 'class="run waiting"', 1)
+    # Idle is ready to work: no gray, which is kept for workers that cannot work.
     return _free(
         '<span class="flag idle">Idle</span> <span class=quiet>waiting for an issue.</span>', label
-    ).replace("class=run", 'class="run waiting"', 1)
+    )
 
 
 def _agent_row(
@@ -976,13 +978,17 @@ def _agent_row(
         f'<a class=button href="/workers/{group}">Edit</a>'
     )
     rows = "".join(_instance(instance, now, issues, palette) for instance in instances)
-    waiting = all(i.state in ("idle", "paused", "limited") for i in instances)
+    waiting = all(i.state in UNABLE for i in instances)
     wear = palette.lane(model if model and model != "-" else None, first.agent_kind)
     return (
         f'<div class="lane{" waiting" if waiting else ""}" style="--lane:{wear}" '
         f'role=group aria-label="{group}"><div>{who}</div>'
         f"<div class=stack>{rows}</div><div class=actions>{actions}</div></div>"
     )
+
+
+UNABLE = ("paused", "limited", "unavailable")
+"""States in which a worker cannot work: only these are drawn gray. Idle means ready."""
 
 
 def _limit_status(worker: WorkerView, now: datetime) -> str:

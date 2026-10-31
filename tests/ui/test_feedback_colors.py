@@ -25,7 +25,7 @@ def test_feedback_wait_is_yellow_after_claim_release() -> None:
     assert '<span class="flag feedback">waiting for your answer</span>' in html
 
 
-@pytest.mark.parametrize("state", ["idle", "paused", "limited"])
+@pytest.mark.parametrize("state", ["paused", "limited", "unavailable"])
 def test_waiting_agent_box_is_gray_and_active_agent_stays_active(state: WorkerState) -> None:
     worker = replace(DemoBackend().snapshot().workers[0], state=state, limited_until=None)
     html = _agent_row((worker,), NOW, {}, NO_COLOURS)
@@ -122,7 +122,7 @@ def test_demo_contains_feedback_resource_and_merge_conflict_examples() -> None:
     assert snapshot.manager_id == MANAGER
 
 
-@pytest.mark.parametrize("state", ["idle", "paused", "limited"])
+@pytest.mark.parametrize("state", ["paused", "limited", "unavailable"])
 def test_waiting_instance_is_gray_while_another_instance_keeps_running(state: WorkerState) -> None:
     active = DemoBackend().snapshot().workers[0]
     waiting = replace(active, name=active.name + ".2", state=state, issue=None, repository=None)
@@ -130,3 +130,9 @@ def test_waiting_instance_is_gray_while_another_instance_keeps_running(state: Wo
     assert 'class="lane waiting"' not in html
     assert 'class="run waiting"' in html
     assert 'class="now"' in html
+
+
+def test_an_idle_worker_is_ready_so_its_box_is_not_gray() -> None:
+    worker = replace(DemoBackend().snapshot().workers[0], state="idle", issue=None, repository=None)
+    html = _agent_row((worker,), NOW, {}, NO_COLOURS)
+    assert 'class="lane waiting"' not in html and 'class="run waiting"' not in html
