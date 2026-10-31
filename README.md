@@ -97,7 +97,8 @@ on a repository that account cannot push to.
 ## ✨ Features
 
 - **Watch list of repositories** — add a repository by URL, from the CLI or the UI. Push access is
-  verified up front and again on every start.
+  verified up front, on every start, and every hour. A repository that loses it is suspended
+  with a log entry; other repositories keep running.
 - **New issues, new comments, reopened issues** — detected by polling with conditional requests, so
   an idle repository costs no rate limit.
 - **Automatic triage** — an unlabelled issue gets labels chosen from the repository's existing label
@@ -867,7 +868,16 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F1.4** `remove <repo>` and `list` (last poll, state counts, current issues). Removing a
   repository releases this manager's claims in it with a checkpoint.
 - [ ] 🟥 **F1.5** Push access is re-checked on every start and every hour. A repository that lost it
-  is suspended with a log entry, not skipped silently.
+  is suspended with a log entry, not skipped silently. Startup checks precede label creation,
+  claim adoption and issue processing, including `watch --once`. Hourly checks run on the first
+  poll cycle at or after one hour since the last check, even for idle or suspended repositories,
+  independently of housekeeping. Suspension keeps the repository configured but stops normal
+  polling, claims, housekeeping and further outward writes from running work at its next safe
+  boundary; local work and existing checkpoints are kept without attempting a remote release.
+  A successful recheck restores normal processing, including after a restart. A failed query
+  is logged separately from a confirmed denial and blocks processing until a successful check;
+  failed queries retry on the next poll cycle. Other repositories continue in either case.
+  The one-hour interval is fixed and introduces no configuration key.
 - [ ] 🟧 **F1.6** Per-repository overrides for every key under `defaults`, plus `build` and `test`.
 
 ### F2 — Event detection
