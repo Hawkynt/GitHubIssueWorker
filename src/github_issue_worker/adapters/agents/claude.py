@@ -21,6 +21,7 @@ from typing import Any
 
 from github_issue_worker.adapters.agents import prepare, read_outcome
 from github_issue_worker.domain.outcome import OUTCOME_SCHEMA
+from github_issue_worker.domain.run_limit import RunCutOff
 from github_issue_worker.ports.agents import (
     OUTCOME_FILE,
     AgentRun,
@@ -37,6 +38,10 @@ _SETTINGS = json.dumps(
     }
 )
 """No co-author trailer, and deny rules that hold even with permission prompts off."""
+
+_BUDGET_STOP = "error_max_budget_usd"
+"""The ``result`` subtype of a run that ``--max-budget-usd`` stopped (captured, 2.1.316)."""
+_DOLLARS = re.compile(r"\$\d+(?:\.\d+)?")
 
 
 def _events(stdout: str) -> list[dict[str, Any]]:
@@ -60,8 +65,21 @@ def _write_structured_outcome(run: AgentRun, structured: Any) -> None:
         path.write_text(json.dumps(structured), encoding="utf-8")
 
 
+def _budget_text(event: dict[str, Any], budget_usd: float | None) -> str:
+    """The budget as Claude names it ("Reached maximum budget ($0.001)"), else as configured."""
+    for message in event.get("errors") or []:
+        found = _DOLLARS.search(str(message))
+        if found:
+            return found.group()
+    return f"${budget_usd:g}" if budget_usd is not None else "the configured budget"
+
+
 def _interpret_events(
-    run: AgentRun, events: list[dict[str, Any]], exit_code: int, stderr: str
+    run: AgentRun,
+    events: list[dict[str, Any]],
+    exit_code: int,
+    stderr: str,
+    budget_usd: float | None = None,
 ) -> RunReport:
     session: str | None = None
     usage: TokenUsage | None = None
@@ -69,6 +87,7 @@ def _interpret_events(
     rejected_reset: datetime | None = None
     limited = False
     failure: str | None = None
+    cut_off: RunCutOff | None = None
 
     for event in events:
         session = event.get("session_id") or session
@@ -94,6 +113,8 @@ def _interpret_events(
             )
             if event.get("is_error"):
                 failure = str(event.get("result") or event.get("subtype") or "error")
+            if event.get("subtype") == _BUDGET_STOP:
+                cut_off = RunCutOff("budget", _budget_text(event, budget_usd))
 
     if limited:
         message = "usage limit reached"
@@ -105,6 +126,11 @@ def _interpret_events(
             utilization=utilization,
         )
 
+    if cut_off is not None:
+        return RunReport(
+            session, None, usage=usage, error=failure, utilization=utilization, cut_off=cut_off
+        )
+
     outcome, problem = read_outcome(run.worktree)
     if exit_code != 0 or failure or not events:
         reason = failure or stderr.strip() or f"exit {exit_code}"
@@ -113,7 +139,11 @@ def _interpret_events(
 
 
 def _interpret(
-    run: AgentRun, events: list[dict[str, Any]], exit_code: int, stderr: str
+    run: AgentRun,
+    events: list[dict[str, Any]],
+    exit_code: int,
+    stderr: str,
+    budget_usd: float | None = None,
 ) -> RunReport:
     model = next(
         (
@@ -123,7 +153,8 @@ def _interpret(
         ),
         None,
     )
-    return replace(_interpret_events(run, events, exit_code, stderr), model=model)
+    report = _interpret_events(run, events, exit_code, stderr, budget_usd)
+    return replace(report, model=model)
 
 
 class ClaudeAdapter:
@@ -158,7 +189,7 @@ class ClaudeAdapter:
         return Invocation(argv=argv, cwd=run.worktree, stdin=run.prompt, env=self._env)
 
     def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
-        return _interpret(run, _events(stdout), exit_code, stderr)
+        return _interpret(run, _events(stdout), exit_code, stderr, self._budget_usd)
 
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")

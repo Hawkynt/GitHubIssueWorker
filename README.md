@@ -278,12 +278,12 @@ stateDiagram-v2
   Triage --> Split: large, with independent parts
   Split --> Done: every sub-issue completed
   Split --> Queued: trusted comment
-  Working --> NeedsInput: question or design decision
+  Working --> NeedsInput: question or design decision / runTimeout or budget reached
   Working --> Paused: agent hit its usage limit
   Paused --> Working: limit reset, or an idle local worker takes over
   Paused --> Queued: hand-off threshold reached (optional)
   Working --> Shipping: build + tests green, commit gate passed
-  Working --> Failed: budget exhausted / unrecoverable
+  Working --> Failed: unrecoverable
   Shipping --> Working: CI red (up to N attempts) / conflict
   Shipping --> AwaitingReview: merge blocked by required review
   Shipping --> Done: merged, issue closed, clean-up done
@@ -305,7 +305,7 @@ The next worker resumes from the last checkpoint.
 | Triage / Working | `worker:working` | yes | Labelling, then implementing in the worker's worktree. |
 | Paused | `worker:paused` | yes | The worker's agent hit its usage limit. It holds the issue and resumes at the reset. |
 | Shipping | `worker:working` | yes | Pushed, PR open, waiting for checks or merging. |
-| NeedsInput | `worker:needs-input` | no | A question is in the issue. Work is checkpointed, so whoever claims the answer continues from it. |
+| NeedsInput | `worker:needs-input` | no | A question is in the issue, or a run hit `runTimeout` or its budget and the comment says what was finished and what was not. Work is checkpointed, so whoever claims the answer continues from it. |
 | AwaitingReview | `worker:awaiting-review` | no | PR is green but the ruleset requires an approving review. |
 | Failed | `worker:failed` | no | Gave up. The last comment says why and what was tried. |
 | Split | `worker:split` | no | Split into sub-issues that are worked on their own. Closed as soon as every sub-issue is completed. |
@@ -391,8 +391,12 @@ when:
 - the change needs a large design decision: a new dependency, a breaking public-API change, a data or
   storage migration, a new top-level component, or a change that contradicts the spec;
 - the request is impossible or contradicts itself;
-- the budget for the run is exhausted, or CI keeps failing after the configured number of repair
-  attempts.
+- CI keeps failing after the configured number of repair attempts.
+
+A run that reaches `runTimeout` or its budget is stopped and not started again. The issue is
+parked the same way, with one comment naming the limit that was hit, what was finished (the commits
+on the branch and what the journal marks as done) and what was not (what the journal has left).
+Commenting continues the work from the journal; raise the limit first if it was too tight.
 
 The question comment names the options, the trade-off of each, and the one the worker recommends, so
 that "go with your recommendation" is a complete answer.
@@ -796,7 +800,7 @@ first, and a moved UI listener reopens on its new address.
 | `workers[].installation` | `{ "type": "path" }` | `path`, `executable`, `claudecodeportable` or `claudelocal`; see [Installations](#installations). |
 | `workers[].priority` | 100 | Lower is preferred when several idle workers are eligible. |
 | `workers[].tags` | `[]` | Extra capabilities of this worker. |
-| `workers[].model`, `maxBudgetUsdPerRun` | agent default | Passed to agents that support them. |
+| `workers[].model`, `maxBudgetUsdPerRun` | agent default | Passed to agents that support them. The budget in US dollars is enforced by agents that have one (`claude`); a run that uses it up parks the issue (F6.7). |
 | `workers[].command` | — | A `command` worker's argument template, program first, with the `{prompt}`, `{worktree}`, `{outcome}` and `{session}` placeholders; see [Workers](#-workers). Required for `command` workers. |
 | `workers[].limitPatterns` | `[]` | Regular expressions (case-insensitive) that mark a failed `command` run as a usage limit when a line of its output matches. |
 | `workers[].limitExitCodes` | `[]` | Exit codes with which a `command` agent reports a usage limit. |
@@ -815,7 +819,7 @@ first, and a moved UI listener reopens on its new address.
 | `processBacklog` | `false` | On first watch, also queue issues that were already open. Off, so adding a repository never starts a flood. |
 | `createMissingLabels` | `false` | Let triage create a label that does not exist yet. The `worker:*` labels are always created. |
 | `maxActiveIssuesPerRepository` | 4 | Fleet-wide soft limit of live working and paused claims in one repository, including takeover grace. Defaults to 4; a repository override takes precedence. |
-| `runTimeout` | 2 h | Wall-clock limit of one agent run. |
+| `runTimeout` | 2 h | Wall-clock limit of one agent run. A run that reaches it is stopped and the issue parked with what was finished and what was not (F6.7). |
 | `checksTimeout` | 2 h | How long a mergeable-looking pull request may wait for required checks or a review before it is labelled `worker:awaiting-review` and released. |
 | `build` / `test` | detected | Verification commands. Detected from `AGENTS.md`/`CONTRIBUTING.md`, then from the stack (`*.sln[x]`, `package.json`, `pyproject.toml`, `Cargo.toml`, …). |
 | `splitIssues` | `true` | Let the understanding run split a large issue with independent parts into sub-issues that are worked in parallel. |
@@ -1038,7 +1042,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F6.6** Independent verification after `done`: clean working tree, configured or detected
   build and test commands pass, at least one commit on the branch. A failed check returns the output
   to the same conversation, once, before the issue is parked.
-- [ ] 🟥 **F6.7** `runTimeout` and the budget are enforced. Hitting either parks the issue with a
+- [x] 🟥 **F6.7** `runTimeout` and the budget are enforced. Hitting either parks the issue with a
   comment stating what was finished and what was not.
 - [x] 🟧 **F6.8** Each run's transcript, worker and cost (where the agent reports one) are kept with
   the issue's local log.

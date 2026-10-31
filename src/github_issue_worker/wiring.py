@@ -42,6 +42,7 @@ from github_issue_worker.domain.claim import ClaimPolicy, RunEntry
 from github_issue_worker.domain.commit_message import DEFAULT_FORBIDDEN_WORDS, CommitGate
 from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.domain.model_name import display_model
+from github_issue_worker.domain.run_limit import RunCutOff, duration_text
 from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import AgentAdapter, AgentRun, Invocation, RunReport
 
@@ -159,7 +160,11 @@ def execute(
             raise RunStopped("stopped by the maintainer")
         if result.timed_out:
             return RunReport(
-                session=run.session, outcome=None, error=f"timed out after {timeout:.0f} s"
+                session=report.session or run.session,
+                outcome=None,
+                usage=report.usage,
+                error=f"timed out after {timeout:.0f} s",
+                cut_off=RunCutOff("time", duration_text(timeout)),
             )
         return report
     finally:

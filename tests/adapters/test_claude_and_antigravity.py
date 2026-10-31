@@ -222,3 +222,19 @@ def test_claudelocal_names_no_default_when_it_is_not_one_installed_model() -> No
     two = LIST_OUTPUT.replace("\x1b[33mavailable\x1b[0m", "\x1b[32minstalled\x1b[0m")
     assert ClaudeLocalAdapter(Path("claude.sh"), list_models=lambda: two).default_model() is None
     assert ClaudeLocalAdapter(Path("claude.sh"), list_models=lambda: "").default_model() is None
+
+
+def test_claude_stopped_by_its_budget_reports_the_budget_and_the_cost(tmp_path: Path) -> None:
+    report = ClaudeAdapter("claude", budget_usd=0.001).report(
+        run(tmp_path), 1, fixture("claude/budget-exhausted.ndjson"), ""
+    )
+    assert report.cut_off is not None
+    assert report.cut_off.kind == "budget" and report.cut_off.limit == "$0.001"
+    assert report.usage is not None and report.usage.cost_usd == 0.0064236
+    assert report.limit is None and report.outcome is None
+    assert report.session == "ea33890e-cf38-4af9-96d9-8716c564eb06"
+
+
+def test_claude_failing_otherwise_is_not_a_budget_stop(tmp_path: Path) -> None:
+    report = ClaudeAdapter("claude").report(run(tmp_path), 1, "", "No messages returned")
+    assert report.cut_off is None
