@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-06T23:08:34Z",
+  "expiresAt": "2026-11-07T00:07:11Z",
   "generation": 2,
   "holder": {
     "manager": "hawky-desktop-96a3",
@@ -13,7 +13,7 @@
   },
   "issue": 41,
   "pausedUntil": null,
-  "renewedAt": "2026-10-30T23:08:34Z",
+  "renewedAt": "2026-10-31T00:07:11Z",
   "state": "working",
   "step": "needs-input",
   "takeovers": 0
