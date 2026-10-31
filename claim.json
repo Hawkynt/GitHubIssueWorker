@@ -1,19 +1,20 @@
 {
   "branch": "issue/64-f1-4-remove-and-list-commands-show-and-r",
-  "claimedAt": "2026-10-31T09:04:06Z",
+  "claimedAt": "2026-10-31T11:51:28Z",
   "consumedThrough": {
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T09:07:48Z",
-  "generation": 1,
+  "expiresAt": "2026-11-07T11:51:28Z",
+  "generation": 2,
   "holder": {
     "manager": "hawky-desktop-96a3",
     "worker": "codex"
   },
   "issue": 64,
+  "model": "GPT 6.1 Sol",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T09:07:55Z",
+  "renewedAt": "2026-10-31T11:51:28Z",
   "runs": [
     {
       "agent": "codex",
@@ -26,7 +27,7 @@
       "worker": "codex"
     }
   ],
-  "state": "released",
+  "state": "working",
   "step": "needs-input",
   "takeovers": 0
 }
