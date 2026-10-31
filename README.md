@@ -1057,7 +1057,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   the cache is written, and each would-be write is logged.
 - [ ] 🟥 **F10.5** `release <owner/repo#n> [--force]`: release a claim with a checkpoint. Without
   `--force` only this manager's claims; with it any claim, recorded in the claim's history.
-- [ ] 🟧 **F10.6** `status`: this manager's workers with the model each runs on, and its claims
+- [x] 🟧 **F10.6** `status`: this manager's workers with the model each runs on, and its claims
   with the worker's model, and fleet-wide per repository: known managers, claims with holder, step
   and expiry, paused issues with their reset, unserved issues.
 - [ ] 🟧 **F10.7** Service recipes: a systemd user unit and a Windows scheduled task, documented and
