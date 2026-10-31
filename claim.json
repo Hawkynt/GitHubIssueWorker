@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T12:23:14Z",
+  "expiresAt": "2026-11-07T12:23:16Z",
   "generation": 2,
   "holder": {
     "manager": "hawky-desktop-96a3",
@@ -14,8 +14,8 @@
   "issue": 64,
   "mergeConflict": true,
   "model": "GPT 6.1 Sol",
-  "pausedUntil": null,
-  "renewedAt": "2026-10-31T12:23:14Z",
+  "pausedUntil": "2026-10-31T14:04:00Z",
+  "renewedAt": "2026-10-31T12:23:16Z",
   "runs": [
     {
       "agent": "codex",
@@ -28,7 +28,8 @@
       "worker": "codex"
     }
   ],
-  "state": "working",
+  "state": "paused",
   "step": "needs-input",
-  "takeovers": 0
+  "takeovers": 0,
+  "waitReason": "You\u2019ve hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/settings/usage to purchase more credits or try again at 3:04 PM."
 }
