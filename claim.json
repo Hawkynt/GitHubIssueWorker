@@ -34,6 +34,16 @@
       "started": "2026-10-30T19:19:53Z",
       "verdict": "crashed",
       "worker": "local"
+    },
+    {
+      "agent": "claude",
+      "finished": "2026-10-31T06:11:43Z",
+      "kind": "continuation",
+      "manager": "hawky-desktop-96a3",
+      "model": "Qwen3.8 Flash Next IQ3_S",
+      "started": "2026-10-30T23:05:13Z",
+      "verdict": "lost",
+      "worker": "local"
     }
   ],
   "state": "done",
