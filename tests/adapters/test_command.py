@@ -205,11 +205,10 @@ def test_a_fake_cli_gets_the_substituted_arguments_and_its_outcome_is_the_run_s(
     adapter = make_adapter(fake_cli_worker(tmp_path), tmp_path)
     report = execute(adapter, AgentRun(worktree, "Fix it, with spaces."), timeout=30)
     seen = json.loads((worktree / "seen.json").read_text(encoding="utf-8"))
-    assert seen == [
-        str((worktree / OUTCOME_FILE).resolve()),
-        "Fix it, with spaces.",
-        str(worktree.resolve()),
-    ]
+    outcome, prompt, where = seen
+    assert Path(outcome).is_absolute() and Path(outcome).samefile(worktree / OUTCOME_FILE)
+    assert prompt == "Fix it, with spaces."
+    assert Path(where).is_absolute() and Path(where).samefile(worktree)
     assert report.error is None and report.limit is None
     assert report.outcome is not None and report.outcome.summary == "Fix it, with spaces."
 
