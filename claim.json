@@ -1,0 +1,21 @@
+{
+  "branch": "issue/70-f4-2-never-create-missing-labels-unless",
+  "claimedAt": "2026-10-31T11:29:15Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T11:29:15Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "local"
+  },
+  "issue": 70,
+  "model": "Qwen3.8 Flash Next IQ3_S",
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T11:29:15Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
