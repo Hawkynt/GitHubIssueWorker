@@ -44,6 +44,7 @@ from github_issue_worker.ui.charts import (
     timeline,
 )
 from github_issue_worker.ui.forms import HELP, FormField, display, fields_of, is_set, value_at
+from github_issue_worker.ui.hue_wheel import hue_wheel
 from github_issue_worker.ui.model import STEPS, ClaimView, IssueView, Snapshot, WorkerView
 from github_issue_worker.ui.model_colors import (
     GREY,
@@ -1706,6 +1707,7 @@ def settings_page(
                 saved,
             )
         )
+    groups["Model colours"].insert(0, hue_wheel(config.model_colors))
     body = "".join(
         f'<fieldset class="panel wide"><legend>{e(title)}</legend>{"".join(inputs)}</fieldset>'
         for title, inputs in groups.items()
