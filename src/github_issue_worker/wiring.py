@@ -179,14 +179,15 @@ class Runtime:
     def watch(self, settings: RepositorySettings) -> RepositoryWatch:
         name = settings.repository
         if name not in self.watches:
-            clone = self.workspace.clone(name)
-            store = GitClaimStore(clone, home=self.home, push_url=remote_url(name))
+            store = GitClaimStore(
+                lambda: self.workspace.clone(name), home=self.home, push_url=remote_url(name)
+            )
             fleet = self.config.fleet
             coordinator = Coordinator(
                 store, self.api.clock, ClaimPolicy(fleet.claim_validity, fleet.claim_grace)
             )
             host = GitHubHost(self.api, name)
-            self.watches[name] = RepositoryWatch(
+            watch = RepositoryWatch(
                 name=name,
                 host=host,
                 coordinator=coordinator,
@@ -199,6 +200,9 @@ class Runtime:
                 ),
                 settings=repository_run(self.config, settings),
             )
+            watch.coordinator = replace(coordinator, before_write=watch.require_access)
+            host.before_write = watch.require_access
+            self.watches[name] = watch
         return self.watches[name]
 
     def run_issue(
@@ -210,6 +214,7 @@ class Runtime:
         comments: tuple[Comment, ...],
         kind: RunKind,
     ) -> Verdict:
+        watch.require_access()
         run = watch.settings
         assert isinstance(run, RepositoryRun)
         adapter = self.adapters[slot.group]
@@ -289,7 +294,7 @@ class Runtime:
             else:
                 watch = self.watch(settings)
                 manager.repositories.append(watch)
-                watch.host.ensure_worker_labels()
+                manager.prepare(watch)
 
         self.sync_slots()
         manager.workers = self.slots

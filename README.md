@@ -867,7 +867,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F1.3** `add` creates the `worker:*` labels that do not exist yet.
 - [ ] 🟥 **F1.4** `remove <repo>` and `list` (last poll, state counts, current issues). Removing a
   repository releases this manager's claims in it with a checkpoint.
-- [ ] 🟥 **F1.5** Push access is re-checked on every start and every hour. A repository that lost it
+- [x] 🟥 **F1.5** Push access is re-checked on every start and every hour. A repository that lost it
   is suspended with a log entry, not skipped silently. Startup checks precede label creation,
   claim adoption and issue processing, including `watch --once`. Hourly checks run on the first
   poll cycle at or after one hour since the last check, even for idle or suspended repositories,

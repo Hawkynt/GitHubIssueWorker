@@ -120,6 +120,10 @@ class Manager:
         self.workers: list[object] = []
         self.ticks = 0
 
+    def start(self) -> None:
+        for watch in self.repositories:
+            watch.host.ensure_worker_labels()
+
     def snapshot(self) -> list[dict[str, object]]:
         return []
 
@@ -526,3 +530,22 @@ def test_given_existing_config_when_watch_starts_then_it_keeps_config_without_br
     )
     assert load(config_path).workers == []
     assert opened == []
+
+
+@pytest.mark.parametrize("allowed", [True, False])
+def test_given_watch_once_when_starting_then_check_access_before_creating_labels(
+    tmp_path: Path,
+    allowed: bool,
+) -> None:
+    from unittest.mock import Mock
+
+    from tests.application.test_manager import Fixture
+
+    f = Fixture([])
+    calls: list[str] = []
+    f.host.info = Mock(
+        side_effect=lambda: calls.append("access") or RepositoryInfo("main", allowed, ("squash",))
+    )
+    f.host.ensure_worker_labels = lambda: calls.append("labels")  # type: ignore[method-assign]
+    assert run_watch(watched_config(tmp_path), Api(), f.manager) == 0  # type: ignore[arg-type]
+    assert calls == (["access", "labels"] if allowed else ["access"])

@@ -218,8 +218,7 @@ def _watch(
     except WorkspaceError as error:
         print(f"cannot start: {error}", file=sys.stderr)
         return 2
-    for watch in manager.repositories:
-        watch.host.ensure_worker_labels()
+    manager.start()
     stop = threading.Event()
 
     def interrupt(signum: int, frame: object) -> None:

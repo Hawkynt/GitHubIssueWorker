@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import pytest
@@ -239,3 +239,63 @@ def test_runs_waiting_for_approval_are_found_and_approved() -> None:
     assert (own.id, own.own) == (9, True)
     gh.approve_run(7)
     assert ("POST", f"repos/{REPO}/actions/runs/7/approve", None) in api.calls
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        lambda h: h.ensure_worker_labels(),
+        lambda h: h.set_worker_label(1, "worker:queued"),
+        lambda h: h.set_worker_label(1, None),
+        lambda h: h.add_labels(1, ["bug"]),
+        lambda h: h.comment(1, "text"),
+        lambda h: h.create_pull_request("issue/1", "main", "+ title", "body"),
+        lambda h: h.merge(1, "squash", "head"),
+        lambda h: h.delete_branch("issue/1"),
+        lambda h: h.approve_run(1),
+        lambda h: h.create_sub_issue(1, "title", "body", []),
+        lambda h: h.close_issue(1),
+    ],
+    ids=[
+        "labels",
+        "set-label",
+        "remove-label",
+        "add-label",
+        "comment",
+        "pull",
+        "merge",
+        "branch",
+        "approve",
+        "sub-issue",
+        "close",
+    ],
+)
+def test_given_suspension_when_a_host_mutation_is_attempted_then_no_write_reaches_the_api(
+    operation: Callable[[GitHubHost], object],
+) -> None:
+    from github_issue_worker.ports.repository import RepositorySuspended
+
+    api = RecordingApi({("GET", f"repos/{REPO}/issues/1/labels"): [{"name": "worker:working"}]})
+
+    def suspended() -> None:
+        raise RepositorySuspended("lost push access")
+
+    gh = GitHubHost(api, REPO, before_write=suspended)
+    with pytest.raises(RepositorySuspended):
+        operation(gh)
+    assert all(method == "GET" for method, _, _ in api.calls)
+
+
+def test_given_suspension_between_sub_issue_writes_when_attaching_then_no_second_write() -> None:
+    from github_issue_worker.ports.repository import RepositorySuspended
+
+    api = RecordingApi({("POST", f"repos/{REPO}/issues"): {"id": 123, "number": 2}})
+
+    def require_access() -> None:
+        if api.calls:
+            raise RepositorySuspended("lost push access")
+
+    gh = GitHubHost(api, REPO, before_write=require_access)
+    with pytest.raises(RepositorySuspended):
+        gh.create_sub_issue(1, "title", "body", [])
+    assert len(api.calls) == 1

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+import threading
+from collections.abc import Callable
 from pathlib import Path
 
 from github_issue_worker.adapters.home import account_home, tool_environment
@@ -29,17 +31,25 @@ class GitClaimStore:
 
     def __init__(
         self,
-        clone: Path,
+        clone: Path | Callable[[], Path],
         remote: str = "origin",
         home: Path | None = None,
         push_url: str | None = None,
     ) -> None:
         self._clone = clone
+        self._clone_lock = threading.Lock()
         self._remote = remote
         self._home = home or account_home()
         # The workspace disables the clone's push URL so that agents cannot push: claims go to the
         # explicit URL instead.
         self._push_url = push_url or remote
+
+    def _working_copy(self) -> Path:
+        """Open the cached clone only after the manager has checked access (F1.5)."""
+        with self._clone_lock:
+            if callable(self._clone):
+                self._clone = self._clone()
+            return self._clone
 
     def issues(self) -> list[int]:
         listed = self._run("ls-remote", self._remote, f"{_CLAIMS}/*").stdout
@@ -127,7 +137,7 @@ class GitClaimStore:
         # then named the claim file "claim.json\r" (seen on the Windows CI runner).
         raw = subprocess.run(
             ["git", *args],
-            cwd=self._clone,
+            cwd=self._working_copy(),
             input=stdin.encode("utf-8") if stdin is not None else None,
             capture_output=True,
             # Messages are parsed, so they must be git's English ones whatever the user's locale.

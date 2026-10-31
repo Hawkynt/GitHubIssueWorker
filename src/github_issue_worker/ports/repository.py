@@ -20,6 +20,10 @@ WORKER_LABELS = {
 }
 
 
+class RepositorySuspended(Exception):
+    """Repository work must wait for push access to be confirmed again (F1.5)."""
+
+
 @dataclass(frozen=True, slots=True)
 class RepositoryInfo:
     default_branch: str
