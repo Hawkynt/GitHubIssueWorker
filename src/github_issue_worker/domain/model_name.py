@@ -33,7 +33,13 @@ _MAKERS = {
     "mixtral": "mistral",
     "codestral": "mistral",
     "pixtral": "mistral",
-    "qwen": "qwen",
+    "devstral": "mistral",
+    "magistral": "mistral",
+    "ministral": "mistral",
+    "alibaba": "alibaba",
+    "qwen": "alibaba",
+    "nvidia": "nvidia",
+    "nemotron": "nvidia",
     "meta": "meta",
     "llama": "meta",
     "deepseek": "deepseek",
@@ -60,7 +66,8 @@ _MAKERS = {
 _BRANDS = frozenset(
     word
     for word, maker in _MAKERS.items()
-    if word == maker or word in {"claude", "gpt", "chatgpt", "gemini", "gemma", "llama", "grok"}
+    if word == maker
+    or word in {"claude", "gpt", "chatgpt", "gemini", "gemma", "llama", "grok", "qwen"}
 )
 """The words that name the maker rather than the model: a brand is never part of the family."""
 

@@ -33,6 +33,9 @@ OTHER = "Other"
 GREY = "oklch(0.55 0.05 260)"
 """The folded ninth series, and a model nobody knows."""
 
+NAMED_MAKERS = frozenset(name for name in ModelColorsSettings.model_fields if name != "other")
+"""The makers with a segment of their own; every other maker keeps a part of ``other``."""
+
 AGENT_MAKERS = {"claude": "anthropic", "codex": "openai", "antigravity": "google"}
 """The maker an agent kind serves, for a lane whose worker has not reported a model yet."""
 
@@ -65,9 +68,9 @@ def _slot(seed: str, key: str, count: int) -> int:
 
 def _segment(creator: str, colors: ModelColorsSettings) -> HueSegment:
     """The maker's own segment, or a fixed part of ``other`` for a maker nobody named."""
-    named = {"anthropic": colors.anthropic, "openai": colors.openai, "google": colors.google}
-    if creator in named:
-        return named[creator]
+    if creator in NAMED_MAKERS:
+        segment: HueSegment = getattr(colors, creator)
+        return segment
     region = colors.other
     width = min(region.width, _SUBSEGMENT)
     reach = max(region.width - width, 0)

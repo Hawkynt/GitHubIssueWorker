@@ -9,14 +9,16 @@ from playwright.sync_api import Browser, Locator, Page, expect, sync_playwright
 
 from github_issue_worker.configuration import HueSegment, ModelColorsSettings
 from github_issue_worker.ui.demo import DemoBackend
-from github_issue_worker.ui.hue_wheel import SAMPLES
+from github_issue_worker.ui.hue_wheel import LABELS, MAKERS, SAMPLES, TRACKS
 from github_issue_worker.ui.model_colors import model_series
 from github_issue_worker.ui.server import UiServer, free_port
 
 pytestmark = pytest.mark.os_integration
 
-TRACK = {"anthropic": 150, "openai": 128, "google": 106, "other": 84}
+TRACK = dict(zip(MAKERS, TRACKS, strict=True))
 """The radius each maker's arc is drawn at, in the wheel's own units."""
+
+DEFAULTS = ModelColorsSettings()
 
 SCREEN = """([angle, radius]) => {
   const svg = document.querySelector("svg.wheel");
@@ -89,12 +91,10 @@ def test_the_wheel_shows_every_maker_as_a_labelled_arc(browser: Browser, server:
     page = _open(browser, server)
     expect(page.locator(".hue-wheel")).to_be_visible()
     assert page.locator(".wheel .ring path").count() == 120
-    for maker, label, hue, width in (
-        ("anthropic", "Anthropic", 70, 90),
-        ("openai", "OpenAI", 250, 55),
-        ("google", "Google", 155, 55),
-        ("other", "Other", 320, 120),
-    ):
+    assert page.locator(".wheel .maker").count() == 12
+    for maker in MAKERS:
+        label, segment = LABELS[maker], getattr(DEFAULTS, maker)
+        hue, width = segment.hue, segment.width
         group = page.locator(f'.wheel [data-maker="{maker}"]')
         expect(group.locator(".label")).to_have_text(label)
         assert group.locator(".band path").count() > 0
@@ -117,7 +117,7 @@ def test_dragging_the_middle_of_an_arc_moves_its_hue_live(
     expect(page.locator(".wheel")).to_have_class("wheel editing dragging")
     expect(page.locator('.wheel [data-maker="anthropic"]')).to_have_class("maker active")
     page.mouse.up()
-    expect(_field(page, "anthropic", "width")).to_have_value("90")
+    expect(_field(page, "anthropic", "width")).to_have_value("50")
     expect(_handle(page, "anthropic", "hue")).to_have_attribute("aria-valuenow", "100")
     expect(page.locator(".wheel")).to_have_class("wheel")  # the highlight ends with the drag
     _drag(page, "anthropic", 100, -20)
@@ -129,10 +129,10 @@ def test_dragging_an_end_of_an_arc_changes_its_width_around_the_centre(
     browser: Browser, server: UiServer
 ) -> None:
     page = _open(browser, server)
-    _drag(page, "anthropic", 115, 130)
-    expect(_field(page, "anthropic", "width")).to_have_value("120")
+    _drag(page, "anthropic", 95, 110)
+    expect(_field(page, "anthropic", "width")).to_have_value("80")
     expect(_field(page, "anthropic", "hue")).to_have_value("70")
-    _drag(page, "anthropic", 70 - 60, 70 - 20)  # the other end, narrowing
+    _drag(page, "anthropic", 70 - 40, 70 - 20)  # the other end, narrowing
     expect(_field(page, "anthropic", "width")).to_have_value("40")
     expect(_handle(page, "anthropic", "end")).to_have_attribute("aria-valuenow", "40")
     page.close()
@@ -145,13 +145,13 @@ def test_arrow_keys_move_the_hue_and_change_the_width(browser: Browser, server: 
     expect(page.locator('.wheel [data-maker="google"]')).to_have_class("maker active")
     page.keyboard.press("ArrowRight")
     page.keyboard.press("Shift+ArrowUp")
-    expect(_field(page, "google", "hue")).to_have_value("166")
+    expect(_field(page, "google", "hue")).to_have_value(str(DEFAULTS.google.hue + 11))
     end = page.locator('.wheel [data-maker="google"] [data-part="end"]')
     end.focus()
     page.keyboard.press("ArrowLeft")
     page.keyboard.press("Shift+ArrowDown")
-    expect(_field(page, "google", "width")).to_have_value("44")
-    expect(end).to_have_attribute("aria-valuenow", "44")
+    expect(_field(page, "google", "width")).to_have_value(str(DEFAULTS.google.width - 11))
+    expect(end).to_have_attribute("aria-valuenow", str(DEFAULTS.google.width - 11))
     _field(page, "openai", "hue").fill("359")
     page.locator('.wheel [data-maker="openai"] [data-part="hue"]').focus()
     page.keyboard.press("ArrowRight")
@@ -164,7 +164,8 @@ def test_arrow_keys_move_the_hue_and_change_the_width(browser: Browser, server: 
 @pytest.mark.parametrize(
     "segments",
     [
-        {"anthropic": (70, 90), "openai": (250, 55), "google": (155, 55), "other": (320, 120)},
+        {maker: (getattr(DEFAULTS, maker).hue, getattr(DEFAULTS, maker).width) for maker in MAKERS},
+        {"meta": (100, 80), "xai": (0, 360), "alibaba": (359, 3), "zai": (200, 45)},
         {"anthropic": (4, 4), "openai": (359, 12), "google": (0, 360), "other": (10, 300)},
         {"anthropic": (181, 1), "openai": (2, 0), "google": (99, 179), "other": (0, 33)},
     ],
@@ -194,7 +195,7 @@ def test_a_value_out_of_range_leaves_the_wheel_where_it_was(
     _field(page, "anthropic", "hue").fill("400")
     _field(page, "anthropic", "width").fill("12.5")
     expect(_handle(page, "anthropic", "hue")).to_have_attribute("aria-valuenow", "70")
-    expect(_handle(page, "anthropic", "end")).to_have_attribute("aria-valuenow", "90")
+    expect(_handle(page, "anthropic", "end")).to_have_attribute("aria-valuenow", "50")
     page.close()
 
 
@@ -217,12 +218,12 @@ def test_save_stores_what_the_wheel_set(
     browser: Browser, server: UiServer, backend: DemoBackend
 ) -> None:
     page = _open(browser, server)
-    _drag(page, "google", 155, 175)
-    _drag(page, "google", 155 + 27.5 + 20, 155 + 27.5 + 30)  # the end of the moved arc
+    _drag(page, "google", 159, 179)
+    _drag(page, "google", 179 + 15, 179 + 15 + 22.5)  # the end of the moved arc, 30 to 75
     page.get_by_role("button", name="Save settings").click()
     expect(page.locator(".notice")).to_contain_text("Settings saved")
     google = backend.config().model_colors.google
-    assert (google.hue, google.width) == (175, 75)
+    assert (google.hue, google.width) == (179, 75)
     page.close()
 
 
@@ -300,7 +301,7 @@ def test_the_wheel_fits_a_phone_with_targets_a_finger_can_hit(
     sizes = page.evaluate(
         "[...document.querySelectorAll('.wheel .hit')].map((n) => n.getBoundingClientRect().width)"
     )
-    assert len(sizes) == 12 and min(sizes) >= 24
+    assert len(sizes) == 3 * len(MAKERS) and min(sizes) >= 24
     page.close()
 
 

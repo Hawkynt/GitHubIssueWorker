@@ -43,11 +43,38 @@ def test_a_model_wears_the_hue_segment_of_its_maker() -> None:
 
 
 def test_an_unlisted_maker_keeps_a_fixed_segment_of_its_own() -> None:
-    qwen = model_color("Qwen3.8 Flash Next IQ3_S", DEFAULTS)
-    mistral = model_color("Mistral Large 3", DEFAULTS)
-    assert hue(qwen) != hue(mistral)
-    assert in_segment(qwen, 260, 20)  # inside the "other" region, which wraps past 360
-    assert not in_segment(mistral, 35, 105)  # it never borrows a named maker's segment
+    other = DEFAULTS.other
+    low, high = (other.hue - other.width // 2) % 360, (other.hue + other.width // 2) % 360
+    for name in ("Phi-4", "Granite 3.3", "Command R+", "Strata 8B"):
+        assert in_segment(model_color(name, DEFAULTS), low, high), name
+
+
+VENDOR_MODELS = {
+    "anthropic": "Claude Opus 5.5",
+    "openai": "GPT 6.1 Sol",
+    "google": "Gemini 2.5 Pro",
+    "meta": "Llama 4 Maverick",
+    "xai": "Grok 4",
+    "deepseek": "DeepSeek V3",
+    "nvidia": "Nemotron Ultra",
+    "alibaba": "Qwen3.8 Flash Next IQ3_S",
+    "mistral": "Mistral Large 3",
+    "moonshot": "Kimi K2",
+    "zai": "GLM-4.6",
+}
+
+
+def _bounds(segment: HueSegment) -> tuple[int, int]:
+    return (segment.hue - segment.width // 2) % 360, (segment.hue + segment.width // 2) % 360
+
+
+@pytest.mark.parametrize(("maker", "name"), VENDOR_MODELS.items())
+def test_a_named_vendor_wears_its_own_segment_and_no_other(maker: str, name: str) -> None:
+    color = model_color(name, DEFAULTS)
+    assert in_segment(color, *_bounds(getattr(DEFAULTS, maker))), name
+    for other in type(DEFAULTS).model_fields:
+        if other != maker:
+            assert not in_segment(color, *_bounds(getattr(DEFAULTS, other))), (name, other)
 
 
 def test_the_hue_spreads_over_the_makers_segment() -> None:
@@ -55,7 +82,8 @@ def test_the_hue_spreads_over_the_makers_segment() -> None:
         [f"Claude {line} 5.5" for line in ("opus", "sonnet", "haiku", "fable")], DEFAULTS
     )
     hues = {hue(color) for color in series.values()}
-    assert max(hues) - min(hues) >= 45  # spread over the segment, not stacked on one hue
+    spread = max(hues) - min(hues)
+    assert spread >= DEFAULTS.anthropic.width * 0.7  # spread over the segment, not stacked
 
 
 def test_two_names_of_one_maker_never_share_a_colour() -> None:
@@ -106,6 +134,6 @@ def test_a_split_that_is_not_by_model_keeps_the_fixed_palette() -> None:
 def test_a_lane_wears_its_model_colour_and_otherwise_its_makers_default_hue() -> None:
     series = model_series(["Claude Opus 5.5", "GPT 6.1 Sol"], DEFAULTS)
     assert lane_color("Claude Opus 5.5", "claude", series, DEFAULTS) == series["Claude Opus 5.5"]
-    assert in_segment(lane_color(None, "claude", {}, DEFAULTS), 35, 105)
-    assert in_segment(lane_color(None, "codex", {}, DEFAULTS), 227, 272)
-    assert in_segment(lane_color(None, "opencode", {}, DEFAULTS), 260, 20)
+    assert in_segment(lane_color(None, "claude", {}, DEFAULTS), *_bounds(DEFAULTS.anthropic))
+    assert in_segment(lane_color(None, "codex", {}, DEFAULTS), *_bounds(DEFAULTS.openai))
+    assert in_segment(lane_color(None, "opencode", {}, DEFAULTS), *_bounds(DEFAULTS.other))
