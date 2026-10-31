@@ -21,6 +21,25 @@ from github_issue_worker.product import MARKER_PREFIX
 
 MARKER = f"{MARKER_PREFIX}comment -->"
 
+# The two GraphQL operations of F5.3, converted from GitHub CLI's `gh issue develop`
+# (api/queries_branch_issue_reference.go, MIT, see THIRD-PARTY-NOTICE.GitHubCLI.txt).
+_LINKED_BRANCHES = """
+query linkedBranches($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    id
+    issue(number: $number) {
+      id
+      linkedBranches(first: 100) { nodes { ref { name } } }
+    }
+  }
+}
+"""
+_CREATE_LINKED_BRANCH = """
+mutation createLinkedBranch($input: CreateLinkedBranchInput!) {
+  createLinkedBranch(input: $input) { linkedBranch { id ref { name } } }
+}
+"""
+
 
 def _pull(data: dict[str, Any]) -> PullRequest:
     return PullRequest(
@@ -42,6 +61,56 @@ class GitHubHost:
         self.repository = repository
         self.before_write = before_write
         self._roles: dict[str, str | None] = {}
+
+    def _graphql(
+        self, query: str, variables: dict[str, Any], *, mutation: bool = False
+    ) -> dict[str, Any]:
+        """The ``data`` of a GraphQL answer. GraphQL reports errors with status 200, in
+        ``errors``; those are raised like any failed request."""
+        if mutation:
+            self.before_write()
+        body = self.api.request(
+            "POST", "graphql", body={"query": query, "variables": variables}
+        ).body
+        if not isinstance(body, dict):
+            raise GitHubError(200, "GraphQL answered without a JSON object")
+        if body.get("errors"):
+            messages = "; ".join(str(error.get("message", error)) for error in body["errors"])
+            raise GitHubError(200, f"GraphQL: {messages}")
+        return dict(body.get("data") or {})
+
+    def _issue_links(self, number: int) -> tuple[str, str, list[str]]:
+        """The repository's and the issue's node ids, and the names of the linked branches."""
+        owner, name = self.repository.split("/", 1)
+        data = self._graphql(_LINKED_BRANCHES, {"owner": owner, "name": name, "number": number})
+        repository = data.get("repository") or {}
+        issue = repository.get("issue") or {}
+        if not repository.get("id") or not issue.get("id"):
+            raise GitHubError(404, f"{self.repository}#{number} not found")
+        nodes = (issue.get("linkedBranches") or {}).get("nodes") or []
+        names = [str(node["ref"]["name"]) for node in nodes if node and node.get("ref")]
+        return str(repository["id"]), str(issue["id"]), names
+
+    def linked_branches(self, issue: int) -> list[str]:
+        return self._issue_links(issue)[2]
+
+    def link_branch(self, issue: int, branch: str, oid: str) -> None:
+        self.before_write()  # a suspended repository is not even asked for the ids
+        repository_id, issue_id, _ = self._issue_links(issue)
+        data = self._graphql(
+            _CREATE_LINKED_BRANCH,
+            {
+                "input": {
+                    "repositoryId": repository_id,
+                    "issueId": issue_id,
+                    "oid": oid,
+                    "name": branch,
+                }
+            },
+            mutation=True,
+        )
+        if not (data.get("createLinkedBranch") or {}).get("linkedBranch"):
+            raise GitHubError(200, f"GraphQL: no linked branch was created for {branch}")
 
     def _path(self, tail: str) -> str:
         return f"repos/{self.repository}/{tail}" if tail else f"repos/{self.repository}"
