@@ -791,7 +791,15 @@ first, and a moved UI listener reopens on its new address.
 
 Local state (poll cursors, ETags, native conversation ids, costs) lives in
 `~/.local/state/GitHubIssueWorker/` (`%LOCALAPPDATA%` on Windows). Clones and worktrees live under
-`~/.cache/GitHubIssueWorker/`. Deleting either loses nothing the repositories do not also know.
+`~/.cache/GitHubIssueWorker/`.
+
+Each invocation keeps its transcript under the state directory's
+`logs/<owner>/<repository>/<issue>/`, alongside metadata identifying the transcript, executing
+worker and reported USD cost. Retries and continuations have separate records, including when
+started by the same worker within one second. Missing monetary costs remain unknown; reported zero
+is preserved. Failed, usage-limited, timed-out and stopped invocations retain their available output
+and any reported cost. These local records survive manager restarts and worktree cleanup; deleting
+the state directory removes them. No additional configuration is required.
 
 **Clean state after every PR.** When an issue's PR is merged, or closed unmerged, or the claim is
 released or lost, the manager removes that issue's worktree and local branch, deletes the remote
