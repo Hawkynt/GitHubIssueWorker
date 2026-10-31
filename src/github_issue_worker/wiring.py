@@ -231,7 +231,9 @@ class Runtime:
             )
             fleet = self.config.fleet
             coordinator = Coordinator(
-                store, self.api.clock, ClaimPolicy(fleet.claim_validity, fleet.claim_grace)
+                store,
+                self.api.clock,
+                ClaimPolicy(fleet.claim_validity, fleet.claim_grace, fleet.max_takeovers),
             )
             host = GitHubHost(self.api, name)
             watch = RepositoryWatch(
@@ -347,6 +349,8 @@ class Runtime:
                 watch = self.watches[name]
                 watch.settings = repository_run(config, settings)
                 watch.mode = settings.mode or config.defaults.mode
+                policy = replace(watch.coordinator.policy, max_takeovers=config.fleet.max_takeovers)
+                watch.coordinator = replace(watch.coordinator, policy=policy)
                 watch.max_active_issues_per_repository = (
                     settings.max_active_issues_per_repository
                     if settings.max_active_issues_per_repository is not None

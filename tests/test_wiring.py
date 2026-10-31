@@ -673,3 +673,31 @@ def test_a_run_past_runtimeout_is_killed_and_reported_as_stopped_by_the_time_lim
     assert report.cut_off.kind == "time" and report.cut_off.limit == "0.2 s"
     assert report.outcome is None and report.limit is None
     assert report.session == "s9"
+
+
+def test_max_takeovers_is_wired_into_the_claim_policy_and_updated_live(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from tests.application.test_manager import Fixture
+
+    body: dict[str, object] = {
+        "repositories": [{"repository": "o/r"}],
+        "fleet": {"maxTakeovers": 2},
+    }
+    config = parse(json.dumps(body))
+    runtime = Runtime(
+        config=config,
+        home=tmp_path,
+        api=SimpleNamespace(clock=FakeClock(datetime(2026, 10, 30, tzinfo=UTC))),  # type: ignore[arg-type]
+        state=JsonStateStore(tmp_path / "state.json"),
+        manager_id="m",
+        workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+    )
+    watch = runtime.watch(config.repositories[0])
+    assert watch.coordinator.policy.max_takeovers == 2
+
+    body["fleet"] = {"maxTakeovers": 5}
+    f = Fixture([])
+    f.manager.repositories = [watch]
+    runtime.apply(parse(json.dumps(body)), f.manager)
+    assert runtime.watches["o/r"].coordinator.policy.max_takeovers == 5

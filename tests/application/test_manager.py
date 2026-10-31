@@ -10,7 +10,7 @@ from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.issue_run import Verdict
 from github_issue_worker.application.manager import Manager, RepositoryWatch, WorkerSlot
 from github_issue_worker.application.poller import PollResult, PollState
-from github_issue_worker.domain.claim import ClaimPolicy, ClaimState, Holder
+from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState, Holder
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.outcome import SubIssue
 from github_issue_worker.domain.split import sub_issue_body
@@ -652,3 +652,50 @@ def test_given_a_priority_high_issue_claimed_elsewhere_then_the_next_candidate_i
     f.new_issues(issue(5, frozenset({"priority:high"}), minutes=5), issue(6, minutes=9))
     f.manager.tick()
     assert f.runs == [Recorded("claude", 6, RunKind.FIRST)]
+
+
+def stalled_claim(takeovers: int) -> Claim:
+    claim = POLICY.new_claim(5, Holder("laptop-01ab", "codex"), T0, "issue/5-x")
+    return claim.replace(takeovers=takeovers, step="verify")
+
+
+def test_given_an_abandoned_claim_below_max_takeovers_when_polled_then_it_is_taken_over() -> None:
+    f = Fixture([slot("claude")])
+    f.store.force_create(stalled_claim(2))
+    f.clock.advance(timedelta(days=8))
+    f.new_issues(issue(5))
+    f.manager.tick()
+    assert f.runs == [Recorded("claude", 5, RunKind.CONTINUATION)]
+
+
+def test_given_max_takeovers_without_progress_when_abandoned_again_then_the_issue_fails() -> None:
+    f = Fixture([slot("claude")])
+    f.store.force_create(stalled_claim(3))
+    f.clock.advance(timedelta(days=8))
+    f.new_issues(issue(5))
+    f.manager.tick()
+
+    assert f.runs == []
+    claim = f.store.current(5)
+    assert claim is not None
+    assert claim.state is ClaimState.RELEASED and claim.step == "failed"
+    assert f.host.worker_label[5] == "worker:failed"
+    [(number, body)] = f.host.posted
+    assert number == 5
+    assert "3 takeovers" in body and "`verify`" in body and "laptop-01ab/codex" in body
+
+
+def test_given_a_failed_stalled_issue_then_only_a_trusted_comment_brings_it_back() -> None:
+    f = Fixture([slot("claude")])
+    f.store.force_create(stalled_claim(3))
+    f.clock.advance(timedelta(days=8))
+    f.new_issues(issue(5))
+    f.manager.tick()
+    f.manager.tick()
+    assert f.runs == []
+
+    comment = Comment(10, 5, OWNER, "try again", f.clock.now(), f.clock.now())
+    f.host.issue_comments = [comment]
+    f.polls.append(PollResult(comments=(comment,)))
+    f.manager.tick()
+    assert f.runs == [Recorded("claude", 5, RunKind.REWORK)]

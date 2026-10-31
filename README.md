@@ -621,6 +621,13 @@ does. A manager not seen for an hour shows as offline, and its presence ref is p
 | The issue crashes every holder it meets | After `maxTakeovers` takeovers without progress: `worker:failed` with the evidence, and no further attempts until a trusted comment. |
 | Labels drifted from claims (a manual edit, a crash between two writes) | The claim is the truth. The holder or, for unclaimed issues, any manager repairs the label on its next poll. |
 
+**Takeovers without progress.** `takeovers` counts the takeovers of abandoned claims since a run on
+the issue last ended: released, done, or paused at a usage limit. Each of those
+resets it to 0. The worker that finds an abandoned claim whose `takeovers` already reached
+`maxTakeovers` does not take it over a further time. It releases the claim at step `failed` in the
+same compare-and-swap, labels the issue `worker:failed`, and comments the evidence: the takeover
+count, the step the last holder reached, the last holder and its last renewal, and the finished runs.
+
 **Concurrency per repository** is a fleet-wide soft limit (`maxActiveIssuesPerRepository`, default
 4): a worker does not claim when it already sees that many live claims in the repository. Two
 managers racing can exceed it briefly. Working and paused claims count across all managers, even
@@ -808,7 +815,7 @@ first, and a moved UI listener reopens on its new address.
 | `fleet.claimGrace` | 1 day | Added before another worker may take an unrenewed claim over (8 days in total). |
 | `fleet.checkpointInterval` | 5 min | Checkpoint cadence during a run. |
 | `fleet.releaseBrokenAfter` | 1 h | How long a worker may be unavailable while holding a claim before it is released. |
-| `fleet.maxTakeovers` | 3 | Takeovers without progress before an issue is marked failed. |
+| `fleet.maxTakeovers` | 3 | Takeovers without progress (no run ended in between) before an issue is marked failed. |
 | `fleet.stopClaimingAt` | 0.9 | Reported utilisation at which a worker takes no new issue. |
 | `fleet.localHandOff` | `true` | On a usage limit, pass the issue to an idle local worker on another account. |
 | `fleet.handOffWhenPausedLongerThan` | off | Release a paused issue to the fleet when its reset is further away than this. |
@@ -1150,7 +1157,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F11.11** Routing: `agent:<kind>` and `needs:<tag>` restrict who may claim. An issue no known
   worker can serve is labelled `worker:unserved` with one explanatory comment, and re-queued when an
   eligible worker appears in presence.
-- [ ] 🟥 **F11.12** `maxTakeovers` takeovers without progress mark the issue failed with the evidence.
+- [x] 🟥 **F11.12** `maxTakeovers` takeovers without progress mark the issue failed with the evidence.
 - [x] 🟧 **F11.13** `maxActiveIssuesPerRepository` is honoured fleet-wide from the visible claims.
 - [ ] 🟧 **F11.14** Done claims and checkpoint refs of closed issues are garbage-collected after 30
   days, by compare-and-swap delete.
