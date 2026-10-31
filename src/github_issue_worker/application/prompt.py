@@ -38,7 +38,12 @@ Work in this order, and do not skip a step:
 4. **Tests first (TDD).** For each scenario: write a failing test, run it and see it fail, make the
    smallest change that passes, then refactor on green. A bug fix starts with the test that
    reproduces the bug.
-5. **Done means verified.** The repository's own build and tests pass. "Looks right" is not done.
+5. **Docs are part of done.** Before you finish, update every document the change touches: the
+   specification and README text, configuration tables and help, examples and screenshots lists.
+   Where the repository keeps a checklist of requirements (a PRD or roadmap with `- [ ]` items),
+   tick (`- [x]`) each item whose acceptance criterion your passing tests now cover, and only
+   those; never tick one that is not covered, and never renumber or delete an item.
+6. **Done means verified.** The repository's own build and tests pass. "Looks right" is not done.
 
 Read AGENTS.md, CLAUDE.md and CONTRIBUTING.md in this directory first, if they exist. Where they are
 stricter than this text, they win.
