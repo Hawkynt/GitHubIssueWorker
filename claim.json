@@ -14,8 +14,8 @@
   "issue": 79,
   "model": "GPT 6.1 Sol",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T11:03:52Z",
-  "state": "working",
-  "step": "triage",
+  "renewedAt": "2026-10-31T11:04:00Z",
+  "state": "released",
+  "step": "needs-input",
   "takeovers": 0
 }
