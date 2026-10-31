@@ -12,6 +12,7 @@
     "worker": "claude"
   },
   "issue": 60,
+  "mergeConflict": true,
   "pausedUntil": null,
   "renewedAt": "2026-10-31T08:38:38Z",
   "state": "working",
