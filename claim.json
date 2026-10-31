@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T11:02:05Z",
+  "expiresAt": "2026-11-07T11:03:23Z",
   "generation": 1,
   "holder": {
     "manager": "hawky-desktop-96a3",
@@ -14,7 +14,7 @@
   "issue": 82,
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T11:02:05Z",
+  "renewedAt": "2026-10-31T11:03:23Z",
   "state": "working",
   "step": "triage",
   "takeovers": 0
