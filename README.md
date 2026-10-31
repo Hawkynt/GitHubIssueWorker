@@ -306,6 +306,12 @@ The next worker resumes from the last checkpoint.
 Only states that are actively being worked hold a claim. An issue waiting for a human or a review
 holds nothing, so it never ties up a worker.
 
+An issue parked at `worker:needs-input` receives no reminders or repeated questions. Without new
+trusted input, polling, elapsed time, a manager restart or another manager discovering the issue
+never starts another run or renews its released claim. Its checkpoint and label remain until work
+resumes. Previously consumed comments, any manager's marked output, untrusted comments and metadata
+updates do not count as an answer. Ordinary repository polling continues; waiting uses no agent run.
+
 What counts as an event:
 
 | Event | Effect |
@@ -1034,7 +1040,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   releases the claim.
 - [ ] 🟥 **F8.2** The next trusted comment queues the issue, and whoever claims it continues from the
   checkpoint and journal with the answer. The same worker resumes its native conversation.
-- [ ] 🟥 **F8.3** A parked issue is never pinged again by the manager. Silence costs nothing.
+- [x] 🟥 **F8.3** A parked issue is never pinged again by the manager. Silence costs nothing.
 - [ ] 🟧 **F8.4** An answer that does not resolve the question produces a follow-up question rather
   than a guess.
 
