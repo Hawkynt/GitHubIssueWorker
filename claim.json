@@ -14,6 +14,18 @@
   "issue": 44,
   "pausedUntil": null,
   "renewedAt": "2026-10-30T19:50:47Z",
+  "runs": [
+    {
+      "agent": "antigravity",
+      "finished": "2026-10-30T19:45:13Z",
+      "kind": "first",
+      "manager": "hawky-desktop-96a3",
+      "model": "Gemini 4 Argon (Medium)",
+      "started": "2026-10-30T19:15:13Z",
+      "verdict": "crashed",
+      "worker": "antigravity.2"
+    }
+  ],
   "state": "done",
   "step": "done",
   "takeovers": 0
