@@ -1363,7 +1363,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   remain. Mouse, touch and keyboard, phone width, light and dark; tested in a real browser.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
-- [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
+- [x] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
 - [x] 🟥 **F14.7** Demo mode `ui --demo <scenario>` renders every page through the real UI code with
   deterministic sample data (several workers of every agent kind, limited and paused accounts,
   claims from other managers). `generate.yml` captures each page, commits changed screenshots and
