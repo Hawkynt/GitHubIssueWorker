@@ -24,6 +24,16 @@
       "started": "2026-10-30T14:29:40Z",
       "verdict": "needs-input",
       "worker": "codex"
+    },
+    {
+      "agent": "codex",
+      "finished": "2026-10-30T14:36:26Z",
+      "kind": "rework",
+      "manager": "hawky-desktop-96a3",
+      "model": "GPT 6.1 Sol",
+      "started": "2026-10-30T14:35:22Z",
+      "verdict": "awaiting-review",
+      "worker": "codex"
     }
   ],
   "state": "done",
