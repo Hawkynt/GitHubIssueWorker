@@ -14,8 +14,8 @@
   "issue": 76,
   "model": "Qwen3.8 Flash Next IQ3_S",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T11:20:44Z",
-  "state": "working",
-  "step": "triage",
+  "renewedAt": "2026-10-31T11:28:35Z",
+  "state": "done",
+  "step": "done",
   "takeovers": 0
 }
