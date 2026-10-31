@@ -2,7 +2,7 @@
   "branch": "issue/79-f11-12-maxtakeovers-takeovers-without-pr",
   "claimedAt": "2026-10-31T11:47:31Z",
   "consumedThrough": {
-    "comment": null,
+    "comment": 6542896413,
     "review": null
   },
   "expiresAt": "2026-11-07T12:00:23Z",
@@ -14,7 +14,7 @@
   "issue": 79,
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T12:00:23Z",
+  "renewedAt": "2026-10-31T12:09:57Z",
   "runs": [
     {
       "agent": "codex",
@@ -37,7 +37,7 @@
       "worker": "claude.3"
     }
   ],
-  "state": "working",
-  "step": "needs-input",
+  "state": "done",
+  "step": "done",
   "takeovers": 0
 }
