@@ -12,7 +12,6 @@
     "worker": "codex.2"
   },
   "issue": 73,
-  "mergeConflict": true,
   "model": "GPT 6.1 Sol",
   "pausedUntil": null,
   "renewedAt": "2026-10-31T11:30:22Z",
