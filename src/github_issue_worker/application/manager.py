@@ -22,7 +22,7 @@ from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.history import RunRecord
 from github_issue_worker.application.issue_run import Verdict
 from github_issue_worker.application.poller import PollResult, PollState
-from github_issue_worker.domain.claim import ClaimState, Holder, RunEntry
+from github_issue_worker.domain.claim import ClaimState, Holder, RunEntry, takeover_evidence
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.model_name import display_model
 from github_issue_worker.domain.queue import queue_key, queue_rank
@@ -338,6 +338,9 @@ class Manager:
             return
 
         kind = pending_run(context)
+        if kind is RunKind.CONTINUATION and claim and watch.coordinator.policy.stalled(claim, now):
+            self._give_up(watch, number)
+            return
         if kind is None:
             self._pending[watch.name].discard(number)
             if (watch.name, number) in self._labelled or (
@@ -388,6 +391,17 @@ class Manager:
             if handle is None:
                 return
             self._start(watch, slot, handle, issue, new_input(context), kind)
+
+    def _give_up(self, watch: RepositoryWatch, number: int) -> None:
+        """Mark an issue failed that crashed every holder it met (F11.12)."""
+        stalled = watch.coordinator.give_up(number)
+        if stalled is None:
+            return
+        self._pending[watch.name].discard(number)
+        policy = watch.coordinator.policy
+        watch.host.comment(number, takeover_evidence(stalled, policy.max_takeovers))
+        watch.host.set_worker_label(number, "worker:failed")
+        log.warning("%s#%d: failed after %d takeovers", watch.name, number, stalled.takeovers)
 
     def _continue_own(
         self, watch: RepositoryWatch, issue: Issue, handle: ClaimHandle, context: WorkContext

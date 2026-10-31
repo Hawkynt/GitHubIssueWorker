@@ -1,4 +1,5 @@
-"""The coordinator: claims, renews, moves, releases and fences claims (F11.1, F11.3 to F11.5)."""
+"""The coordinator: claims, renews, moves, releases and fences claims (F11.1, F11.3 to F11.5),
+and gives up on issues that keep losing their holders (F11.12)."""
 
 from __future__ import annotations
 
@@ -60,6 +61,24 @@ class Coordinator:
         except ClaimConflict:
             return None
 
+    def give_up(self, issue: int) -> Claim | None:
+        """Release a stalled claim at ``failed`` instead of taking it over once more (F11.12).
+
+        Returns the claim as it was, the evidence for the failure, or None when it has not
+        stalled or somebody else wrote it first.
+        """
+        self.before_write()
+        now = self.clock.now()
+        current = self.store.read(issue)
+        if current is None or not self.policy.stalled(current.claim, now):
+            return None
+        try:
+            self.before_write()
+            self.store.replace(current.version, self.policy.given_up(current.claim, now))
+        except ClaimConflict:
+            return None
+        return current.claim
+
     def renew(self, handle: ClaimHandle, step: str | None = None) -> ClaimHandle:
         changes = {"step": step} if step is not None else {}
         return self._write(handle, self.policy.renewed(handle.claim, self.clock.now(), **changes))
@@ -88,7 +107,12 @@ class Coordinator:
     def pause(self, handle: ClaimHandle, until: datetime, reason: str = "") -> ClaimHandle:
         now = self.clock.now()
         paused = self.policy.renewed(
-            handle.claim, now, state=ClaimState.PAUSED, paused_until=until, wait_reason=reason
+            handle.claim,
+            now,
+            state=ClaimState.PAUSED,
+            paused_until=until,
+            wait_reason=reason,
+            takeovers=0,
         )
         return self._write(handle, paused)
 
@@ -138,7 +162,10 @@ class Coordinator:
     def _finish(
         self, handle: ClaimHandle, state: ClaimState, step: str | None, consumed: int | None
     ) -> ClaimHandle:
-        """``consumed`` advances consumedThrough in the same write that ends the run (F11.7)."""
+        """``consumed`` advances consumedThrough in the same write that ends the run (F11.7).
+
+        A run that ends is progress, so the count of takeovers without progress restarts.
+        """
         claim = handle.claim
         through = claim.consumed_through
         if consumed is not None and (through.comment is None or consumed > through.comment):
@@ -149,6 +176,7 @@ class Coordinator:
             renewed_at=self.clock.now(),
             paused_until=None,
             consumed_through=through,
+            takeovers=0,
         )
         return self._write(handle, finished)
 

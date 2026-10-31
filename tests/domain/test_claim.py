@@ -11,6 +11,7 @@ from github_issue_worker.domain.claim import (
     ConsumedThrough,
     Holder,
     RunEntry,
+    takeover_evidence,
 )
 
 T0 = datetime(2026, 10, 30, 12, 0, 0, tzinfo=UTC)
@@ -161,3 +162,48 @@ def test_a_takeover_keeps_the_issues_runs_but_wears_the_new_holders_model() -> N
         claim, Holder("m2", "codex"), T0 + timedelta(days=9), model="GPT 6.1 Sol"
     )
     assert taken.model == "GPT 6.1 Sol" and taken.runs == claim.runs
+
+
+STRANGER = Holder(manager="laptop-01ab", worker="claude")
+ABANDONED = T0 + timedelta(days=8)
+
+
+def test_given_max_takeovers_reached_when_the_claim_is_abandoned_then_it_has_stalled() -> None:
+    policy = ClaimPolicy(timedelta(days=7), timedelta(days=1), max_takeovers=3)
+    assert not policy.stalled(claim(takeovers=2), ABANDONED)
+    assert policy.stalled(claim(takeovers=3), ABANDONED)
+    assert not policy.stalled(claim(takeovers=3), ABANDONED - timedelta(minutes=1))
+    assert not policy.stalled(claim(takeovers=3, state=ClaimState.RELEASED), ABANDONED)
+
+
+def test_given_max_takeovers_takeovers_without_progress_then_the_next_abandonment_stalls() -> None:
+    policy = ClaimPolicy(timedelta(days=7), timedelta(days=1), max_takeovers=2)
+    current, now = claim(), T0
+    for _ in range(2):
+        now += timedelta(days=8)
+        assert not policy.stalled(current, now)
+        current = policy.taken_over(current, STRANGER, now)
+    assert policy.stalled(current, now + timedelta(days=8))
+
+
+def test_given_up_releases_the_stalled_claim_at_step_failed() -> None:
+    stalled = claim(takeovers=3, step="verify")
+    failed = POLICY.given_up(stalled, ABANDONED)
+    assert failed.state is ClaimState.RELEASED
+    assert failed.step == "failed"
+    assert failed.takeovers == 0
+    assert failed.holder == HOLDER
+    assert failed.renewed_at == ABANDONED
+
+
+def test_the_takeover_evidence_names_count_step_holder_renewal_and_runs() -> None:
+    run = RunEntry(
+        "laptop-01ab", "claude", "claude", "Claude Opus 5.5", "first", "needs-input", T0, T0
+    )
+    stalled = claim(takeovers=3, step="verify", runs=(run,))
+    text = takeover_evidence(stalled, max_takeovers=3)
+    assert "3 takeovers" in text
+    assert "`verify`" in text
+    assert "office-pc-7f3a/codex" in text
+    assert "2026-10-30T12:00:00Z" in text
+    assert "laptop-01ab/claude" in text and "needs-input" in text

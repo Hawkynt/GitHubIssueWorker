@@ -175,10 +175,11 @@ class Claim:
 
 @dataclass(frozen=True, slots=True)
 class ClaimPolicy:
-    """The timing rules of claims (F11.3)."""
+    """The timing rules of claims (F11.3) and how many takeovers an issue survives (F11.12)."""
 
     validity: timedelta
     grace: timedelta
+    max_takeovers: int = 3
 
     def new_claim(
         self, issue: int, holder: Holder, now: datetime, branch: str, model: str = ""
@@ -204,6 +205,21 @@ class ClaimPolicy:
         """Whether a worker other than the holder may claim the issue now."""
         return claim is None or not claim.state.holds or self.is_abandoned(claim, now)
 
+    def stalled(self, claim: Claim, now: datetime) -> bool:
+        """An abandoned claim already taken over ``max_takeovers`` times without progress."""
+        return self.is_abandoned(claim, now) and claim.takeovers >= self.max_takeovers
+
+    def given_up(self, claim: Claim, now: datetime) -> Claim:
+        """The stalled claim, released to wait at ``failed`` for a trusted comment."""
+        return claim.replace(
+            state=ClaimState.RELEASED,
+            step="failed",
+            renewed_at=now,
+            paused_until=None,
+            wait_reason="",
+            takeovers=0,
+        )
+
     def renewed(self, claim: Claim, now: datetime, **changes: Any) -> Claim:
         return claim.replace(renewed_at=now, expires_at=now + self.validity, **changes)
 
@@ -222,3 +238,23 @@ class ClaimPolicy:
             wait_reason="",
             takeovers=claim.takeovers + (1 if self.is_abandoned(claim, now) else 0),
         )
+
+
+def takeover_evidence(claim: Claim, max_takeovers: int) -> str:
+    """Why a stalled issue was given up: what the comment marking it failed reports."""
+    lines = [
+        f"I gave up on this issue: {claim.takeovers} takeovers without progress "
+        f"(maxTakeovers is {max_takeovers}), and its holder was lost again.",
+        "",
+        f"- step reached: `{claim.step}`",
+        f"- last holder: {claim.holder}, last renewed {_timestamp(claim.renewed_at)}",
+        f"- claim generation: {claim.generation}",
+    ]
+    if claim.runs:
+        lines += ["", "Finished runs:"]
+        lines += [
+            f"- {_timestamp(run.started)} {run.manager}/{run.worker} ({run.kind}): {run.verdict}"
+            for run in claim.runs
+        ]
+    lines += ["", "Comment here and the work starts again."]
+    return "\n".join(lines)
