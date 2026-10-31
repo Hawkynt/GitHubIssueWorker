@@ -26,6 +26,16 @@
       "started": "2026-10-31T11:02:23Z",
       "verdict": "needs-input",
       "worker": "codex.2"
+    },
+    {
+      "agent": "claude",
+      "finished": "2026-10-31T11:58:34Z",
+      "kind": "rework",
+      "manager": "hawky-desktop-96a3",
+      "model": "Claude Opus 5.5",
+      "started": "2026-10-31T11:47:34Z",
+      "verdict": "crashed",
+      "worker": "claude.3"
     }
   ],
   "state": "working",
