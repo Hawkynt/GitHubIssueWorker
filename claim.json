@@ -1,0 +1,21 @@
+{
+  "branch": "issue/72-f6-7-enforce-runtimeout-and-the-budget-p",
+  "claimedAt": "2026-10-31T11:27:46Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T11:27:46Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "claude.2"
+  },
+  "issue": 72,
+  "model": "Claude Opus 5.5",
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T11:27:46Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
