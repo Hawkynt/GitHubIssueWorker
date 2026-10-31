@@ -81,3 +81,14 @@ def test_agents_are_told_to_keep_to_their_branch_because_it_is_deleted() -> None
 
     assert "Create no other branch" in CONTRACT
     assert "deletes the branch on\n  GitHub and here, together with this worktree" in CONTRACT
+
+
+def test_agents_update_the_docs_and_tick_covered_requirements_before_they_finish() -> None:
+    from github_issue_worker.application.prompt import CONTRACT
+
+    assert "**Docs are part of done.**" in CONTRACT
+    assert (
+        "tick (`- [x]`) each item whose acceptance criterion your passing tests now cover"
+        in CONTRACT
+    )
+    assert CONTRACT.index("Docs are part of done") < CONTRACT.index("Done means verified")
