@@ -173,7 +173,8 @@ def _add(config: Configuration, path: Path, args: argparse.Namespace, hosts: Hos
 def _control_directory(args: argparse.Namespace, home: Path) -> Path:
     from github_issue_worker.wiring import state_dir
 
-    return args.state_dir or state_dir(home)
+    state, _ = _dirs(args)
+    return state.parent if state is not None else state_dir(home)
 
 
 def _remove(

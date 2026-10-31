@@ -24,6 +24,7 @@ def test_list_reads_status_without_starting_workers_and_honors_state_directory(
     config_path = tmp_path / "config.json"
     save(Configuration(repositories=[RepositorySettings(repository="o/r")]), config_path)
     state_path = tmp_path / "state" / "state.json"
+    cache_path = tmp_path / "cache"
     state = JsonStateStore(state_path)
     state.set_poll_state(
         "o/r", PollState(watched_since=NOW - timedelta(days=2), last_polled_at=NOW)
@@ -47,7 +48,15 @@ def test_list_reads_status_without_starting_workers_and_honors_state_directory(
 
     assert (
         main(
-            ["--config", str(config_path), "--state-dir", str(state_path.parent), "list"],
+            [
+                "--config",
+                str(config_path),
+                "--state-dir",
+                str(state_path.parent),
+                "--cache-dir",
+                str(cache_path),
+                "list",
+            ],
             runtime_factory=factory,
         )
         == 0
@@ -55,7 +64,7 @@ def test_list_reads_status_without_starting_workers_and_honors_state_directory(
     out = capsys.readouterr().out
     assert "o/r" in out and "2026-10-31 12:00" in out and "#7" in out
     assert "Current issue" in out and "queued=1" in out
-    assert factory_args == [(state_path, None)]
+    assert factory_args == [(state_path, cache_path)]
 
 
 def test_list_with_no_repositories_does_not_build_a_runtime(
@@ -146,3 +155,31 @@ def test_failed_live_removal_reload_is_retried_without_forgetting_the_change(
     assert _reload_if_changed(runtime, SimpleNamespace(), path, 0.0) == 0.0
     assert _reload_if_changed(runtime, SimpleNamespace(), path, 0.0) == _mtime(path)
     assert len(calls) == 2
+
+
+def test_remove_uses_the_configuration_scoped_control_directory_selected_for_watch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import github_issue_worker.adapters.control as control
+
+    path = tmp_path / "custom.json"
+    save(Configuration(repositories=[RepositorySettings(repository="o/r")]), path)
+    control_directories: list[Path] = []
+    state_paths: list[Path] = []
+
+    def route(directory: Path, config: Path, repository: str, offline: Callable[[], None]) -> None:
+        control_directories.append(directory)
+        offline()
+
+    def factory(
+        config: Configuration, home: Path, selected_state: Path | None, cache: Path | None
+    ) -> SimpleNamespace:
+        assert selected_state is not None
+        state_paths.append(selected_state)
+        return SimpleNamespace(remove_repository=lambda *args: None)
+
+    monkeypatch.setattr(control, "remove_or_request", route)
+    assert (
+        main(["--config", str(path), "remove", "o/r"], home=tmp_path, runtime_factory=factory) == 0
+    )
+    assert control_directories == [state_paths[0].parent]
