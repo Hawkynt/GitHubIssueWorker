@@ -35,7 +35,7 @@ from github_issue_worker.application.manager import (
 )
 from github_issue_worker.application.poller import Poller, PollState
 from github_issue_worker.configuration import Configuration, RepositorySettings, WorkerSettings
-from github_issue_worker.domain.claim import ClaimPolicy
+from github_issue_worker.domain.claim import ClaimPolicy, RunEntry
 from github_issue_worker.domain.commit_message import DEFAULT_FORBIDDEN_WORDS, CommitGate
 from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.domain.model_name import display_model
@@ -357,6 +357,36 @@ class Runtime:
             if name not in configured and not any(s.group == name for s in self.slots):
                 self.adapters.pop(name)
 
+    def _sweep(self, watch: RepositoryWatch, mine: set[int], claimed: set[int]) -> None:
+        Housekeeping(watch.host, self.workspace).sweep(mine, claimed)
+        self.publish_history(watch)
+
+    def publish_history(self, watch: RepositoryWatch) -> None:
+        """Put this manager's runs the claims do not carry yet into them (F14.13).
+
+        Runs that finished before the history was shared exist only in the local file; once in
+        the claims, a manager on any machine counts them too.
+        """
+        known = set(watch.store.issues())
+        for record in self.history.load():
+            if record.repository != watch.name or record.issue not in known:
+                continue
+            if record.manager not in ("", self.manager_id):
+                continue
+            watch.coordinator.record_run(
+                record.issue,
+                RunEntry(
+                    self.manager_id,
+                    record.worker,
+                    record.agent,
+                    record.model,
+                    record.kind,
+                    record.verdict,
+                    record.started,
+                    record.finished,
+                ),
+            )
+
     @property
     def history(self) -> HistoryStore:
         return HistoryStore(self.state_path.parent / "history.jsonl")
@@ -384,9 +414,7 @@ class Runtime:
             spawn=lambda job: threading.Thread(target=job, daemon=True).start(),
             on_finished=self.record,
             max_runs=self.max_runs,
-            sweep=lambda watch, mine, claimed: Housekeeping(watch.host, self.workspace).sweep(
-                mine, claimed
-            ),
+            sweep=self._sweep,
         )
 
 

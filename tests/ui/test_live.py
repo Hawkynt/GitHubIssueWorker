@@ -105,6 +105,7 @@ def test_resource_paused_worker_keeps_its_issue_reason_and_conflict_in_the_live_
     backend._runtime = runtime
     backend._history_at = time.monotonic()
     backend._history = []
+    backend._fleet = []
     backend._claims = (
         ClaimView(
             "o/r",

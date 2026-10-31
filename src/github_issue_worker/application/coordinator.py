@@ -5,7 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState, ConsumedThrough, Holder
+from github_issue_worker.domain.claim import (
+    Claim,
+    ClaimPolicy,
+    ClaimState,
+    ConsumedThrough,
+    Holder,
+    RunEntry,
+)
 from github_issue_worker.ports.claims import ClaimConflict, ClaimStore
 from github_issue_worker.ports.clock import Clock
 
@@ -28,19 +35,21 @@ class Coordinator:
     clock: Clock
     policy: ClaimPolicy
 
-    def claim(self, issue: int, holder: Holder, branch: str) -> ClaimHandle | None:
+    def claim(self, issue: int, holder: Holder, branch: str, model: str = "") -> ClaimHandle | None:
         """Claim ``issue`` for ``holder``, or None when it is held or another claimant won."""
         now = self.clock.now()
         current = self.store.read(issue)
         try:
             if current is None:
-                fresh = self.policy.new_claim(issue=issue, holder=holder, now=now, branch=branch)
+                fresh = self.policy.new_claim(
+                    issue=issue, holder=holder, now=now, branch=branch, model=model
+                )
                 return ClaimHandle(self.store.create(fresh), fresh)
 
             if not self.policy.may_claim(current.claim, now):
                 return None
 
-            taken = self.policy.taken_over(current.claim, holder, now)
+            taken = self.policy.taken_over(current.claim, holder, now, model=model)
             return ClaimHandle(self.store.replace(current.version, taken), taken)
         except ClaimConflict:
             return None
@@ -82,9 +91,30 @@ class Coordinator:
         )
         return self._write(handle, working)
 
-    def move(self, handle: ClaimHandle, holder: Holder) -> ClaimHandle:
+    def record_run(self, issue: int, entry: RunEntry, attempts: int = 5) -> None:
+        """Append a finished run to the issue's claim, whoever holds it now (fleet history).
+
+        A compare-and-swap like every claim write, retried when somebody wrote in between; a run
+        already recorded is not recorded twice.
+        """
+        for _ in range(attempts):
+            current = self.store.read(issue)
+            if current is None or any(run.key == entry.key for run in current.claim.runs):
+                return
+            try:
+                self.store.replace(
+                    current.version, current.claim.replace(runs=(*current.claim.runs, entry))
+                )
+                return
+            except ClaimConflict:
+                continue
+        raise ClaimLost(f"issue {issue}: the run could not be recorded in the claim")
+
+    def move(self, handle: ClaimHandle, holder: Holder, model: str | None = None) -> ClaimHandle:
         """Hand the claim to another worker in one compare-and-swap (local hand-off)."""
-        return self._write(handle, self.policy.taken_over(handle.claim, holder, self.clock.now()))
+        wears = handle.claim.model if model is None else model
+        taken = self.policy.taken_over(handle.claim, holder, self.clock.now(), model=wears)
+        return self._write(handle, taken)
 
     def release(
         self, handle: ClaimHandle, step: str | None = None, consumed: int | None = None

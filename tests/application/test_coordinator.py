@@ -159,3 +159,22 @@ def test_pause_records_the_reset_and_keeps_the_claim(
     resumed = coord.resume(paused)
     assert resumed.claim.state is ClaimState.WORKING
     assert resumed.claim.paused_until is None
+
+
+def test_a_finished_run_is_appended_to_the_claim_even_after_a_concurrent_write(
+    store: InMemoryClaimStore, clock: FakeClock
+) -> None:
+    from github_issue_worker.domain.claim import RunEntry
+
+    coordinator = Coordinator(store, clock, POLICY)
+    handle = coordinator.claim(5, Holder("m1", "claude"), "issue/5-x", model="Claude Opus 5.5")
+    assert handle is not None and handle.claim.model == "Claude Opus 5.5"
+    coordinator.complete(handle)
+    entry = RunEntry("m1", "claude", "claude", "Claude Opus 5.5", "first", "merged", T0, T0)
+    stale = store.read(5)
+    assert stale is not None
+    store.replace(stale.version, stale.claim.replace(step="renamed"))  # somebody else wrote
+    coordinator.record_run(5, entry)
+    coordinator.record_run(5, entry)  # recorded once, whoever repeats it
+    current = store.current(5)
+    assert current is not None and current.runs == (entry,) and current.step == "renamed"

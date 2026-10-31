@@ -1018,9 +1018,11 @@ def _remote_row(
             claim.repository, claim.issue, known.title if known else "", known.body if known else ""
         )
         manager, _, worker = claim.holder.partition("/")
+        # the holder's manager writes its model into the claim; older claims carry none
+        model = claim.model or (known.model if known and known.model != "-" else "") or ""
         facts = [
             f"{e(worker)} on <span class=nowrap>{e(manager)}</span>"
-            + (f", {e(known.model)}" if known and known.model else ""),
+            + (f", {e(model)}" if model else ""),
             _out(f"https://github.com/{claim.repository}/tree/{claim.branch}", e(claim.branch)),
             f"renewed {ticking(claim.renewed, now)} ago",
         ]
@@ -1043,8 +1045,8 @@ def _remote_row(
         rows.append(
             row.replace("class=run", 'class="run waiting"', 1) if claim.state == "paused" else row
         )
-        if known and known.model and known.model != "-":
-            models.append(known.model)
+        if model:
+            models.append(model)
     managers = len({claim.holder.partition("/")[0] for claim in claims})
     who = _who(
         "Remote",

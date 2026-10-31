@@ -10,10 +10,13 @@ import json
 import statistics
 import threading
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
+
+from github_issue_worker.domain.claim import Claim
 
 SplitBy = Literal["model", "agent", "repository"]
 MAX_SERIES = 8
@@ -33,6 +36,8 @@ class RunRecord:
     finished: datetime
     issue_started: datetime
     """When work on the issue began, for the time from first run to merge."""
+    manager: str = ""
+    """The manager that ran it; empty in records written before the history was shared."""
 
     def to_json(self) -> str:
         data = asdict(self)
@@ -43,6 +48,7 @@ class RunRecord:
     @staticmethod
     def from_json(line: str) -> RunRecord:
         data = json.loads(line)
+        data.setdefault("manager", "")
         for key in ("started", "finished", "issue_started"):
             data[key] = datetime.fromisoformat(data[key])
         return RunRecord(**data)
@@ -256,3 +262,49 @@ def activity(records: list[RunRecord]) -> list[list[int]]:
         moment = record.finished.astimezone(UTC)
         matrix[moment.weekday()][moment.hour] += 1
     return matrix
+
+
+def fleet_records(repository: str, claims: Iterable[Claim]) -> list[RunRecord]:
+    """The finished runs the claims of ``repository`` carry, from every manager (F14.13).
+
+    Each issue's first run since its last merge starts the clock for time to merge, wherever it
+    ran, so every manager derives the same records from the same claims.
+    """
+    records = []
+    for claim in claims:
+        began: datetime | None = None
+        for run in sorted(claim.runs, key=lambda run: run.started):
+            began = began or run.started
+            records.append(
+                RunRecord(
+                    repository=repository,
+                    issue=claim.issue,
+                    worker=run.worker,
+                    agent=run.agent,
+                    model=run.model or "unknown model",
+                    kind=run.kind,
+                    verdict=run.verdict,
+                    started=run.started,
+                    finished=run.finished,
+                    issue_started=began,
+                    manager=run.manager,
+                )
+            )
+            if run.verdict == "merged":
+                began = None
+    return sorted(records, key=lambda record: record.finished)
+
+
+def _identity(record: RunRecord) -> tuple[str, int, str, str]:
+    started = record.started.astimezone(UTC).replace(microsecond=0)
+    return (record.repository, record.issue, record.worker, started.isoformat())
+
+
+def merged_history(local: Iterable[RunRecord], fleet: Iterable[RunRecord]) -> list[RunRecord]:
+    """The fleet's records, plus local ones the claims do not carry (older, or unwatched now).
+
+    A run in both is taken from the claims, so every manager counts it the same way.
+    """
+    shared = {_identity(record): record for record in fleet}
+    only_here = [record for record in local if _identity(record) not in shared]
+    return sorted([*shared.values(), *only_here], key=lambda record: record.finished)

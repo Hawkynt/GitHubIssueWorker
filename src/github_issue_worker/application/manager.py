@@ -22,7 +22,7 @@ from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.history import RunRecord
 from github_issue_worker.application.issue_run import Verdict
 from github_issue_worker.application.poller import PollResult, PollState
-from github_issue_worker.domain.claim import ClaimState, Holder
+from github_issue_worker.domain.claim import ClaimState, Holder, RunEntry
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.model_name import display_model
 from github_issue_worker.domain.split import (
@@ -101,6 +101,12 @@ RunIssue = Callable[
     [RepositoryWatch, WorkerSlot, ClaimHandle, Issue, tuple[Comment, ...], RunKind], Verdict
 ]
 Poll = Callable[[str, PollState, bool], tuple[PollResult, PollState]]
+
+
+def _model_of(slot: WorkerSlot) -> str:
+    """The model a worker runs, normalised; empty while nobody knows it yet."""
+    known = slot.observed_model or slot.model
+    return display_model(known) if known else ""
 
 
 def branch_name(issue: Issue) -> str:
@@ -288,7 +294,9 @@ class Manager:
                 return
             slot = min(free, key=lambda candidate: candidate.priority)
             branch = claim.branch if claim else branch_name(issue)
-            handle = watch.coordinator.claim(number, Holder(self.manager_id, slot.name), branch)
+            handle = watch.coordinator.claim(
+                number, Holder(self.manager_id, slot.name), branch, model=_model_of(slot)
+            )
             self._pending[watch.name].discard(number)
             if handle is None:
                 return
@@ -443,9 +451,29 @@ class Manager:
         verdict: str,
         started: datetime,
     ) -> None:
+        model = _model_of(slot) or "unknown model"
+        finished = self.clock.now()
+        try:
+            # In the claim, so every manager of the fleet counts the run the same way.
+            watch.coordinator.record_run(
+                issue.number,
+                RunEntry(
+                    self.manager_id,
+                    slot.name,
+                    slot.agent,
+                    model,
+                    kind.value,
+                    verdict,
+                    started,
+                    finished,
+                ),
+            )
+        except Exception:
+            log.exception(
+                "%s#%d: the run could not be recorded in its claim", watch.name, issue.number
+            )
         if self.on_finished is None:
             return
-        known = slot.observed_model or slot.model
         try:
             self.on_finished(
                 RunRecord(
@@ -453,12 +481,13 @@ class Manager:
                     issue=issue.number,
                     worker=slot.name,
                     agent=slot.agent,
-                    model=display_model(known) if known else "unknown model",
+                    model=model,
                     kind=kind.value,
                     verdict=verdict,
                     started=started,
-                    finished=self.clock.now(),
+                    finished=finished,
                     issue_started=started,
+                    manager=self.manager_id,
                 )
             )
         except Exception:

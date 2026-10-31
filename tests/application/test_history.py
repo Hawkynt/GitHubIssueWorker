@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -167,3 +168,49 @@ def test_the_running_total_of_merges_and_the_activity_grid() -> None:
     grid = activity(runs)
     assert len(grid) == 7 and all(len(row) == 24 for row in grid)
     assert sum(map(sum, grid)) == 3 and grid[NOW.weekday()][NOW.hour] == 1
+
+
+def test_every_manager_computes_the_same_statistics_from_the_claims() -> None:
+    from github_issue_worker.application.history import fleet_records, merged_history
+    from github_issue_worker.domain.claim import ClaimPolicy, Holder, RunEntry
+
+    policy = ClaimPolicy(timedelta(days=7), timedelta(days=1))
+    t = NOW - timedelta(days=1)
+    asked = RunEntry(
+        "laptop",
+        "codex",
+        "codex",
+        "GPT 6.1 Sol",
+        "first",
+        "needs-input",
+        t,
+        t + timedelta(minutes=5),
+    )
+    merged = RunEntry(
+        "desktop",
+        "claude",
+        "claude",
+        "Claude Opus 5.5",
+        "rework",
+        "merged",
+        t + timedelta(hours=1),
+        t + timedelta(hours=1, minutes=20),
+    )
+    claim = policy.new_claim(7, Holder("desktop", "claude"), t, "issue/7-x").replace(
+        runs=(asked, merged)
+    )
+    shared = fleet_records("o/a", [claim])
+    assert [(r.manager, r.model, r.verdict) for r in shared] == [
+        ("laptop", "GPT 6.1 Sol", "needs-input"),
+        ("desktop", "Claude Opus 5.5", "merged"),
+    ]
+    # time to merge runs from the issue's first run, on whichever machine that was
+    assert shared[1].issue_started == t
+
+    # desktop's local history already has its own run; laptop's has only the other one
+    desktop_local = [replace(shared[1], manager="")]
+    laptop_local = [replace(shared[0], manager="")]
+    on_desktop = merged_history(desktop_local, shared)
+    on_laptop = merged_history(laptop_local, shared)
+    assert on_desktop == on_laptop and len(on_desktop) == 2
+    assert kpis(on_desktop, NOW) == kpis(on_laptop, NOW)

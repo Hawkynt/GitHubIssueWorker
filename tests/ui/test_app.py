@@ -652,3 +652,12 @@ def test_a_blocked_runs_current_step_chip_is_marked_blocked(client: TestClient) 
     ) in codex
     claude = crew.split('aria-label="claude"', 1)[1].split("class=lane", 1)[0]
     assert '<span class="now" aria-current="step">verify<' in claude  # active, not blocked
+
+
+def test_remote_rows_show_the_model_the_other_manager_wrote_into_the_claim(
+    client: TestClient,
+) -> None:
+    crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
+    remote = crew.split('aria-label="Remote"', 1)[1]
+    assert "claude on <span class=nowrap>laptop-01ab</span>, Claude Sonnet 5.5" in remote
+    assert "local on <span class=nowrap>ci-runner-03</span>, Qwen3.8 Flash Next IQ3_S" in remote
