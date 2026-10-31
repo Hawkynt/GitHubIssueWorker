@@ -14,7 +14,7 @@
   "issue": 74,
   "model": "GPT 6.1 Sol",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T11:39:53Z",
+  "renewedAt": "2026-10-31T11:48:41Z",
   "runs": [
     {
       "agent": "codex",
@@ -37,7 +37,7 @@
       "worker": "codex"
     }
   ],
-  "state": "working",
-  "step": "triage",
+  "state": "done",
+  "step": "done",
   "takeovers": 0
 }
