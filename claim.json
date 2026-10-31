@@ -1,20 +1,20 @@
 {
   "branch": "issue/41-model-coloring",
-  "claimedAt": "2026-10-30T19:19:50Z",
+  "claimedAt": "2026-10-31T06:38:24Z",
   "consumedThrough": {
     "comment": 6531558708,
     "review": null
   },
-  "expiresAt": "2026-11-07T00:07:11Z",
-  "generation": 2,
+  "expiresAt": "2026-11-07T06:38:24Z",
+  "generation": 3,
   "holder": {
     "manager": "hawky-desktop-96a3",
-    "worker": "local"
+    "worker": "claude"
   },
   "issue": 41,
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T06:12:00Z",
-  "state": "done",
+  "renewedAt": "2026-10-31T06:38:24Z",
+  "state": "working",
   "step": "done",
   "takeovers": 0
 }
