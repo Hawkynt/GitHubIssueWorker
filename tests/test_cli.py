@@ -179,6 +179,129 @@ def test_watch_polls_when_gh_is_logged_in(
     assert "watching 1 repositories" in capsys.readouterr().out
 
 
+def run_once(config: Path, api: Api, manager: Manager) -> int:
+    return main(
+        ["--config", str(config), "once"],
+        home=config.parent,
+        runtime_factory=lambda *a: Runtime(api, manager),
+    )
+
+
+def test_given_a_watched_config_when_once_runs_then_it_polls_once_and_exits(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    host = Host(can_push=True)
+    api, manager = Api(), Manager([host])
+    assert run_once(watched_config(tmp_path), api, manager) == 0
+    assert api.requests == [("GET", "user")]
+    assert host.labelled
+    assert manager.ticks == 1
+    assert "watching 1 repositories" in capsys.readouterr().out
+
+
+def test_given_gh_cannot_reach_github_when_once_runs_then_it_stops_with_two(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    host = Host(can_push=True)
+    api, manager = Api(logged_in=False), Manager([host])
+    assert run_once(watched_config(tmp_path), api, manager) == 2
+    assert "gh auth login" in capsys.readouterr().err
+    assert api.requests == [("GET", "user")]
+    assert manager.ticks == 0
+    assert not host.labelled
+
+
+def test_given_ui_defaults_on_when_once_runs_then_it_starts_no_ui(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import github_issue_worker.ui.server as ui_server
+
+    started: list[tuple[str, int]] = []
+
+    class FakeServer:
+        def __init__(self, backend: object, host: str, port: int) -> None:
+            self.host = host
+            self.port = port
+            self.url = f"http://localhost:{port}"
+
+        def start(self, **_: object) -> bool:
+            started.append((self.host, self.port))
+            return True
+
+        def stop(self) -> None:
+            pass
+
+    class ConfiguredRuntime(Runtime):
+        def __init__(self, cfg: object, api: Api, manager: Manager) -> None:
+            super().__init__(api, manager)
+            self.config = cfg
+
+    monkeypatch.setattr(ui_server, "UiServer", FakeServer)
+    code = main(
+        ["--config", str(watched_config(tmp_path)), "once"],
+        home=tmp_path,
+        runtime_factory=lambda cfg, *_: ConfiguredRuntime(cfg, Api(), Manager()),
+    )
+    assert code == 0
+    assert started == []
+
+
+def test_given_a_busy_worker_after_the_pass_when_once_runs_then_it_waits_for_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import github_issue_worker.cli as cli
+
+    monkeypatch.setattr(cli, "_DRAIN_WAIT_SECONDS", 0.01)
+
+    class BusySlot:
+        def __init__(self) -> None:
+            self.polls = 0
+
+        @property
+        def busy(self) -> bool:
+            self.polls += 1
+            return self.polls < 3
+
+    class BusyManager(Manager):
+        def __init__(self) -> None:
+            super().__init__()
+            self.slot = BusySlot()
+            self.workers = [self.slot]
+
+    manager = BusyManager()
+    assert run_once(watched_config(tmp_path), Api(), manager) == 0
+    assert manager.ticks == 1
+    assert manager.slot.polls >= 2  # waited for the worker instead of exiting on it
+
+
+def test_given_no_config_when_once_starts_then_it_detects_workers_of_one_and_saves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("claude", "codex", "antigravity"):
+        tool(tmp_path / "bin" / (f"{name}.cmd" if sys.platform == "win32" else name))
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    config_path = tmp_path / "config.json"
+    assert (
+        main(
+            ["--config", str(config_path), "once"],
+            home=tmp_path,
+            runtime_factory=lambda *a: Runtime(Api(), Manager()),
+        )
+        == 0
+    )
+    saved = load(config_path)
+    assert {(w.name, w.agent, w.installation.type) for w in saved.workers} == {
+        ("claude", "claude", "path"),
+        ("codex", "codex", "path"),
+        ("antigravity", "antigravity", "path"),
+    }
+    assert {name: acc.max_concurrent_runs for name, acc in saved.accounts.items()} == {
+        "claude": 1,
+        "codex": 1,
+        "antigravity": 1,
+    }
+
+
 def tool(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("#!/bin/sh\n", encoding="utf-8")

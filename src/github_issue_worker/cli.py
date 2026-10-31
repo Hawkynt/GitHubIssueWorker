@@ -1,4 +1,5 @@
-"""The command line (F1, F10, F12.8): add, remove, list, workers, watch, work, release, status."""
+"""The command line (F1, F10, F12.8): add, remove, list, workers, watch, once, work, release,
+status."""
 
 from __future__ import annotations
 
@@ -40,6 +41,7 @@ _REPOSITORY = re.compile(
     r"(?:\.git)?(?:/issues/(?P<issue>\d+))?/?$"
 )
 _PRIORITY = {"claude": 1, "codex": 2, "antigravity": 3, "opencode": 5}
+_DRAIN_WAIT_SECONDS = 5.0
 
 
 class _Host(Protocol):
@@ -195,6 +197,9 @@ def _watch(
     home: Path,
     runtime_factory: RuntimeFactory,
     path: Path | None = None,
+    *,
+    once: bool = False,
+    no_ui: bool = False,
 ) -> int:
     from github_issue_worker.adapters.process import terminate_all
 
@@ -238,13 +243,13 @@ def _watch(
         for row in manager.snapshot():
             print(f"  worker {row['worker']}: {'ok' if row['available'] else row['reason']}")
         server = None
-        if path is not None and not args.once and not getattr(args, "no_ui", False):
+        if path is not None and not once and not no_ui:
             server = _start_ui(runtime, manager, path, open_browser=first_run)
         seen = _mtime(path)
         while not stop.is_set():
             try:
                 manager.tick()
-                if args.once or stop.is_set():
+                if once or stop.is_set():
                     break
                 stop.wait(runtime.config.poll_interval.total_seconds())
                 seen = _reload_if_changed(runtime, manager, path, seen)
@@ -252,7 +257,7 @@ def _watch(
                 stop.set()
                 break
         while any(slot.busy for slot in manager.workers):
-            stop.wait(5)
+            stop.wait(_DRAIN_WAIT_SECONDS)
         if server is not None:
             server.stop()
         return 0
@@ -455,6 +460,14 @@ def _parser() -> argparse.ArgumentParser:
     watch.add_argument("--state-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     watch.add_argument("--cache-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
 
+    once = commands.add_parser("once", help="one poll-and-work pass, then exit (for cron)")
+    once.add_argument("--config", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    once.add_argument(
+        "-v", "--verbose", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS
+    )
+    once.add_argument("--state-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    once.add_argument("--cache-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+
     ui = commands.add_parser("ui", help="serve the demo fleet, or capture its screenshots")
     ui.add_argument("--demo", action="store_true", help="serve fixed, believable sample data")
     ui.add_argument("--port", type=int, default=8765)
@@ -511,7 +524,19 @@ def main(
         if args.command == "workers":
             return _workers(config, path, args, home)
         if args.command == "watch":
-            return _watch(config, args, home, runtime_factory or _build_runtime(), path)
+            return _watch(
+                config,
+                args,
+                home,
+                runtime_factory or _build_runtime(),
+                path,
+                once=args.once,
+                no_ui=args.no_ui,
+            )
+        if args.command == "once":
+            return _watch(
+                config, args, home, runtime_factory or _build_runtime(), path, once=True, no_ui=True
+            )
         if args.command == "ui":
             return _ui(args)
         if args.command == "status":
