@@ -15,6 +15,18 @@
   "model": "GPT 6.1 Sol",
   "pausedUntil": null,
   "renewedAt": "2026-10-31T11:18:10Z",
+  "runs": [
+    {
+      "agent": "codex",
+      "finished": "2026-10-31T11:18:12Z",
+      "kind": "first",
+      "manager": "hawky-desktop-96a3",
+      "model": "GPT 6.1 Sol",
+      "started": "2026-10-31T11:02:18Z",
+      "verdict": "merged",
+      "worker": "codex"
+    }
+  ],
   "state": "done",
   "step": "done",
   "takeovers": 0
