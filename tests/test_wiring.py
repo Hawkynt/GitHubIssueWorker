@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import stat
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -92,12 +93,15 @@ def command_worker(
 def test_a_command_worker_runs_its_template_with_the_program_found_on_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    mycli = executable(tmp_path / "bin" / "mycli")
+    # Windows finds a program on PATH only by a PATHEXT extension.
+    mycli = executable(tmp_path / "bin" / ("mycli.cmd" if sys.platform == "win32" else "mycli"))
     monkeypatch.setenv("PATH", str(mycli.parent))
     worker = command_worker(limitExitCodes=[75], limitPatterns=["quota"])
     adapter = make_adapter(worker, tmp_path)
     assert adapter.kind == "command"
-    assert argv(worker, tmp_path) == [str(mycli), "--message", "Fix issue 5."]
+    program, *arguments = argv(worker, tmp_path)
+    assert Path(program).name.lower() == mycli.name.lower()
+    assert arguments == ["--message", "Fix issue 5."]
     run = AgentRun(worktree=tmp_path, prompt="x")
     assert adapter.report(run, 75, "", "").limit is not None
     assert adapter.report(run, 1, "", "quota gone").limit is not None
