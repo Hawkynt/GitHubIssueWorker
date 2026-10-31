@@ -16,6 +16,18 @@
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
   "renewedAt": "2026-10-31T11:18:14Z",
+  "runs": [
+    {
+      "agent": "claude",
+      "finished": "2026-10-31T11:28:03Z",
+      "kind": "first",
+      "manager": "hawky-desktop-96a3",
+      "model": "Claude Opus 5.5",
+      "started": "2026-10-31T11:02:03Z",
+      "verdict": "crashed",
+      "worker": "claude"
+    }
+  ],
   "state": "working",
   "step": "triage",
   "takeovers": 0
