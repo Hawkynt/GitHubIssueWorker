@@ -541,3 +541,21 @@ def test_worker_skip_added_while_waiting_for_checks_stops_at_the_next_poll_and_r
     assert (
         current is not None and current.state is ClaimState.RELEASED and current.step == "skipped"
     )
+
+
+def test_worker_skip_added_before_an_outward_write_stops_at_the_fence_and_releases_the_claim(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
+    h.issue = replace(ISSUE, labels=frozenset({"worker:skip"}))
+    verdict = h.run()
+
+    assert verdict.kind == "skipped"
+    assert h.agent.runs == []
+    assert h.host.worker_label[42] is None
+    current = h.store.current(42)
+    assert (
+        current is not None and current.state is ClaimState.RELEASED and current.step == "skipped"
+    )

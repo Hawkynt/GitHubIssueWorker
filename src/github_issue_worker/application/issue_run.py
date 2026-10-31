@@ -169,7 +169,6 @@ class IssueRun:
     def _run(self, issue: Issue, comments: tuple[Comment, ...], kind: RunKind) -> Verdict:
         repo = self.host.repository
         branch = self._handle.claim.branch
-        self._checkpoint()
         self._fenced(lambda: self.host.set_worker_label(issue.number, "worker:working"))
         base = self.settings.base_branch or self.host.info().default_branch
         tree = self.workspace.worktree(repo, issue.number, branch, base)
@@ -383,6 +382,7 @@ class IssueRun:
         return None
 
     def _push(self, tree: Path, branch: str, expected: str | None, force: bool = False) -> str:
+        self._checkpoint()
         self._handle = self.coordinator.fence(self._handle)
         return self.workspace.push(self.host.repository, tree, branch, expected)
 
@@ -395,6 +395,7 @@ class IssueRun:
             body += f"\n\nScenarios:\n{scenarios}"
         body += f"\n\nCloses #{issue.number}"
         self._title = self._subject(issue, tree, base)
+        self._checkpoint()
         self._handle = self.coordinator.fence(self._handle)
         return self.host.create_pull_request(branch, base, self._title, body)
 
@@ -591,5 +592,6 @@ class IssueRun:
             self.progress(step)
 
     def _fenced(self, write: Callable[[], object]) -> None:
+        self._checkpoint()
         self._handle = self.coordinator.fence(self._handle)
         write()
