@@ -286,6 +286,18 @@ def test_a_paused_worker_claims_nothing() -> None:
     assert f.runs == [Recorded("codex", 1, RunKind.FIRST)]
 
 
+def test_issues_wait_queued_while_every_worker_is_paused_and_start_on_resume() -> None:
+    f = Fixture([slot("claude", enabled=False)])
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert f.runs == []
+    assert f.host.worker_label[1] == "worker:queued"  # paused is not "no worker can serve it"
+
+    f.manager.workers[0].enabled = True
+    f.manager.tick()
+    assert f.runs == [Recorded("claude", 1, RunKind.FIRST)]
+
+
 def test_a_running_worker_shows_its_issue_and_start_time() -> None:
     seen: list[tuple[object, ...]] = []
 
