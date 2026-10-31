@@ -1,0 +1,21 @@
+{
+  "branch": "issue/80-f11-13-maxactiveissuesperrepository-hono",
+  "claimedAt": "2026-10-31T11:02:15Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T11:02:15Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "codex"
+  },
+  "issue": 80,
+  "model": "GPT 6.1 Sol",
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T11:02:15Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
