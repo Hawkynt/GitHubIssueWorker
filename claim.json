@@ -1,0 +1,20 @@
+{
+  "branch": "issue/65-f1-5-re-check-push-access-on-start-and-h",
+  "claimedAt": "2026-10-31T09:04:12Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T09:04:12Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "codex.2"
+  },
+  "issue": 65,
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T09:04:12Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
