@@ -794,8 +794,9 @@ Local state (poll cursors, ETags, native conversation ids, costs) lives in
 `~/.cache/GitHubIssueWorker/`.
 
 Each invocation keeps its transcript under the state directory's
-`logs/<owner>/<repository>/<issue>/`, alongside metadata identifying the transcript, executing
-worker and reported USD cost. Retries and continuations have separate records, including when
+`logs/<owner>/<repository>/<issue>/` as a unique `.ndjson` file. A matching `.json` file records
+`transcript` (the filename), `worker` (the executing instance), `cost_usd` (`null` when unknown)
+and `stderr` (diagnostic output). Retries and continuations have separate records, including when
 started by the same worker within one second. Missing monetary costs remain unknown; reported zero
 is preserved. Failed, usage-limited, timed-out and stopped invocations retain their available output
 and any reported cost. These local records survive manager restarts and worktree cleanup; deleting
@@ -1004,7 +1005,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   to the same conversation, once, before the issue is parked.
 - [ ] 🟥 **F6.7** `runTimeout` and the budget are enforced. Hitting either parks the issue with a
   comment stating what was finished and what was not.
-- [ ] 🟧 **F6.8** Each run's transcript, worker and cost (where the agent reports one) are kept with
+- [x] 🟧 **F6.8** Each run's transcript, worker and cost (where the agent reports one) are kept with
   the issue's local log.
 
 ### F7 — Commit, push, pull request, merge, close

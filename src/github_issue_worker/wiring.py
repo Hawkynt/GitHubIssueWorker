@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import socket
 import threading
@@ -10,6 +11,7 @@ from collections.abc import Iterator, MutableMapping
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from pathlib import Path
+from uuid import uuid4
 
 from github_issue_worker.adapters.agents.antigravity import AntigravityAdapter
 from github_issue_worker.adapters.agents.claude import ClaudeAdapter, ClaudeLocalAdapter
@@ -127,20 +129,49 @@ def execute(
     name: str | None = None,
 ) -> RunReport:
     """One agent run. Its output streams to ``log``; ``name`` lets the UI stop it (F14.4)."""
-    invocation = adapter.invocation(run)
-    result = run_invocation(
-        Invocation(invocation.argv, invocation.cwd, invocation.stdin, dict(invocation.env)),
-        timeout,
-        log=log,
-        name=name,
-    )
-    if result.killed:
-        raise RunStopped("stopped by the maintainer")
-    if result.timed_out:
-        return RunReport(
-            session=run.session, outcome=None, error=f"timed out after {timeout:.0f} s"
+    report: RunReport | None = None
+    stderr = ""
+    if log is not None:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.touch(exist_ok=False)
+        _write_log_metadata(log, name, report, stderr)
+    try:
+        invocation = adapter.invocation(run)
+        result = run_invocation(
+            Invocation(invocation.argv, invocation.cwd, invocation.stdin, dict(invocation.env)),
+            timeout,
+            log=log,
+            name=name,
         )
-    return adapter.report(run, result.exit_code, result.stdout, result.stderr)
+        stderr = result.stderr
+        # Read reported usage even on timeout or stop, before deciding the workflow's outcome.
+        report = adapter.report(run, result.exit_code, result.stdout, result.stderr)
+        if result.killed:
+            raise RunStopped("stopped by the maintainer")
+        if result.timed_out:
+            return RunReport(
+                session=run.session, outcome=None, error=f"timed out after {timeout:.0f} s"
+            )
+        return report
+    finally:
+        if log is not None:
+            _write_log_metadata(log, name, report, stderr)
+
+
+def _write_log_metadata(
+    transcript: Path, worker: str | None, report: RunReport | None, stderr: str
+) -> None:
+    """Keep invocation metadata beside its transcript, outside the disposable worktree (F6.8)."""
+    metadata = {
+        "transcript": transcript.name,
+        "worker": worker,
+        "cost_usd": report.usage.cost_usd if report is not None and report.usage else None,
+        "stderr": stderr,
+    }
+    path = transcript.with_suffix(".json")
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
 
 
 class _PollStates(MutableMapping[str, PollState]):
@@ -263,7 +294,10 @@ class Runtime:
     def _new_log(self, slot: WorkerSlot, repository: str, issue: int) -> Path:
         """Each agent run's output gets its own file, kept for the issue's log page."""
         stamp = self.api.clock.now().strftime("%Y%m%dT%H%M%S")
-        path = log_dir(self.state_path.parent, repository, issue) / f"{stamp}-{slot.name}.ndjson"
+        path = (
+            log_dir(self.state_path.parent, repository, issue)
+            / f"{stamp}-{slot.name}-{uuid4().hex}.ndjson"
+        )
         slot.log_path = path
         return path
 
