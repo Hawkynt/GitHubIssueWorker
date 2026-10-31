@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T21:17:41Z",
+  "expiresAt": "2026-11-07T21:17:59Z",
   "generation": 1,
   "holder": {
     "manager": "hawky-desktop-96a3",
@@ -14,7 +14,7 @@
   "issue": 78,
   "model": "Gemini 4 Argon (Medium)",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T21:17:41Z",
+  "renewedAt": "2026-10-31T21:17:59Z",
   "runs": [
     {
       "agent": "antigravity",
