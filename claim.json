@@ -54,6 +54,16 @@
       "started": "2026-10-30T19:35:01Z",
       "verdict": "crashed",
       "worker": "codex"
+    },
+    {
+      "agent": "codex",
+      "finished": "2026-10-30T19:42:20Z",
+      "kind": "continuation",
+      "manager": "hawky-desktop-96a3",
+      "model": "GPT 6.1 Sol",
+      "started": "2026-10-30T19:38:35Z",
+      "verdict": "crashed",
+      "worker": "codex"
     }
   ],
   "state": "done",
