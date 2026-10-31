@@ -2,7 +2,7 @@
   "branch": "issue/68-f3-6-only-one-manager-per-configuration",
   "claimedAt": "2026-10-31T12:16:08Z",
   "consumedThrough": {
-    "comment": null,
+    "comment": 6543228944,
     "review": null
   },
   "expiresAt": "2026-11-07T12:20:10Z",
@@ -14,7 +14,7 @@
   "issue": 68,
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-10-31T12:20:10Z",
+  "renewedAt": "2026-10-31T12:26:22Z",
   "runs": [
     {
       "agent": "codex",
@@ -27,7 +27,7 @@
       "worker": "codex.2"
     }
   ],
-  "state": "working",
-  "step": "needs-input",
+  "state": "done",
+  "step": "done",
   "takeovers": 0
 }
