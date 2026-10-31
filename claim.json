@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-07T11:35:26Z",
+  "expiresAt": "2026-11-07T11:40:31Z",
   "generation": 1,
   "holder": {
     "manager": "hawky-desktop-96a3",
@@ -13,8 +13,8 @@
   },
   "issue": 77,
   "model": "Gemini 4 Argon (Medium)",
-  "pausedUntil": "2026-10-31T11:40:26Z",
-  "renewedAt": "2026-10-31T11:35:26Z",
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T11:40:31Z",
   "runs": [
     {
       "agent": "antigravity",
@@ -57,8 +57,7 @@
       "worker": "antigravity.2"
     }
   ],
-  "state": "paused",
+  "state": "working",
   "step": "triage",
-  "takeovers": 0,
-  "waitReason": "error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 146h34m8s.\nAGY_ERROR: {\"short_error\":\"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 146h34m8s.\",\"status\":\"RESOURCE_EXHAUSTED\",\"error_code\":429,\"code_kind\":\"http\",\"retryable\":true,\"error_id\":\"4297c367-4851-432f-8138-538140329617-164\"}"
+  "takeovers": 0
 }
