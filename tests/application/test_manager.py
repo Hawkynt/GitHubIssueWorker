@@ -618,3 +618,37 @@ def test_worker_skip_on_a_paused_or_adopted_claim_releases_the_claim_without_res
     )
     assert f.host.worker_label[1] is None
     assert len(f.runs) == 1
+
+
+def test_given_an_older_issue_and_a_newer_priority_high_one_then_high_is_claimed_first() -> None:
+    f = Fixture([slot("claude")], verdicts=[Verdict("paused", until=T0 + timedelta(hours=1))])
+    f.new_issues(issue(1), issue(2, frozenset({"priority:high"}), minutes=5))
+    f.manager.tick()
+    assert [run.issue for run in f.runs] == [2]
+    assert f.host.worker_label[1] == "worker:queued"
+
+
+def test_given_an_older_priority_low_issue_and_a_newer_plain_one_then_plain_goes_first() -> None:
+    f = Fixture([slot("claude")], verdicts=[Verdict("needs-input"), Verdict("merged")])
+    f.new_issues(issue(1, frozenset({"priority:low"})), issue(2, minutes=5))
+    f.manager.tick()
+    assert [run.issue for run in f.runs] == [2, 1]
+
+
+def test_given_a_waiting_issue_labelled_priority_high_then_the_label_alone_queues_nothing() -> None:
+    f = Fixture([slot("claude")], verdicts=[Verdict("needs-input")])
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert [run.issue for run in f.runs] == [1]
+    relabelled = issue(1, frozenset({"priority:high"}), minutes=30)
+    f.new_issues(relabelled)
+    f.manager.tick()
+    assert [run.issue for run in f.runs] == [1]
+
+
+def test_given_a_priority_high_issue_claimed_elsewhere_then_the_next_candidate_is_claimed() -> None:
+    f = Fixture([slot("claude")])
+    f.store.force_create(POLICY.new_claim(5, Holder("laptop-01ab", "codex"), T0, "issue/5-x"))
+    f.new_issues(issue(5, frozenset({"priority:high"}), minutes=5), issue(6, minutes=9))
+    f.manager.tick()
+    assert f.runs == [Recorded("claude", 6, RunKind.FIRST)]
