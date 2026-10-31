@@ -353,7 +353,10 @@ class Manager:
             free = [
                 slot
                 for slot in eligible
-                if self._idle(slot) and not self._limited(slot, now) and self._has_room(slot)
+                if slot.enabled
+                and self._idle(slot)
+                and not self._limited(slot, now)
+                and self._has_room(slot)
             ]
             if not free:
                 self._pending[watch.name].add(number)
@@ -414,7 +417,8 @@ class Manager:
     # --- workers -------------------------------------------------------------------------------
 
     def _serves(self, slot: WorkerSlot, issue: Issue) -> bool:
-        if not slot.available or not slot.enabled:
+        """Could serve it; a paused worker still can, so its issues queue, not go unserved."""
+        if not slot.available:
             return False
         for label in issue.labels:
             if label.startswith("agent:") and label.removeprefix("agent:") != slot.agent:
