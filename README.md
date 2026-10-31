@@ -727,6 +727,23 @@ One JSON file per manager: `~/.config/GitHubIssueWorker/config.json` on Linux (`
 respected), `%APPDATA%\GitHubIssueWorker\config.json` on Windows, or `--config <path>`. Everything
 is optional. Managers share nothing but the repositories.
 
+
+**One manager per configuration on this machine (F3.6).** `watch`, `watch --once`, and `once`
+acquire a process lock before detecting workers, writing an initial configuration, contacting GitHub,
+or starting workers or the UI. A duplicate exits promptly with a nonzero status and reports the
+existing manager's PID; it leaves that manager running. Relative and absolute paths, symlinks, and
+an explicit path matching the default identify the same configuration. Identity is the canonical
+file path, not the file contents, manager name, or state/cache directories. Hard links need not be
+recognised as aliases. Editing or atomically replacing the configuration does not release the lock.
+
+Ownership lasts through shutdown and is released by the operating system even after a crash or
+forced termination; no stale PID cleanup is needed. Lock files live in the machine's temporary
+directory and are retained for safe reuse; they are not configuration settings. Failure to access
+or acquire the lock for reasons other than an existing owner refuses startup with a diagnostic.
+Managers using different configuration paths may run together (use different UI ports or `--no-ui`
+where needed); each keeps its own state, manager id and cache, see below. Managers on different machines remain independent even with the same configuration
+path. Repository claims continue to coordinate their issue ownership; this lock is not a fleet lock.
+
 **Every key below is editable in the UI's Settings page**, and the file, the CLI and the UI are three
 ways to change the same settings. All three go through one validation, writes are atomic, and an
 edit made in the file while the manager runs is picked up as if it had been made in the UI. Changes
@@ -833,9 +850,14 @@ first, and a moved UI listener reopens on its new address.
 | `maxProseLines` | 2 | Commit body lines allowed besides change lines (`+ - * # !` and a space, or their indented continuation). More, and the commit is sent back to be rewritten as change lines. |
 | `forbiddenWords` | agent and vendor names | Case-insensitive whole-word regular-expression fragments the commit gate refuses (`claude`, `anthropic`, `codex`, `openai`, `gemini`, `antigravity`, `opencode`, `llm`, `agents?`). `AI` as a word, `generated with` and 🤖 stay forbidden whatever this list says. |
 
-Local state (poll cursors, ETags, native conversation ids, costs) lives in
+Local state (poll cursors, ETags, native conversation ids, costs, the manager id) lives in
 `~/.local/state/GitHubIssueWorker/` (`%LOCALAPPDATA%` on Windows). Clones and worktrees live under
-`~/.cache/GitHubIssueWorker/`.
+`~/.cache/GitHubIssueWorker/`. Both belong to one configuration: the default configuration uses these
+directories themselves, any other configuration its own `configurations/<key>/` below each of them,
+where `<key>` derives from the canonical configuration path (F3.6). Two configurations therefore
+never share a manager id, a conversation or a worktree, and one manager's housekeeping never
+removes another's worktree. `--state-dir` and `--cache-dir` replace these defaults; giving two
+configurations the same explicit directory makes them one manager in the claims and is not supported.
 
 Each invocation keeps its transcript under the state directory's
 `logs/<owner>/<repository>/<issue>/` as a unique `.ndjson` file. A matching `.json` file records
@@ -976,7 +998,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   scratch.
 - [ ] 🟥 **F3.5** Events that arrive while an issue is claimed are coalesced and delivered to the
   holder when its run ends. None is lost, and five quick comments produce one rework run.
-- [ ] 🟥 **F3.6** Single-manager lock per configuration on one machine. A second `watch` with the same
+- [x] 🟥 **F3.6** Single-manager lock per configuration on one machine. A second `watch` with the same
   configuration exits with the PID of the first. Managers with different configurations, on the same
   or other machines, are coordinated by claims.
 - [x] 🟧 **F3.7** `priority:high`/`priority:low` labels reorder the queue.
@@ -1403,7 +1425,8 @@ Three rules hold the design together. **Every GitHub write goes through one `Shi
 where the dry-run, the commit gate, the marker and the fencing check live, so no path can bypass
 them, the UI included. **Every step is idempotent and checkpointed**: a step repeated after a crash or
 a takeover detects its own earlier effect and skips it, which is what makes F3.4 and F11.5 possible.
-**The claim is the only lock**: there is no coordinator process, and a manager can disappear at any
+**The claim is the only fleet lock**: the local configuration lock (F3.6) only prevents duplicate
+manager processes on one machine. There is no coordinator process, and a manager can disappear at any
 moment without blocking the others for longer than one claim's validity plus grace.
 
 The manager is asynchronous (`asyncio`): polling, claim renewal, waiting for checks, supervising agent
