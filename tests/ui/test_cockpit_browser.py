@@ -42,6 +42,22 @@ def test_a_switch_redraws_only_its_own_chart(browser: Browser, server: UiServer)
     assert "Claude Opus 5.5" in page.inner_text("#time")  # the other chart kept its split
 
 
+def test_the_stacked_total_box_redraws_only_its_own_chart(
+    browser: Browser, server: UiServer
+) -> None:
+    page = browser.new_page(reduced_motion="reduce")
+    page.goto(server.url + "/workers?by=agent")
+    page.evaluate("window.untouched = true")  # gone if the page reloads
+    page.check("#total input[name=total]")
+    page.wait_for_selector("#total .band")
+    assert page.evaluate("window.untouched") is True
+    assert page.url.endswith("?by=agent&days=30&time=model&total=stacked")
+    assert page.is_checked("#total input[name=total]")
+    page.uncheck("#total input[name=total]")
+    page.wait_for_selector("#total .series-line")
+    assert page.url.endswith("?by=agent&days=30&time=model")
+
+
 def test_times_tick_and_the_page_refreshes_in_the_background(
     browser: Browser, server: UiServer
 ) -> None:
