@@ -181,6 +181,7 @@ From the command line:
 github-issue-worker add https://github.com/Hawkynt/ShiftDiff  # verifies push access, creates worker:* labels
 github-issue-worker workers --detect                          # finds installed agents and proposes one worker each
 github-issue-worker watch                                     # runs until stopped; the UI is at http://127.0.0.1:8765
+github-issue-worker once                                      # one poll-and-work pass, for cron or a scheduler
 ```
 
 Then open an issue in that repository. Within one poll interval an idle worker claims it and it is
@@ -192,6 +193,10 @@ be configured: they find each other's claims in the repository.
 
 `github-issue-worker watch --dry-run` does everything except write: it logs every claim, label,
 comment, push and merge it would have made.
+
+`github-issue-worker once` is `watch --once` as its own command, for cron or a scheduler: the same
+startup checks, exactly one poll-and-work pass, and it waits for the work that pass started before
+exiting — it never serves the UI.
 
 `github-issue-worker status` shows what is going on, in headed sections: the manager, its workers
 (agent, account, and `limited until …` while the account waits for its reset), its accounts (each
@@ -1056,7 +1061,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   local agents with one concurrent run per account, writes the initial configuration and opens the
   local UI in the default browser. The first `Ctrl+C`/`SIGTERM` finishes each worker's current
   step, checkpoints and keeps the claims (`--release-on-exit` releases them). The second aborts.
-- [ ] 🟥 **F10.2** `once`: one poll-and-work pass, for cron or a scheduler.
+- [x] 🟥 **F10.2** `once`: one poll-and-work pass, for cron or a scheduler.
 - [ ] 🟥 **F10.3** `work <owner/repo#n> [--worker <name>]`: claim and work exactly one issue now with
   an idle worker, ignoring the queue order but never another worker's valid claim.
 - [ ] 🟥 **F10.4** `--dry-run` on every command: no claim, label, comment, push, merge or file outside
