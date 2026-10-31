@@ -1,0 +1,20 @@
+{
+  "branch": "issue/66-f2-6-back-off-on-github-rate-limits-inst",
+  "claimedAt": "2026-10-31T09:04:17Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T09:04:17Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "antigravity"
+  },
+  "issue": 66,
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T09:04:17Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
