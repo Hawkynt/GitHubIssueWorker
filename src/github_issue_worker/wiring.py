@@ -14,6 +14,7 @@ from pathlib import Path
 from github_issue_worker.adapters.agents.antigravity import AntigravityAdapter
 from github_issue_worker.adapters.agents.claude import ClaudeAdapter, ClaudeLocalAdapter
 from github_issue_worker.adapters.agents.codex import CodexAdapter
+from github_issue_worker.adapters.agents.command import CommandAdapter
 from github_issue_worker.adapters.gh_api import GhApi
 from github_issue_worker.adapters.git_claims import GitClaimStore
 from github_issue_worker.adapters.home import account_home
@@ -116,6 +117,14 @@ def make_adapter(worker: WorkerSettings, home: Path) -> AgentAdapter:
         return CodexAdapter(executable, env=resolved.env)
     if worker.agent == "antigravity":
         return AntigravityAdapter(executable, env=resolved.env)
+    if worker.agent == "command" and worker.command:
+        return CommandAdapter(
+            worker.command,
+            executable=executable,
+            env=resolved.env,
+            limit_patterns=worker.limit_patterns,
+            limit_exit_codes=worker.limit_exit_codes,
+        )
     raise Unavailable(f"{worker.name}: the {worker.agent} adapter is not implemented yet")
 
 
