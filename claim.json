@@ -15,6 +15,18 @@
   "model": "Gemini 4 Argon (Medium)",
   "pausedUntil": "2026-10-31T11:25:08Z",
   "renewedAt": "2026-10-31T11:20:08Z",
+  "runs": [
+    {
+      "agent": "antigravity",
+      "finished": "2026-10-31T11:20:12Z",
+      "kind": "first",
+      "manager": "hawky-desktop-96a3",
+      "model": "Gemini 4 Argon (Medium)",
+      "started": "2026-10-31T11:02:27Z",
+      "verdict": "paused",
+      "worker": "antigravity"
+    }
+  ],
   "state": "paused",
   "step": "triage",
   "takeovers": 0,
