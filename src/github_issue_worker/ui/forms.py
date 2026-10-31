@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from github_issue_worker.configuration import _format_duration
+from github_issue_worker.configuration import ModelColorsSettings, _format_duration
 
 FieldKind = Literal["bool", "number", "text", "duration", "choice", "list", "secret", "env"]
 
@@ -32,12 +32,16 @@ HELP: dict[str, str] = {
     "ui.port": "Port of this page.",
     "ui.bind": "Address of this page. Anything but loopback needs a token.",
     "ui.token": "Required by every request when set. Leave empty to keep the current one.",
-    "modelColors.anthropic.hue": "Centre of Anthropic's hue segment on the colour wheel, 0 to 359.",
-    "modelColors.anthropic.width": "How wide that segment is, in degrees.",
-    "modelColors.openai.hue": "Centre of OpenAI's hue segment on the colour wheel, 0 to 359.",
-    "modelColors.openai.width": "How wide that segment is, in degrees.",
-    "modelColors.google.hue": "Centre of Google's hue segment on the colour wheel, 0 to 359.",
-    "modelColors.google.width": "How wide that segment is, in degrees.",
+    **{
+        f"modelColors.{maker}.hue": "Centre of the segment on the colour wheel, 0 to 359."
+        for maker in ModelColorsSettings.model_fields
+        if maker != "other"
+    },
+    **{
+        f"modelColors.{maker}.width": "Width in degrees."
+        for maker in ModelColorsSettings.model_fields
+        if maker != "other"
+    },
     "modelColors.other.hue": "Centre of the segment every other maker shares, 0 to 359.",
     "modelColors.other.width": "How wide that segment is; each unlisted maker keeps a part of it.",
     "fleet.claimValidity": "How long a claim holds without renewal.",

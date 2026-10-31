@@ -17,24 +17,49 @@ from typing import Any
 from github_issue_worker.configuration import HueSegment, ModelColorsSettings
 from github_issue_worker.ui.model_colors import WHEEL, maker_place, model_series, placements
 
-MAKERS = ("anthropic", "openai", "google", "other")
+MAKERS = tuple(ModelColorsSettings.model_fields)
 """The segments, in the order their arcs sit on the wheel from the outside in."""
 
-LABELS = {"anthropic": "Anthropic", "openai": "OpenAI", "google": "Google", "other": "Other"}
+LABELS = {
+    "anthropic": "Anthropic",
+    "openai": "OpenAI",
+    "google": "Google",
+    "meta": "Meta",
+    "xai": "xAI",
+    "deepseek": "DeepSeek",
+    "nvidia": "NVIDIA",
+    "alibaba": "Alibaba",
+    "mistral": "Mistral",
+    "moonshot": "Moonshot",
+    "zai": "Z.ai",
+    "other": "Other",
+}
 
 SAMPLES = {
     "anthropic": ("Claude Opus 5.5", "Claude Sonnet 5", "Claude Haiku 4.5", "Claude Fable 5"),
     "openai": ("GPT 6.1 Sol", "GPT-5 Codex", "o4 mini"),
     "google": ("Gemini 4 Argon (Medium)", "Gemini 2.5 Flash", "Gemini 2.5 Pro"),
-    "other": ("Qwen3.8 Flash Next", "Mistral Large 3", "Llama 4 Maverick", "DeepSeek V3"),
+    "meta": ("Llama 4 Maverick", "Llama 4 Scout", "Llama 3.3 70B"),
+    "xai": ("Grok 4", "Grok 4 Fast", "Grok Code Fast 1"),
+    "deepseek": ("DeepSeek V3.2", "DeepSeek R1", "DeepSeek Coder V2"),
+    "nvidia": ("Nemotron Ultra 253B", "Nemotron Super 49B", "Nemotron Nano 9B"),
+    "alibaba": ("Qwen3.8 Flash Next IQ3_S", "Qwen3 Max", "Qwen3 Coder 480B"),
+    "mistral": ("Mistral Large 3", "Codestral 25.08", "Devstral Medium"),
+    "moonshot": ("Kimi K2", "Kimi K2 Thinking", "Kimi Dev 72B"),
+    "zai": ("GLM-4.6", "GLM-4.5 Air", "GLM-4.5V"),
+    "other": ("Phi-4", "Granite 3.3", "Nova Pro", "OLMo 2"),
 }
 """Models the preview shows for each maker; ``other`` names makers that share its segment."""
+
+TRACKS = tuple(154 - 8 * index for index in range(len(MAKERS)))
+"""The radius of each maker's track, from the outside in: every arc keeps a track of its own, so
+two segments that overlap stay apart."""
 
 
 def wheel_data(colors: ModelColorsSettings) -> dict[str, Any]:
     """What the script draws: the segments, the sample models and the colour constants."""
     makers = []
-    for key in MAKERS:
+    for key, track in zip(MAKERS, TRACKS, strict=True):
         segment: HueSegment = getattr(colors, key)
         names = SAMPLES[key]
         series = model_series(names, colors)
@@ -54,6 +79,7 @@ def wheel_data(colors: ModelColorsSettings) -> dict[str, Any]:
                 "label": LABELS[key],
                 "hue": segment.hue,
                 "width": segment.width,
+                "track": track,
                 "samples": samples,
             }
         )
@@ -91,14 +117,14 @@ WHEEL_STYLE = """<style>
   user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 .wheel .ring path { fill: none; stroke-width: 16; }
 .wheel .tick { stroke: var(--paper); stroke-width: 2; }
-.wheel .track { fill: none; stroke: #ffffff0a; stroke-width: 14; }
-.wheel .band path { fill: none; stroke-width: 12; stroke-linecap: butt; cursor: grab; }
+.wheel .track { fill: none; stroke: #ffffff0a; stroke-width: 7; }
+.wheel .band path { fill: none; stroke-width: 6; stroke-linecap: butt; cursor: grab; }
 .wheel .band circle { cursor: grab; }
 .wheel .maker { transition: opacity .2s; }
 .wheel.editing .maker:not(.active) { opacity: .28; }
 .wheel .maker.active .band { filter: drop-shadow(0 0 7px var(--c)); }
-.wheel .maker.active .band path { stroke-width: 16; }
-.wheel .maker.active .track { stroke: #ffffff26; stroke-width: 20; }
+.wheel .maker.active .band path { stroke-width: 9; }
+.wheel .maker.active .track { stroke: #ffffff26; stroke-width: 10; }
 .wheel .label { font-size: 18px; font-weight: 550; fill: var(--lc); paint-order: stroke;
   stroke: var(--paper); stroke-width: 4px; }
 .wheel .maker.active .label { font-weight: 800; font-size: 20px; text-decoration: underline; }
@@ -112,8 +138,8 @@ WHEEL_STYLE = """<style>
   stroke-dasharray: 3 3; }
 .wheel.dragging, .wheel.dragging * { cursor: grabbing; }
 .wheel .core { fill: #0a1220; stroke: var(--rule); }
-.wheel .core-name { fill: var(--ink); font-size: 18px; font-weight: 650; text-anchor: middle; }
-.wheel .core-value { fill: var(--muted); font-size: 14px; text-anchor: middle;
+.wheel .core-name { fill: var(--ink); font-size: 16px; font-weight: 650; text-anchor: middle; }
+.wheel .core-value { fill: var(--muted); font-size: 11px; text-anchor: middle;
   font-variant-numeric: tabular-nums; }
 .wheel-makers { display: flex; flex-wrap: wrap; gap: .4rem; }
 .wheel-makers button { display: inline-flex; align-items: center; gap: .45rem;
@@ -150,7 +176,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const readout = root.querySelector(".wheel-readout");
   const swatches = root.querySelector(".wheel-swatches");
   const { hues: H, lightness: L, chroma: CHROMA, subsegment: SUB } = data.wheel;
-  const C = 200, RING = 172, LABEL = 197, HIT = 24, TRACKS = [150, 128, 106, 84];
+  const C = 200, RING = 172, LABEL = 197, HIT = 24;
   const LIMITS = { hue: [0, 359], width: [0, 360] };
 
   // The colour formula of model_colors.py, operation for operation, so the preview is what a
@@ -200,9 +226,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const [x0, y0] = at(hue, RING - 8), [x1, y1] = at(hue, RING + 8);
     el("line", { class: "tick", x1: x0, y1: y0, x2: x1, y2: y1 }, ring);
   }
-  el("circle", { class: "core", cx: C, cy: C, r: 64 }, svg);
+  el("circle", { class: "core", cx: C, cy: C, r: 58 }, svg);
   const coreName = el("text", { class: "core-name", x: C, y: C - 4 }, svg);
-  const coreValue = el("text", { class: "core-value", x: C, y: C + 20 }, svg);
+  const coreValue = el("text", { class: "core-value", x: C, y: C + 16 }, svg);
 
   const field = (key, part) => document.getElementById(`f-modelColors-${key}-${part}`);
   const valid = (part, raw) => {
@@ -211,8 +237,8 @@ document.addEventListener("DOMContentLoaded", () => {
     return value >= LIMITS[part][0] && value <= LIMITS[part][1] ? value : null;
   };
   let current = null, drag = null;
-  const makers = data.makers.map((maker, index) => {
-    const m = { ...maker, track: TRACKS[index] };
+  const makers = data.makers.map((maker) => {
+    const m = { ...maker };
     for (const part of ["hue", "width"]) {
       const input = field(m.key, part);
       const typed = input ? valid(part, input.value) : null;
@@ -231,14 +257,14 @@ document.addEventListener("DOMContentLoaded", () => {
         "aria-valuemin": "0", "aria-valuemax": part === "hue" ? "359" : "360",
       }, m.group);
       el("circle", { class: "hit", r: HIT }, handle);
-      el("circle", { class: "knob", r: part === "hue" ? 9 : 6.5 }, handle);
-      handle.addEventListener("pointerdown", (event) => grab(event, m, part));
+      el("circle", { class: "knob", r: part === "hue" ? 6.5 : 4.5 }, handle);
+      handle.addEventListener("pointerdown", (event) => press(event, m, part));
       handle.addEventListener("keydown", (event) => key(event, m, part));
       handle.addEventListener("focus", () => { m.focused = true; select(m); });
       handle.addEventListener("blur", () => { m.focused = false; draw(); });
       m.handles[part] = handle;
     }
-    m.band.addEventListener("pointerdown", (event) => grab(event, m, "hue"));
+    m.band.addEventListener("pointerdown", (event) => press(event, m, "hue"));
     m.button = document.createElement("button");
     m.button.type = "button";
     m.button.innerHTML = '<span class="key"></span>';
@@ -260,7 +286,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const from = m.hue - m.width / 2;
     if (m.width === 0) {
       const [x, y] = at(m.hue, m.track);
-      el("circle", { cx: x, cy: y, r: 6, fill: color }, m.band);
+      el("circle", { cx: x, cy: y, r: 3.5, fill: color }, m.band);
     }
     const pieces = Math.ceil(m.width / 4);
     for (let i = 0; i < pieces; i++) {
@@ -271,8 +297,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // An end handle never sits on top of the middle one, even on a very narrow arc.
     const least = (Math.asin(Math.min(1, (HIT + 2) / m.track)) * 180) / Math.PI;
     const half = Math.max(m.width / 2, least);
+    m.spots = {};
     const place = (handle, angle) => {
       const [x, y] = at(angle, m.track);
+      m.spots[handle.dataset.part] = [x, y];
       handle.setAttribute("transform", `translate(${x.toFixed(2)} ${y.toFixed(2)})`);
     };
     place(m.handles.hue, m.hue);
@@ -333,13 +361,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     draw();
   };
-  const angleOf = (event) => {
+  const localOf = (event) => {
     const point = svg.createSVGPoint();
     point.x = event.clientX;
     point.y = event.clientY;
-    const local = point.matrixTransform(svg.getScreenCTM().inverse());
+    return point.matrixTransform(svg.getScreenCTM().inverse());
+  };
+  const angleOf = (event) => {
+    const local = localOf(event);
     return mod((Math.atan2(local.x - C, C - local.y) * 180) / Math.PI, 360);
   };
+  // Neighbouring tracks lie closer than a finger is wide, so the touch areas of their handles
+  // overlap: a press takes the handle nearest to it, not the one drawn on top.
+  const nearest = (event, m, part) => {
+    const local = localOf(event);
+    let best = { m, part }, least = Infinity;
+    for (const other of makers)
+      for (const [name, [x, y]] of Object.entries(other.spots)) {
+        const distance = Math.hypot(local.x - x, local.y - y);
+        if (distance > HIT || distance >= least) continue;
+        least = distance;
+        best = { m: other, part: name };
+      }
+    return best;
+  };
+  function press(event, m, part) {
+    const found = nearest(event, m, part);
+    grab(event, found.m, found.part);
+  }
   const signed = (a) => { const d = mod(a, 360); return d > 180 ? d - 360 : d; };
 
   function grab(event, m, part) {

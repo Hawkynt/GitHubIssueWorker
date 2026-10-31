@@ -60,12 +60,65 @@ def test_the_readme_example_is_valid() -> None:
     assert config.repositories[1].mode == "labeled"
 
 
+MAKER_SEGMENTS = {
+    "anthropic": (70, 50),
+    "openai": (240, 30),
+    "google": (159, 30),
+    "meta": (210, 20),
+    "xai": (291, 20),
+    "deepseek": (187, 20),
+    "nvidia": (131, 20),
+    "alibaba": (32, 20),
+    "mistral": (108, 20),
+    "moonshot": (268, 20),
+    "zai": (7, 20),
+    "other": (329, 50),
+}
+"""Every maker's default hue segment, centre and width (F14.19)."""
+
+
 def test_every_maker_has_a_hue_segment_by_default() -> None:
     colors = parse("{}").model_colors
-    assert (colors.anthropic.hue, colors.anthropic.width) == (70, 90)
-    assert (colors.openai.hue, colors.openai.width) == (250, 55)
-    assert (colors.google.hue, colors.google.width) == (155, 55)
-    assert (colors.other.hue, colors.other.width) == (320, 120)
+    assert list(type(colors).model_fields) == list(MAKER_SEGMENTS)
+    for maker, (hue, width) in MAKER_SEGMENTS.items():
+        segment = getattr(colors, maker)
+        assert (segment.hue, segment.width) == (hue, width), maker
+
+
+def _degrees(hue: int, width: int) -> set[int]:
+    """The whole degrees a segment covers, wrapping past 360."""
+    return {round(hue - width / 2 + step) % 360 for step in range(width + 1)}
+
+
+def test_the_default_segments_keep_neighbouring_makers_apart() -> None:
+    colors = parse("{}").model_colors
+    covered: dict[str, set[int]] = {}
+    for maker in MAKER_SEGMENTS:
+        segment = getattr(colors, maker)
+        assert segment.width >= 20, maker
+        degrees = _degrees(segment.hue, segment.width)
+        for other, taken in covered.items():
+            assert not degrees & taken, (maker, other)
+        covered[maker] = degrees
+    assert covered["anthropic"] <= set(range(40, 111))  # orange to yellow
+    assert covered["google"] <= set(range(130, 186))  # green
+    assert covered["openai"] <= set(range(220, 271))  # blue
+
+
+@pytest.mark.parametrize("maker", list(MAKER_SEGMENTS))
+def test_a_segment_setting_only_its_width_keeps_its_makers_default_hue(maker: str) -> None:
+    default = getattr(parse("{}").model_colors, maker)
+    loaded = parse(json.dumps({"modelColors": {maker: {"width": 33}}}))
+    segment = getattr(loaded.model_colors, maker)
+    assert (segment.hue, segment.width) == (default.hue, 33)
+
+
+@pytest.mark.parametrize("maker", list(MAKER_SEGMENTS))
+def test_a_segment_setting_only_its_hue_keeps_its_makers_default_width(maker: str) -> None:
+    default = getattr(parse("{}").model_colors, maker)
+    loaded = parse(json.dumps({"modelColors": {maker: {"hue": 33}}}))
+    segment = getattr(loaded.model_colors, maker)
+    assert (segment.hue, segment.width) == (33, default.width)
 
 
 def test_a_hue_off_the_wheel_is_refused() -> None:

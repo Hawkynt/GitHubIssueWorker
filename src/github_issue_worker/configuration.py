@@ -23,6 +23,7 @@ from pydantic import (
     Field,
     PlainSerializer,
     ValidationError,
+    model_validator,
 )
 from pydantic.alias_generators import to_camel
 
@@ -110,11 +111,37 @@ class HueSegment(_Settings):
 class ModelColorsSettings(_Settings):
     """The hue segment every model of one maker is drawn in (F14.19)."""
 
-    anthropic: HueSegment = Field(default_factory=lambda: HueSegment(hue=70, width=90))
-    openai: HueSegment = Field(default_factory=lambda: HueSegment(hue=250, width=55))
-    google: HueSegment = Field(default_factory=lambda: HueSegment(hue=155, width=55))
-    other: HueSegment = Field(default_factory=lambda: HueSegment(hue=320, width=120))
+    # The defaults never overlap and leave a few degrees between neighbours, so two makers side by
+    # side on the wheel stay apart: their model colours sit inside the segment, off its ends.
+    anthropic: HueSegment = Field(default_factory=lambda: HueSegment(hue=70, width=50))
+    openai: HueSegment = Field(default_factory=lambda: HueSegment(hue=240, width=30))
+    google: HueSegment = Field(default_factory=lambda: HueSegment(hue=159, width=30))
+    meta: HueSegment = Field(default_factory=lambda: HueSegment(hue=210, width=20))
+    xai: HueSegment = Field(default_factory=lambda: HueSegment(hue=291, width=20))
+    deepseek: HueSegment = Field(default_factory=lambda: HueSegment(hue=187, width=20))
+    nvidia: HueSegment = Field(default_factory=lambda: HueSegment(hue=131, width=20))
+    alibaba: HueSegment = Field(default_factory=lambda: HueSegment(hue=32, width=20))
+    mistral: HueSegment = Field(default_factory=lambda: HueSegment(hue=108, width=20))
+    moonshot: HueSegment = Field(default_factory=lambda: HueSegment(hue=268, width=20))
+    zai: HueSegment = Field(default_factory=lambda: HueSegment(hue=7, width=20))
+    other: HueSegment = Field(default_factory=lambda: HueSegment(hue=329, width=50))
     """Makers not named above share this segment, each keeping a fixed part of it."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _keep_maker_defaults(cls, data: Any) -> Any:
+        """A segment that sets only its hue or only its width keeps its maker's default for the
+        other, never ``HueSegment``'s own: a saved width alone must not turn the hue into 0."""
+        if not isinstance(data, dict):
+            return data
+        defaults = cls.model_construct()
+        completed = dict(data)
+        for name, info in cls.model_fields.items():
+            for key in {name, info.alias or name}:
+                given = completed.get(key)
+                if isinstance(given, dict):
+                    completed[key] = {**getattr(defaults, name).model_dump(), **given}
+        return completed
 
 
 class PathInstallation(_Settings):

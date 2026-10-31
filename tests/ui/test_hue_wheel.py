@@ -30,22 +30,54 @@ def _data(html: str) -> dict[str, object]:
     return loaded
 
 
-def test_the_model_colours_section_shows_a_wheel_with_an_arc_per_maker(client: TestClient) -> None:
-    html = client.get("/settings").text
+VENDORS = (
+    ("anthropic", "Anthropic"),
+    ("openai", "OpenAI"),
+    ("google", "Google"),
+    ("meta", "Meta"),
+    ("xai", "xAI"),
+    ("deepseek", "DeepSeek"),
+    ("nvidia", "NVIDIA"),
+    ("alibaba", "Alibaba"),
+    ("mistral", "Mistral"),
+    ("moonshot", "Moonshot"),
+    ("zai", "Z.ai"),
+    ("other", "Other"),
+)
+
+
+def _section(html: str) -> str:
     section = html[html.index("<legend>Model colours</legend>") :]
-    section = section[: section.index("</fieldset>")]
+    return section[: section.index("</fieldset>")]
+
+
+def test_the_model_colours_section_shows_a_wheel_with_an_arc_per_maker(client: TestClient) -> None:
+    section = _section(client.get("/settings").text)
     assert 'class="hue-wheel"' in section
     makers = _data(section)["makers"]
     assert isinstance(makers, list)
+    defaults = ModelColorsSettings()
     assert [(m["key"], m["label"], m["hue"], m["width"]) for m in makers] == [
-        ("anthropic", "Anthropic", 70, 90),
-        ("openai", "OpenAI", 250, 55),
-        ("google", "Google", 155, 55),
-        ("other", "Other", 320, 120),
+        (key, label, getattr(defaults, key).hue, getattr(defaults, key).width)
+        for key, label in VENDORS
     ]
-    for maker in ("anthropic", "openai", "google", "other"):
+    assert len({m["track"] for m in makers}) == len(VENDORS)  # every arc on a track of its own
+    for maker, _ in VENDORS:
         for part in ("hue", "width"):
             assert f'name="modelColors.{maker}.{part}"' in section  # the precise fallback stays
+
+
+def test_each_vendor_has_one_row_with_its_hue_and_width_side_by_side(client: TestClient) -> None:
+    section = _section(client.get("/settings").text)
+    rows = re.findall(r'<div class="field segment"[^>]*>(.*?)</div><!-- segment -->', section, re.S)
+    assert len(rows) == len(VENDORS)
+    for row, (maker, label) in zip(rows, VENDORS, strict=True):
+        assert f">{label}<" in row
+        hue = row.index(f'id="f-modelColors-{maker}-hue"')
+        width = row.index(f'id="f-modelColors-{maker}-width"')
+        assert hue < width
+        assert row.count("<input") == 2
+    assert section.count("<input") == 2 * len(VENDORS)
 
 
 def test_the_wheel_stays_hidden_until_its_script_runs(client: TestClient) -> None:
@@ -80,6 +112,8 @@ def test_the_preview_shows_sample_models_of_that_maker_in_their_chart_colours(ma
     for name in names:
         creator = model_creator(name)
         assert creator == maker if maker != "other" else creator not in MAKERS
+    if maker == "other":
+        assert all(model_creator(name) for name in names)  # makers, just none of their own
 
 
 def test_anthropic_samples_are_its_model_names() -> None:

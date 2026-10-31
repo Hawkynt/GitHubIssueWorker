@@ -653,8 +653,9 @@ prefers reduced motion, and a live refresh never replays it. A link that leads o
 a branch or a repository on GitHub, opens in a new tab and leaves the UI where it was; the UI's own
 pages open in the same tab. A model wears the same colour in every chart and in its worker's lane:
 the hue comes from its maker's segment of the colour wheel — Anthropic orange to yellow, Google
-green, OpenAI blue, every other maker a fixed segment of its own — and within that segment from the
-model's name, never from its version. The segments are settings.
+green, OpenAI blue, and Meta, xAI, DeepSeek, NVIDIA, Alibaba, Mistral, Moonshot and Z.ai each a
+segment of their own between them; every other maker a fixed part of the `other` segment — and
+within that segment from the model's name, never from its version. The segments are settings.
 
 It updates live (server-sent events), needs no build step, and binds to loopback only. Binding to
 another address requires `ui.token`, which every request must then carry, and the UI refuses to save
@@ -688,10 +689,11 @@ first, and a moved UI listener reopens on its new address.
   "trustedUsers": [],
   "ui": { "port": 8765 },
   "modelColors": {
-    "anthropic": { "hue": 70, "width": 90 },
-    "openai": { "hue": 250, "width": 55 },
-    "google": { "hue": 155, "width": 55 },
-    "other": { "hue": 320, "width": 120 }
+    "anthropic": { "hue": 70, "width": 50 },
+    "openai": { "hue": 240, "width": 30 },
+    "google": { "hue": 159, "width": 30 },
+    "alibaba": { "hue": 32, "width": 20 },
+    "other": { "hue": 329, "width": 50 }
   },
   "accounts": {
     "anthropic-max": {},
@@ -747,7 +749,7 @@ first, and a moved UI listener reopens on its new address.
 | `trustedUsers` | `[]` | Logins trusted in addition to everyone with write access. |
 | `ui.port`, `ui.bind`, `ui.token` | 8765, loopback, none | The local UI. A non-loopback `bind` requires a `token`. |
 | `accounts.<name>.maxConcurrentRuns` | 1 | Issues this account's workers run at once on this manager, 1 to 20; each worker runs that many instances. |
-| `modelColors.anthropic` `.openai` `.google` `.other` | `70/90`, `250/55`, `155/55`, `320/120` | A model maker's hue segment: its centre on the OKLCH colour wheel and its width in degrees. A model's hue is picked inside its maker's segment by the model's name (`opus`, `sonnet`, `haiku`, `fable`) and does not move when only the version changes. Makers not named share `other`, each keeping a fixed part of it. |
+| `modelColors.anthropic` `.openai` `.google` `.meta` `.xai` `.deepseek` `.nvidia` `.alibaba` `.mistral` `.moonshot` `.zai` `.other` | `70/50`, `240/30`, `159/30`, `210/20`, `291/20`, `187/20`, `131/20`, `32/20`, `108/20`, `268/20`, `7/20`, `329/50` | A model maker's hue segment: its centre on the OKLCH colour wheel and its width in degrees; the defaults do not overlap. A model's maker is read from its brand or model line (`Llama` Meta, `Grok` xAI, `Nemotron` NVIDIA, `Qwen` Alibaba, `Mistral`/`Codestral` Mistral, `Kimi` Moonshot, `GLM` Z.ai). A model's hue is picked inside its maker's segment by the model's name (`opus`, `sonnet`, `haiku`, `fable`) and does not move when only the version changes. Makers not named share `other`, each keeping a fixed part of it. A segment that sets only `hue` or only `width` keeps its maker's default for the other. |
 | `workers[].name` | — | Unique on this manager. Together with the manager id it is the claim holder. |
 | `workers[].agent` | — | `claude`, `codex`, `antigravity`, `opencode`, `command` or `remote`. |
 | `workers[].account` | — | Key into `accounts`. Limits are tracked per account. |
@@ -1227,19 +1229,23 @@ operational items, demonstrated on a real repository. Commits that implement an 
   independently of a gray worker box; otherwise the current chip pulses slowly. Live refresh clears obsolete colours. Status text stays readable in light and
   dark schemes, repository colours keep their meaning, and deterministic demos cover these states.
 - [x] 🟧 **F14.19** Model colours: every model series wears a colour of its maker's hue segment —
-  `modelColors.anthropic` from orange to yellow, `.google` green, `.openai` blue, and `.other` a
-  segment every unlisted maker keeps its own fixed part of. The hue follows the model's name (`opus`,
-  `sonnet`, `haiku`, `fable`) and never its version: `Claude Opus 5` and `Claude Opus 5.5` keep one
+  `modelColors.anthropic` from orange to yellow, `.google` green, `.openai` blue, a segment each
+  for `.meta` (Llama), `.xai` (Grok), `.deepseek`, `.nvidia` (Nemotron), `.alibaba` (Qwen),
+  `.mistral`, `.moonshot` (Kimi) and `.zai` (GLM), read from the model's brand or model line, and
+  `.other` a segment every unlisted maker keeps its own fixed part of. The default segments do not
+  overlap and are at least 20 degrees wide, so neighbouring makers stay apart; a segment that sets
+  only its hue or only its width keeps its maker's default for the other. The hue follows the
+  model's name (`opus`, `sonnet`, `haiku`, `fable`) and never its version: `Claude Opus 5` and `Claude Opus 5.5` keep one
   hue and differ only in shade, so version updates and quantisations stay separate series in the
   charts. The colour is a function of the name alone, so a new model never repaints an old one, and
   it returns in every chart: model share, model mix, throughput split by model, the model ledger, the
   flight log, time to merge and the running total of merges, which is drawn per model. A crew lane is
   tinted with the colour of the model its worker runs, or with the default hue of the segment of the
-  maker that agent kind serves while no model is known. Every segment key has a field on the Settings
-  page (F14.8).
-- [x] 🟧 **F14.20** Model colour wheel: the Settings page shows the four `modelColors` segments as
-  labelled arcs on one OKLCH hue wheel drawn in the colours the charts use. Dragging the middle of an
-  arc moves its hue, dragging an end changes its width around the unchanged centre, and the arrow keys
+  maker that agent kind serves while no model is known. Every segment has one row on the Settings
+  page (F14.8), its maker's name with the hue and the width side by side.
+- [x] 🟧 **F14.20** Model colour wheel: the Settings page shows every `modelColors` segment as a
+  labelled arc on a track of its own, on one OKLCH hue wheel drawn in the colours the charts use.
+  Dragging the middle of an arc moves its hue, dragging an end changes its width around the unchanged centre, and the arrow keys
   do the same on each handle (Shift for 10 degrees); the arc being edited is highlighted. While it
   changes, its number fields follow live and a preview shows sample models of that maker in the
   colours a chart would give them. The number fields stay and drive the wheel back, the unsaved
