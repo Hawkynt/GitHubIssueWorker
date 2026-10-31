@@ -532,3 +532,44 @@ def test_local_runs_are_published_into_their_claims_once(tmp_path: Path) -> None
     assert [(run.manager, run.model, run.verdict) for run in claim.runs] == [
         ("m", "Claude Opus 5.5", "merged")
     ]  # issue 4 has no claim to carry it, o/b is another repository
+
+
+def test_given_a_suspended_repository_when_starting_runtime_then_no_clone_or_write_is_attempted(
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from github_issue_worker.ports.github import Response
+    from github_issue_worker.ports.repository import RepositorySuspended
+
+    clock = FakeClock(datetime(2026, 10, 31, tzinfo=UTC))
+    requests: list[tuple[str, str]] = []
+
+    def request(method: str, path: str, **kwargs: object) -> Response:
+        requests.append((method, path))
+        assert method == "GET" and path == "repos/o/private"
+        return Response(200, {}, {"default_branch": "main", "permissions": {"push": False}})
+
+    config = parse('{"repositories": [{"repository": "o/private"}]}')
+    workspace = Mock()
+    workspace.clone.side_effect = AssertionError("cannot clone a repository we cannot access")
+    runtime = Runtime(
+        config,
+        tmp_path,
+        SimpleNamespace(clock=clock, request=request),  # type: ignore[arg-type]
+        JsonStateStore(tmp_path / "state.json"),
+        "manager",
+        workspace,
+    )
+    manager = runtime.manager()
+    manager.start()
+    manager.tick()
+    watch = manager.repositories[0]
+    assert watch.suspension_reason == "lost push access"
+    workspace.clone.assert_not_called()
+    with pytest.raises(RepositorySuspended):
+        watch.host.comment(1, "blocked")
+    with pytest.raises(RepositorySuspended):
+        watch.coordinator.claim(1, Holder("manager", "w"), "issue/1")
+    assert requests == [("GET", "repos/o/private")]

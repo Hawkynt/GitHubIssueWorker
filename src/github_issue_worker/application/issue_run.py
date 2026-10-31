@@ -34,13 +34,22 @@ from github_issue_worker.ports.repository import (
     Check,
     PullRequest,
     RepositoryHost,
+    RepositorySuspended,
     WaitingRun,
 )
 from github_issue_worker.ports.workspace import WorkspacePort
 from github_issue_worker.product import MARKER_PREFIX
 
 VerdictKind = Literal[
-    "merged", "needs-input", "awaiting-review", "paused", "failed", "lost", "stopped", "split"
+    "merged",
+    "needs-input",
+    "awaiting-review",
+    "paused",
+    "failed",
+    "lost",
+    "stopped",
+    "split",
+    "suspended",
 ]
 
 
@@ -142,6 +151,8 @@ class IssueRun:
         self._understanding: str | None = None
         try:
             return self._run(issue, comments, kind)
+        except RepositorySuspended as suspended:
+            return Verdict("suspended", detail=str(suspended))
         except ClaimLost as lost:
             return Verdict("lost", detail=str(lost))
         except RunStopped as stopped:
@@ -406,6 +417,7 @@ class IssueRun:
     def _await_checks(self, pull: PullRequest) -> tuple[str, str]:
         deadline = self.clock.now() + self.settings.checks_timeout
         while True:
+            self._handle = self.coordinator.fence(self._handle)
             current = self.host.pull_request(pull.number)
             if current.mergeable_state == "dirty":
                 self._conflict(True)

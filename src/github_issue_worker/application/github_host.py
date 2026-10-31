@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import quote
 
 from github_issue_worker.application.poller import parse_comment, parse_issue
 from github_issue_worker.domain.issue import Comment, Issue
-from github_issue_worker.ports.github import GitHubApi, GitHubError, next_link
+from github_issue_worker.ports.github import GitHubApi, GitHubError, Response, next_link
 from github_issue_worker.ports.repository import (
     WORKER_LABELS,
     Check,
@@ -33,13 +34,21 @@ def _pull(data: dict[str, Any]) -> PullRequest:
 
 
 class GitHubHost:
-    def __init__(self, api: GitHubApi, repository: str) -> None:
+    def __init__(
+        self, api: GitHubApi, repository: str, before_write: Callable[[], None] = lambda: None
+    ) -> None:
         self.api = api
         self.repository = repository
+        self.before_write = before_write
         self._roles: dict[str, str | None] = {}
 
     def _path(self, tail: str) -> str:
         return f"repos/{self.repository}/{tail}" if tail else f"repos/{self.repository}"
+
+    def _write(self, method: str, path: str, *, body: Any = None) -> Response:
+        """Check suspension before each mutation, including multi-request operations."""
+        self.before_write()
+        return self.api.request(method, path, body=body)
 
     def info(self) -> RepositoryInfo:
         data = self.api.request("GET", self._path("")).body
@@ -116,24 +125,24 @@ class GitHubHost:
         for name, (color, description) in WORKER_LABELS.items():
             if name not in existing:
                 body = {"name": name, "color": color, "description": description}
-                self.api.request("POST", self._path("labels"), body=body)
+                self._write("POST", self._path("labels"), body=body)
 
     def set_worker_label(self, issue: int, label: str | None) -> None:
         current = self.api.request("GET", self._path(f"issues/{issue}/labels")).body or []
         for existing in current:
             name = existing["name"]
             if name.startswith("worker:") and name != label and name != "worker:skip":
-                self.api.request("DELETE", self._path(f"issues/{issue}/labels/{quote(name)}"))
+                self._write("DELETE", self._path(f"issues/{issue}/labels/{quote(name)}"))
         if label and label not in {existing["name"] for existing in current}:
-            self.api.request("POST", self._path(f"issues/{issue}/labels"), body={"labels": [label]})
+            self._write("POST", self._path(f"issues/{issue}/labels"), body={"labels": [label]})
 
     def add_labels(self, issue: int, labels: list[str]) -> None:
         if labels:
-            self.api.request("POST", self._path(f"issues/{issue}/labels"), body={"labels": labels})
+            self._write("POST", self._path(f"issues/{issue}/labels"), body={"labels": labels})
 
     def comment(self, issue: int, body: str) -> None:
         text = body if MARKER_PREFIX in body else f"{body}\n\n{MARKER}"
-        self.api.request("POST", self._path(f"issues/{issue}/comments"), body={"body": text})
+        self._write("POST", self._path(f"issues/{issue}/comments"), body={"body": text})
 
     def find_pull_request(self, branch: str) -> PullRequest | None:
         owner = self.repository.split("/", 1)[0]
@@ -143,7 +152,7 @@ class GitHubHost:
         return self.pull_request(int(pulls[0]["number"])) if pulls else None
 
     def create_pull_request(self, branch: str, base: str, title: str, body: str) -> PullRequest:
-        data = self.api.request(
+        data = self._write(
             "POST",
             self._path("pulls"),
             body={"title": title, "head": branch, "base": base, "body": body},
@@ -186,12 +195,12 @@ class GitHubHost:
             body["commit_title"] = title
         if message:
             body["commit_message"] = message
-        data = self.api.request("PUT", self._path(f"pulls/{number}/merge"), body=body).body
+        data = self._write("PUT", self._path(f"pulls/{number}/merge"), body=body).body
         return str(data.get("sha", ""))
 
     def delete_branch(self, branch: str) -> None:
         try:
-            self.api.request("DELETE", self._path(f"git/refs/heads/{branch}"))
+            self._write("DELETE", self._path(f"git/refs/heads/{branch}"))
         except GitHubError as error:
             if error.status != 422:  # already gone
                 raise
@@ -216,7 +225,7 @@ class GitHubHost:
         ]
 
     def approve_run(self, run: int) -> None:
-        self.api.request("POST", self._path(f"actions/runs/{run}/approve"))
+        self._write("POST", self._path(f"actions/runs/{run}/approve"))
 
     def branches(self, prefix: str) -> list[str]:
         refs = self.api.request("GET", self._path(f"git/matching-refs/heads/{prefix}")).body
@@ -232,10 +241,10 @@ class GitHubHost:
         return [_pull(data) for data in pulls or []]
 
     def create_sub_issue(self, parent: int, title: str, body: str, labels: list[str]) -> int:
-        data = self.api.request(
+        data = self._write(
             "POST", self._path("issues"), body={"title": title, "body": body, "labels": labels}
         ).body
-        self.api.request(
+        self._write(
             "POST", self._path(f"issues/{parent}/sub_issues"), body={"sub_issue_id": data["id"]}
         )
         return int(data["number"])
@@ -253,7 +262,7 @@ class GitHubHost:
             response = self.api.request("GET", page)
 
     def close_issue(self, issue: int) -> None:
-        self.api.request(
+        self._write(
             "PATCH",
             self._path(f"issues/{issue}"),
             body={"state": "closed", "state_reason": "completed"},

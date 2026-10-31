@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -34,9 +35,12 @@ class Coordinator:
     store: ClaimStore
     clock: Clock
     policy: ClaimPolicy
+    before_write: Callable[[], None] = lambda: None
+    """A repository suspended after losing access cannot change even an existing claim."""
 
     def claim(self, issue: int, holder: Holder, branch: str, model: str = "") -> ClaimHandle | None:
         """Claim ``issue`` for ``holder``, or None when it is held or another claimant won."""
+        self.before_write()
         now = self.clock.now()
         current = self.store.read(issue)
         try:
@@ -44,12 +48,14 @@ class Coordinator:
                 fresh = self.policy.new_claim(
                     issue=issue, holder=holder, now=now, branch=branch, model=model
                 )
+                self.before_write()
                 return ClaimHandle(self.store.create(fresh), fresh)
 
             if not self.policy.may_claim(current.claim, now):
                 return None
 
             taken = self.policy.taken_over(current.claim, holder, now, model=model)
+            self.before_write()
             return ClaimHandle(self.store.replace(current.version, taken), taken)
         except ClaimConflict:
             return None
@@ -64,11 +70,13 @@ class Coordinator:
         A claim past its expiry (the machine was off) is renewed first, and only a successful
         renewal lets the write go ahead.
         """
+        self.before_write()
         current = self.store.read(handle.claim.issue)
         if current is None or current.version != handle.version:
             raise ClaimLost(f"issue {handle.claim.issue}: the claim changed since it was written")
         if self.clock.now() >= handle.claim.expires_at:
             return self.renew(handle)
+        self.before_write()
         return handle
 
     def set_merge_conflict(self, handle: ClaimHandle, conflict: bool) -> ClaimHandle:
@@ -97,11 +105,13 @@ class Coordinator:
         A compare-and-swap like every claim write, retried when somebody wrote in between; a run
         already recorded is not recorded twice.
         """
+        self.before_write()
         for _ in range(attempts):
             current = self.store.read(issue)
             if current is None or any(run.key == entry.key for run in current.claim.runs):
                 return
             try:
+                self.before_write()
                 self.store.replace(
                     current.version, current.claim.replace(runs=(*current.claim.runs, entry))
                 )
@@ -143,6 +153,7 @@ class Coordinator:
         return self._write(handle, finished)
 
     def _write(self, handle: ClaimHandle, claim: Claim) -> ClaimHandle:
+        self.before_write()
         try:
             return ClaimHandle(self.store.replace(handle.version, claim), claim)
         except ClaimConflict as conflict:

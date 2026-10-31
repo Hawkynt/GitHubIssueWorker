@@ -36,7 +36,7 @@ from github_issue_worker.domain.trust import is_trusted
 from github_issue_worker.domain.work import RunKind, WorkContext, new_input, pending_run
 from github_issue_worker.ports.claims import ClaimStore
 from github_issue_worker.ports.clock import Clock
-from github_issue_worker.ports.repository import Blocker, RepositoryHost
+from github_issue_worker.ports.repository import Blocker, RepositoryHost, RepositorySuspended
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +95,13 @@ class RepositoryWatch:
     process_backlog: bool = False
     settings: object = None
     """Whatever the run factory needs for this repository (merge method, commands, ...)."""
+    suspension_reason: str = ""
+    """Empty while enabled; a denial or a failed access query blocks further work."""
+
+    def require_access(self) -> None:
+        """Stop a running job before its next outward write, keeping its checkpoint."""
+        if self.suspension_reason:
+            raise RepositorySuspended(f"{self.name}: {self.suspension_reason}")
 
 
 RunIssue = Callable[
@@ -143,8 +150,51 @@ class Manager:
     _untrusted_issues: set[tuple[str, int]] = field(default_factory=set)
     _untrusted_comments: set[tuple[str, int]] = field(default_factory=set)
     _swept: dict[str, datetime] = field(default_factory=dict)
+    _access_checked: dict[str, tuple[RepositoryWatch, datetime]] = field(
+        default_factory=dict, init=False
+    )
+    _initialized: set[str] = field(default_factory=set, init=False)
 
     # --- the loop ------------------------------------------------------------------------------
+
+    def start(self) -> None:
+        """Check every watch before startup writes, including ``watch --once`` (F1.5)."""
+        for watch in self.repositories:
+            try:
+                self.prepare(watch)
+            except Exception:
+                log.exception("%s: repository startup failed", watch.name)
+
+    def prepare(self, watch: RepositoryWatch) -> bool:
+        """Check access on first use and hourly, even when suspended or idle."""
+        now = self.clock.now()
+        checked = self._access_checked.get(watch.name)
+        last = checked[1] if checked is not None and checked[0] is watch else None
+        if last is None:
+            self._initialized.discard(watch.name)
+        if last is None or now - last >= timedelta(hours=1):
+            try:
+                allowed = watch.host.info().can_push
+            except Exception:
+                watch.suspension_reason = "push-access check failed"
+                log.exception("%s: push-access check failed; processing suspended", watch.name)
+                return False
+            self._access_checked[watch.name] = (watch, self.clock.now())
+            if not allowed:
+                reason = "lost push access"
+                if watch.suspension_reason != reason:
+                    log.warning("%s: suspended: %s", watch.name, reason)
+                watch.suspension_reason = reason
+            else:
+                if watch.suspension_reason:
+                    log.info("%s: push access confirmed; processing resumed", watch.name)
+                watch.suspension_reason = ""
+        if watch.suspension_reason:
+            return False
+        if watch.name not in self._initialized:
+            watch.host.ensure_worker_labels()
+            self._initialized.add(watch.name)
+        return True
 
     def tick(self) -> None:
         for watch in self.repositories:
@@ -154,6 +204,8 @@ class Manager:
                 log.exception("%s: poll cycle failed", watch.name)
 
     def _tick(self, watch: RepositoryWatch) -> None:
+        if not self.prepare(watch):
+            return
         if watch.name not in self._adopted:
             self._adopt(watch)
         state = self.poll_states.get(watch.name, PollState())
@@ -406,13 +458,15 @@ class Manager:
             crashed = False
             try:
                 verdict = self.run_issue(watch, slot, handle, issue, comments, kind)
+            except RepositorySuspended as suspended:
+                verdict = Verdict("suspended", detail=str(suspended))
             except Exception:
                 # The claim stays held by this worker and is continued on the next tick.
                 log.exception("%s#%d: run crashed; the claim is kept", watch.name, issue.number)
                 crashed = True
             finally:
                 with self._lock:
-                    if crashed:
+                    if crashed or verdict.kind == "suspended":
                         pass
                     elif verdict.kind == "paused":
                         self.limits.set_limited(slot.account, verdict.until)
@@ -455,6 +509,7 @@ class Manager:
         finished = self.clock.now()
         try:
             # In the claim, so every manager of the fleet counts the run the same way.
+            watch.require_access()
             watch.coordinator.record_run(
                 issue.number,
                 RunEntry(
@@ -468,6 +523,8 @@ class Manager:
                     finished,
                 ),
             )
+        except RepositorySuspended:
+            pass  # The local history is published after access returns.
         except Exception:
             log.exception(
                 "%s#%d: the run could not be recorded in its claim", watch.name, issue.number
