@@ -15,7 +15,7 @@ from github_issue_worker.application.history import (
     RunRecord,
     SplitBy,
     activity,
-    cumulative_merged,
+    cumulative_by,
     daily_merged,
     kpis,
     model_ledger,
@@ -27,13 +27,14 @@ from github_issue_worker.configuration import (
     AccountSettings,
     Configuration,
     DefaultsSettings,
+    ModelColorsSettings,
     RepositorySettings,
     WorkerSettings,
 )
 from github_issue_worker.ui.charts import (
+    FALLBACK,
     Span,
-    area_line,
-    color_slots,
+    cumulative_lines,
     donut,
     heatmap,
     horizontal_bars,
@@ -44,6 +45,13 @@ from github_issue_worker.ui.charts import (
 )
 from github_issue_worker.ui.forms import HELP, FormField, display, fields_of, is_set, value_at
 from github_issue_worker.ui.model import STEPS, ClaimView, IssueView, Snapshot, WorkerView
+from github_issue_worker.ui.model_colors import (
+    GREY,
+    OTHER,
+    entity_series,
+    lane_color,
+    model_series,
+)
 
 STYLE = """
 :root {
@@ -82,7 +90,9 @@ h1 { font-size: 1.6rem; font-weight: 650; margin: 0 0 .25rem; letter-spacing: -.
 .lede { color: var(--muted); margin: 0 0 1.75rem; max-width: 42rem; }
 h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
 .lane { display: grid; grid-template-columns: 14rem 1fr auto; gap: 1.25rem; align-items: start;
-  padding: 1.1rem 0; border-top: 1px solid var(--rule); }
+  padding: 1.1rem 0; border-top: 1px solid var(--rule); border-left: 3px solid var(--lane, transparent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--lane, transparent) 13%, transparent),
+    transparent 55%); }
 .lane:last-child { border-bottom: 1px solid var(--rule); }
 .lane .name { font-weight: 650; font-size: 1.05rem; }
 .lane .runs { color: var(--muted); font-size: 13.5px; }
@@ -106,7 +116,9 @@ h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
 .track span.conflict { border-top-color: var(--brick); color: var(--brick); }
 .track span.waiting { border-top-color: var(--wait); color: var(--wait); }
 .run.waiting { background: var(--wait-soft); }
-.lane.waiting { background: var(--wait-soft); border-radius: 8px; }
+.lane.waiting { background-color: var(--wait-soft); border-radius: 8px;
+  background-image: linear-gradient(90deg,
+    color-mix(in srgb, var(--lane, transparent) 13%, transparent), transparent 55%); }
 .lane.waiting .model { color: var(--wait); }
 .flag.unavailable, .flag.failed, .flag.blocked { background: var(--brick-soft); color: var(--brick); }
 .needs-you { margin: .2rem 0 .4rem; padding: .5rem .75rem; border-radius: 8px;
@@ -269,11 +281,9 @@ input, select, textarea { max-width: 100%; }
 .load { color: var(--steel); font-size: 12.5px; }
 .lane.remote .name { color: #b39bff; }
 .square { display: block; width: 1.1rem; height: 1.1rem; border-radius: 4px; margin-top: .2rem;
-  box-shadow: 0 0 14px currentColor; color: transparent; }
-.square.free { border: 1.5px dashed #2a3c58; box-shadow: none; }
-.square.s1 { color: #3987e599; } .square.s2 { color: #d9592699; } .square.s3 { color: #199e7099; }
-.square.s4 { color: #c9850099; } .square.s5 { color: #d5518199; } .square.s6 { color: #00830099; }
-.square.s7 { color: #9085e999; } .square.s8 { color: #e6676799; }
+  box-shadow: 0 0 14px currentColor; color: var(--c);
+  background: color-mix(in srgb, var(--c) 60%, transparent); }
+.square.free { border: 1.5px dashed #2a3c58; box-shadow: none; background: none; color: transparent; }
 form.open { display: inline; }
 button.link { background: none; border: 0; padding: 0; color: var(--steel); cursor: pointer;
   font-family: ui-monospace, "Cascadia Code", "Source Code Pro", monospace; font-size: 13px;
@@ -292,23 +302,13 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
 .chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .chart .row-name { fill: var(--ink); font-size: 12.5px; }
 .chart .row-value { fill: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
-.chart .bar { fill: #3987e5; filter: drop-shadow(0 0 5px #3987e588); }
+.chart .bar { fill: var(--c, #3987e5); filter: drop-shadow(0 0 5px var(--c, #3987e5)); }
 .chart .hit { fill: transparent; cursor: crosshair; }
 .chart .hit:hover, .chart .hit:focus { fill: #ffffff0f; outline: none; }
 .chart .seg, .chart .bar, .chart .arc, .chart .run-bar, .chart .cell { transition: filter .2s; }
 .chart .arc:hover, .chart .arc:focus, .chart .run-bar:hover, .chart .run-bar:focus,
 .chart .cell:hover { filter: brightness(1.35) drop-shadow(0 0 8px currentColor); outline: none; }
-.s1 { fill: #3987e5; background: #3987e5; color: #3987e5; }
-.s2 { fill: #d95926; background: #d95926; color: #d95926; }
-.s3 { fill: #199e70; background: #199e70; color: #199e70; }
-.s4 { fill: #c98500; background: #c98500; color: #c98500; }
-.s5 { fill: #d55181; background: #d55181; color: #d55181; }
-.s6 { fill: #008300; background: #008300; color: #008300; }
-.s7 { fill: #9085e9; background: #9085e9; color: #9085e9; }
-.s8 { fill: #e66767; background: #e66767; color: #e66767; }
-.s0 { fill: #66758a; background: #66758a; color: #66758a; }
-.square.s1, .square.s2, .square.s3, .square.s4, .square.s5, .square.s6, .square.s7,
-.square.s8 { background: currentColor; }
+.chart .seg, .chart .arc, .chart .run-bar { fill: var(--c); color: var(--c); }
 .donut { max-width: 15rem; margin: 0 auto; }
 .donut-track { fill: none; stroke: #121d2e; stroke-width: 32; }
 .donut-value { fill: var(--ink); font-size: 40px; font-weight: 200; font-variant-numeric: tabular-nums; }
@@ -319,14 +319,11 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
 .legend.tall li { display: flex; align-items: center; }
 .legend.tall b { margin-left: auto; padding-left: 1rem; color: var(--ink); font-weight: 500;
   font-variant-numeric: tabular-nums; }
-.area-fill { fill: url(#glow); }
-.area-line { fill: none; stroke: #6fb8ff; stroke-width: 2.2; stroke-linejoin: round;
-  filter: drop-shadow(0 0 6px #4aa3ff); }
+.series-line { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round;
+  filter: drop-shadow(0 0 5px var(--c)); }
 .chart .dot { fill: transparent; }
 .chart .dot:hover, .chart .dot:focus { fill: #6fb8ff; }
-.head { fill: #fff; filter: drop-shadow(0 0 6px #6fb8ff); }
-.head-pulse { fill: none; stroke: #6fb8ff; stroke-width: 2; transform-box: fill-box;
-  transform-origin: center; opacity: 0; }
+.head { fill: var(--c); stroke: #0c1524; stroke-width: 1.5; filter: drop-shadow(0 0 6px var(--c)); }
 .timeline .lane-rule { stroke: #16233a; stroke-width: 16; stroke-linecap: round; }
 .timeline .now { stroke: #b39bff; stroke-width: 1.5; stroke-dasharray: 3 4; }
 .run-bar { filter: drop-shadow(0 0 5px currentColor); }
@@ -336,7 +333,7 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
 .legend { list-style: none; display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; padding: 0;
   margin: 0 0 .6rem; font-size: 13px; color: var(--muted); }
 .key { display: inline-block; width: .7rem; height: .7rem; border-radius: 3px; margin-right: .45rem;
-  vertical-align: -1px; box-shadow: 0 0 8px currentColor; }
+  vertical-align: -1px; background: var(--c); color: var(--c); box-shadow: 0 0 8px currentColor; }
 .scroll { overflow-x: auto; }
 .panel table { font-size: 13px; font-variant-numeric: tabular-nums; }
 .panel th { border-bottom-color: #22324a; }
@@ -390,8 +387,7 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
     animation-delay: calc(.6s + var(--i, 0) * 110ms); }
   .boot .chart .cell { animation: appear .5s ease-out both;
     animation-delay: calc(.6s + var(--i, 0) * 4ms); }
-  .boot .area-line { stroke-dasharray: 1; animation: draw 1.8s .6s ease-in-out both; }
-  .boot .area-fill { animation: appear 1.2s 1.4s ease-out both; }
+  .boot .series-line { stroke-dasharray: 1; animation: draw 1.8s .6s ease-in-out both; }
   .boot .gauge-fill { animation: fill 1.6s .5s cubic-bezier(.3, .7, .2, 1) both; }
   .boot .spark path { stroke-dasharray: 600; animation: spark 1.6s .4s ease-out both; }
   @keyframes rise { from { transform: scaleY(0); } }
@@ -401,8 +397,6 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
   @keyframes draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
   @keyframes fill { from { stroke-dasharray: 0 var(--length); } }
   @keyframes spark { from { stroke-dashoffset: 600; } to { stroke-dashoffset: 0; } }
-  .head-pulse { animation: ping 2.4s ease-out infinite; }
-  @keyframes ping { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(4); } }
   .run-bar.live { animation: breathe 1.8s ease-in-out infinite; }
   @keyframes breathe { 50% { filter: brightness(1.5) drop-shadow(0 0 12px currentColor); } }
   .square:not(.free) { animation: glow 2.6s ease-in-out infinite; }
@@ -764,13 +758,28 @@ def _issue_link(repository: str, number: int, title: str | None, body: str) -> s
     return _out(f"https://github.com/{repository}/issues/{number}", f"#{number} {e(title)}", tip)
 
 
+@dataclass(frozen=True, slots=True)
+class Palette:
+    """The colours one cockpit view draws with, and the settings the model colours came from."""
+
+    entities: Mapping[str, str]
+    """Colour per entity of a split — a repository, an agent — by its first appearance."""
+    models: Mapping[str, str]
+    """Colour per model name, as every chart and lane wears it (F14.19)."""
+    model_colors: ModelColorsSettings
+
+    def lane(self, model: str | None, agent_kind: str) -> str:
+        """A crew lane wears its model, else the default hue of the segment of its kind's maker."""
+        return lane_color(model, agent_kind, self.models, self.model_colors)
+
+
 def _run(
-    slot: int, issue: str, track: str, facts: Iterable[str], label: str = "", actions: str = ""
+    color: str, issue: str, track: str, facts: Iterable[str], label: str = "", actions: str = ""
 ) -> str:
     """One issue held: the instance, its repository's coloured square, the issue, the track."""
     return (
         f"<div class=run><span class=inst>{e(label)}</span>"
-        f'<i class="square s{slot}" aria-hidden=true></i><div>'
+        f'<i class=square style="--c:{color}" aria-hidden=true></i><div>'
         f"<div class=issue>{issue}</div>{track}<div class=facts>{', '.join(facts)}</div></div>"
         f"<div class=actions>{actions}</div></div>"
     )
@@ -797,7 +806,7 @@ def _instance(
     worker: WorkerView,
     now: datetime,
     issues: Mapping[tuple[str, int], IssueView],
-    slots: Mapping[str, int],
+    palette: Palette,
 ) -> str:
     """One sub-row: what this instance of the worker is doing, with its own log and stop."""
     label = worker.name
@@ -847,7 +856,7 @@ def _instance(
         if worker.merge_conflict:
             facts.append('<span class="flag conflict">Merge conflict</span>')
         result = _run(
-            slots.get(worker.repository, 0),
+            palette.entities.get(worker.repository, FALLBACK),
             issue,
             _track(worker.step, worker.merge_conflict, waiting),
             facts,
@@ -878,7 +887,7 @@ def _agent_row(
     instances: Sequence[WorkerView],
     now: datetime,
     issues: Mapping[tuple[str, int], IssueView],
-    slots: Mapping[str, int],
+    palette: Palette,
 ) -> str:
     """A configured worker with one sub-row per instance its account lets run at once."""
     first = instances[0]
@@ -897,10 +906,12 @@ def _agent_row(
         f'<form method=post action="/workers/{group}/{toggle}"><button>{toggle.capitalize()}</button></form>'
         f'<a class=button href="/workers/{group}">Edit</a>'
     )
-    rows = "".join(_instance(instance, now, issues, slots) for instance in instances)
+    rows = "".join(_instance(instance, now, issues, palette) for instance in instances)
     waiting = all(i.state in ("idle", "paused", "limited") for i in instances)
+    wear = palette.lane(model if model and model != "-" else None, first.agent_kind)
     return (
-        f'<div class="lane{" waiting" if waiting else ""}" role=group aria-label="{group}"><div>{who}</div>'
+        f'<div class="lane{" waiting" if waiting else ""}" style="--lane:{wear}" '
+        f'role=group aria-label="{group}"><div>{who}</div>'
         f"<div class=stack>{rows}</div><div class=actions>{actions}</div></div>"
     )
 
@@ -921,10 +932,11 @@ def _remote_row(
     claims: Sequence[ClaimView],
     now: datetime,
     issues: Mapping[tuple[str, int], IssueView],
-    slots: Mapping[str, int],
+    palette: Palette,
 ) -> str:
     """Issues other managers hold: the same squares, branches on GitHub, and no controls."""
     rows = []
+    models: list[str] = []
     for claim in claims:
         known = issues.get((claim.repository, claim.issue))
         issue = f"<span class=repo>{e(claim.repository)}</span> " + _issue_link(
@@ -947,7 +959,7 @@ def _remote_row(
         if claim.merge_conflict:
             facts.append('<span class="flag conflict">Merge conflict</span>')
         row = _run(
-            slots.get(claim.repository, 0),
+            palette.entities.get(claim.repository, FALLBACK),
             issue,
             _track(claim.step, claim.merge_conflict, claim.state == "paused"),
             facts,
@@ -956,6 +968,8 @@ def _remote_row(
         rows.append(
             row.replace("class=run", 'class="run waiting"', 1) if claim.state == "paused" else row
         )
+        if known and known.model and known.model != "-":
+            models.append(known.model)
     managers = len({claim.holder.partition("/")[0] for claim in claims})
     who = _who(
         "Remote",
@@ -964,8 +978,10 @@ def _remote_row(
         None,
         "watched, not steered from here",
     )
+    wear = palette.lane(models[0] if models else None, "")
     return (
-        f'<div class="lane remote{" waiting" if all(c.state == "paused" for c in claims) else ""}" role=group aria-label="Remote">'
+        f'<div class="lane remote{" waiting" if all(c.state == "paused" for c in claims) else ""}" '
+        f'style="--lane:{wear}" role=group aria-label="Remote">'
         f"<div>{who}</div><div class=stack>{''.join(rows)}</div><div></div></div>"
     )
 
@@ -1014,11 +1030,24 @@ def _key_of(record: RunRecord, by: SplitBy) -> str:
     return {"model": record.model, "agent": record.agent, "repository": record.repository}[by]
 
 
-def _slots(history: Sequence[RunRecord], by: SplitBy) -> dict[str, int]:
-    """Colour per entity by its first appearance in the whole history, so no view repaints it."""
-    slots = color_slots(_key_of(record, by) for record in history)
-    slots["Other"] = 0
-    return slots
+def _palette(
+    history: Sequence[RunRecord], by: SplitBy, model_colors: ModelColorsSettings
+) -> Palette:
+    """The colours of one split, worked out over the whole history so no view repaints an entity."""
+    names = [_key_of(record, by) for record in history] + [OTHER]
+    entities = model_series(names, model_colors) if by == "model" else entity_series(names)
+    entities[OTHER] = GREY
+    return Palette(entities=entities, models=entities, model_colors=model_colors)
+
+
+def _crew_palette(
+    snapshot: Snapshot, models: Mapping[str, str], settings: ModelColorsSettings
+) -> Palette:
+    """The crew's colours: every repository a square can wear, and the models the lanes wear."""
+    names = [repository.name for repository in snapshot.repositories] + [
+        claim.repository for claim in snapshot.claims
+    ]
+    return Palette(entities=entity_series(names), models=models, model_colors=settings)
 
 
 def _switch(
@@ -1034,9 +1063,10 @@ def _switch(
     return f'<div class=switch role=group aria-label="{e(label)}">{links}</div>'
 
 
-def _legend(series: Mapping[str, Sequence[int]], slots: Mapping[str, int]) -> str:
+def _legend(series: Mapping[str, Sequence[int]], colors: Mapping[str, str]) -> str:
     keys = "".join(
-        f'<li><i class="key s{slots.get(name, 0)}"></i>{e(name)}</li>' for name in series
+        f'<li><i class=key style="--c:{colors.get(name, FALLBACK)}"></i>{e(name)}</li>'
+        for name in series
     )
     return f'<ul class="legend">{keys}</ul>'
 
@@ -1106,17 +1136,16 @@ def _readouts(history: list[RunRecord], now: datetime) -> str:
     return _readout_row(cells)
 
 
-def _flight_log(snapshot: Snapshot, history: list[RunRecord]) -> str:
+def _flight_log(snapshot: Snapshot, history: list[RunRecord], palette: Palette) -> str:
     """The last day as a timeline: every run per worker, the running ones still growing."""
     end = snapshot.now
     start = end - timedelta(hours=24)
-    slots = _slots(history, "model")
     spans = [
         Span(
             record.worker,
             record.started,
             record.finished,
-            slots.get(record.model, 0),
+            palette.models.get(record.model, GREY),
             f"{record.repository}#{record.issue}: {record.kind} run, {record.verdict}, "
             f"{record.model}, {span(record.finished - record.started)}",
         )
@@ -1130,7 +1159,7 @@ def _flight_log(snapshot: Snapshot, history: list[RunRecord]) -> str:
                     worker.name,
                     worker.since,
                     end,
-                    slots.get(worker.model, 0),
+                    palette.lane(worker.model, worker.agent_kind),
                     f"{worker.repository}#{worker.issue}: running, {worker.step}, {worker.model}, "
                     f"{span(end - worker.since)} so far",
                     live=True,
@@ -1147,30 +1176,33 @@ def _flight_log(snapshot: Snapshot, history: list[RunRecord]) -> str:
     )
 
 
-def _share(history: list[RunRecord]) -> str:
+def _share(history: list[RunRecord], palette: Palette) -> str:
     rows = model_ledger(history)
-    slots = _slots(history, "model")
     legend = "".join(
-        f'<li><i class="key s{slots.get(row.model, 0)}"></i>{e(row.model)}<b>{row.runs}</b></li>'
+        f'<li><i class=key style="--c:{palette.models.get(row.model, GREY)}"></i>'
+        f"{e(row.model)}<b>{row.runs}</b></li>"
         for row in rows
     )
     return (
         '<section class=panel id="share" aria-label="Model share">'
         "<header><h2>Model share</h2></header>"
         "<p class=sub>All runs ever, per model.</p>"
-        f"<div class=share>{donut([(row.model, row.runs) for row in rows], slots, 'runs')}"
+        f"<div class=share>"
+        f"{donut([(row.model, row.runs) for row in rows], palette.models, 'runs')}"
         f'<ul class="legend tall">{legend}</ul></div></section>'
     )
 
 
-def _total(history: list[RunRecord], now: datetime) -> str:
-    points = cumulative_merged(history)
+def _total(history: list[RunRecord], now: datetime, palette: Palette) -> str:
+    lines = cumulative_by(history, "model")
     start = min((r.started for r in history), default=now - timedelta(days=1))
+    merged = sum(len(points) for _, points in lines)
     return (
         '<section class=panel id="total" aria-label="Merged over time">'
         "<header><h2>Merged over time</h2></header>"
-        f"<p class=sub>The running total since the first run: {len(points)} issues.</p>"
-        f"{area_line(points, start, now, 'merged')}</section>"
+        f"<p class=sub>The running total since the first run, one line per model: {merged} issues.</p>"
+        f"{_legend({name: [len(points)] for name, points in lines}, palette.models)}"
+        f"{cumulative_lines(lines, start, now, 'merged', palette.models)}</section>"
     )
 
 
@@ -1183,21 +1215,20 @@ def _heat(history: list[RunRecord]) -> str:
     )
 
 
-def _crew(snapshot: Snapshot) -> str:
+def _crew(snapshot: Snapshot, palette: Palette) -> str:
     working = sum(1 for worker in snapshot.workers if worker.state == "working")
     issues = {(issue.repository, issue.number): issue for issue in snapshot.issues}
-    slots = color_slots(
-        [repository.name for repository in snapshot.repositories]
-        + [claim.repository for claim in snapshot.claims]
-    )
     legend = "".join(
-        f'<li><i class="key s{slot}"></i>{e(name)}</li>' for name, slot in slots.items()
+        f'<li><i class=key style="--c:{color}"></i>{e(name)}</li>'
+        for name, color in palette.entities.items()
     )
     groups: dict[str, list[WorkerView]] = {}
     for worker in snapshot.workers:
         groups.setdefault(worker.worker, []).append(worker)
     rows = (
-        "".join(_agent_row(instances, snapshot.now, issues, slots) for instances in groups.values())
+        "".join(
+            _agent_row(instances, snapshot.now, issues, palette) for instances in groups.values()
+        )
         if groups
         else '<p class=empty>No workers yet. <a href="/workers/new">Add one</a> from the agents '
         "installed on this machine.</p>"
@@ -1217,14 +1248,15 @@ def _crew(snapshot: Snapshot) -> str:
         "runs as many issues at once as its account allows; a square is one issue, coloured by "
         "its repository.</p>"
         f'<ul class="legend">{legend}</ul>{rows}'
-        + (_remote_row(remote, snapshot.now, issues, slots) if remote else "")
+        + (_remote_row(remote, snapshot.now, issues, palette) if remote else "")
         + "</section>"
     )
 
 
-def _throughput(history: list[RunRecord], now: datetime, view: CockpitView) -> str:
+def _throughput(
+    history: list[RunRecord], now: datetime, view: CockpitView, palette: Palette
+) -> str:
     axis, series = daily_merged(history, now, days=view.days, by=view.by)
-    slots = _slots(history, view.by)
     switches = _switch("Split by", view, "by", SPLITS) + _switch(
         "Window", view, "days", ((days, f"{days} days") for days in WINDOWS)
     )
@@ -1234,26 +1266,25 @@ def _throughput(history: list[RunRecord], now: datetime, view: CockpitView) -> s
         f"<header><h2>Issues merged per day</h2><div class=switches>{switches}</div></header>"
         f"<p class=sub>{total} merged in the last {view.days} days, "
         f"{total / view.days:.1f} a day, by {view.by}.</p>"
-        f"{_legend(series, slots)}"
-        f"{stacked_columns(axis, series, slots, unit='merged')}"
+        f"{_legend(series, palette.entities)}"
+        f"{stacked_columns(axis, series, palette.entities, unit='merged')}"
         f"{_series_table(axis, series, 'Day', '%Y-%m-%d')}</section>"
     )
 
 
-def _mix(history: list[RunRecord], now: datetime) -> str:
+def _mix(history: list[RunRecord], now: datetime, palette: Palette) -> str:
     axis, series = weekly_mix(history, now, weeks=26)
-    slots = _slots(history, "model")
     return (
         '<section class="panel wide" id="mix" aria-label="Model mix per week">'
         "<header><h2>Model mix per week</h2></header>"
         "<p class=sub>Runs per model per week over half a year, whatever their outcome.</p>"
-        f"{_legend(series, slots)}"
-        f"{stacked_columns(axis, series, slots, unit='runs', width=960, height=240, prefix='week of ')}"
+        f"{_legend(series, palette.models)}"
+        f"{stacked_columns(axis, series, palette.models, unit='runs', width=960, height=240, prefix='week of ')}"
         f"{_series_table(axis, series, 'Week of', '%Y-%m-%d')}</section>"
     )
 
 
-def _time(history: list[RunRecord], view: CockpitView) -> str:
+def _time(history: list[RunRecord], view: CockpitView, palette: Palette) -> str:
     rows = resolve_times(history, by=view.time)
     bars = horizontal_bars(
         [
@@ -1261,6 +1292,7 @@ def _time(history: list[RunRecord], view: CockpitView) -> str:
             for row in rows
         ],
         width=600,
+        colors=palette.entities,
     )
     table = "".join(
         f"<tr><td>{e(row.name)}</td><td class=n>{row.count}</td>"
@@ -1279,13 +1311,12 @@ def _time(history: list[RunRecord], view: CockpitView) -> str:
     )
 
 
-def _ledger(history: list[RunRecord]) -> str:
+def _ledger(history: list[RunRecord], palette: Palette) -> str:
     rows = model_ledger(history)
-    slots = _slots(history, "model")
     if not rows:
         return ""
     body = "".join(
-        f'<tr><td><i class="key s{slots.get(row.model, 0)}"></i>{e(row.model)}</td>'
+        f'<tr><td><i class=key style="--c:{palette.models.get(row.model, GREY)}"></i>{e(row.model)}</td>'
         f"<td>{e(row.agent)}</td><td class=n>{row.runs}</td><td class=n>{row.merged}</td>"
         f"<td class=n>{row.merged / row.runs:.0%}</td>"
         f"<td class=n>{span(row.median_resolve) if row.median_resolve else '-'}</td>"
@@ -1303,8 +1334,13 @@ def _ledger(history: list[RunRecord]) -> str:
 
 
 def cockpit_fragment(
-    snapshot: Snapshot, history: list[RunRecord], view: CockpitView = DEFAULT_VIEW
+    snapshot: Snapshot,
+    history: list[RunRecord],
+    view: CockpitView = DEFAULT_VIEW,
+    model_colors: ModelColorsSettings | None = None,
 ) -> str:
+    settings = model_colors or ModelColorsSettings()
+    models = _palette(history, "model", settings)
     return (
         _clock(snapshot.now)
         + "<p class=status><i class=dot aria-hidden=true></i>Live: updated "
@@ -1313,15 +1349,15 @@ def cockpit_fragment(
         + f"{snapshot.now:%H:%M:%S}</time> UTC</p>"
         + _readouts(history, snapshot.now)
         + "<div class=deck-grid>"
-        + _crew(snapshot)
-        + _flight_log(snapshot, history)
-        + _throughput(history, snapshot.now, view)
-        + _share(history)
-        + _total(history, snapshot.now)
-        + _time(history, view)
+        + _crew(snapshot, _crew_palette(snapshot, models.models, settings))
+        + _flight_log(snapshot, history, models)
+        + _throughput(history, snapshot.now, view, _palette(history, view.by, settings))
+        + _share(history, models)
+        + _total(history, snapshot.now, models)
+        + _time(history, view, _palette(history, view.time, settings))
         + _heat(history)
-        + _mix(history, snapshot.now)
-        + _ledger(history)
+        + _mix(history, snapshot.now, models)
+        + _ledger(history, models)
         + "</div>"
     )
 
@@ -1331,12 +1367,14 @@ def cockpit_page(
     history: list[RunRecord],
     view: CockpitView = DEFAULT_VIEW,
     notice: str = "",
+    model_colors: ModelColorsSettings | None = None,
 ) -> str:
     body = (
         "<h1>Cockpit</h1>"
         "<p class=lede>The crew at work right now, and everything this manager has finished: "
         "kept across restarts in its state directory.</p>"
-        f"{_notice(notice)}<div id=live>{cockpit_fragment(snapshot, history, view)}</div>"
+        f"{_notice(notice)}"
+        f"<div id=live>{cockpit_fragment(snapshot, history, view, model_colors)}</div>"
     )
     return page("Cockpit", "/workers", snapshot.manager_id, body, live=True)
 
@@ -1596,6 +1634,7 @@ SECTIONS = (
     ("manager", "This machine"),
     ("pollInterval", "Polling and trust"),
     ("ui", "This page"),
+    ("modelColors", "Model colours"),
     ("fleet", "Fleet"),
     ("defaults", "Defaults for every repository"),
 )

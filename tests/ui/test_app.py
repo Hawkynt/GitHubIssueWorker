@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from github_issue_worker.configuration import Configuration, RepositorySettings, WorkerSettings
 from github_issue_worker.ui.app import create_app
 from github_issue_worker.ui.demo import DemoBackend
+from github_issue_worker.ui.pages import STYLE
 
 
 @pytest.fixture
@@ -390,7 +391,7 @@ def test_the_cockpit_reads_out_the_long_term_numbers(client: TestClient) -> None
         "Merge rate",
     ):
         assert readout in html, readout
-    assert html.count('class="seg s') > 30  # the throughput and model-mix columns
+    assert html.count('class="seg"') > 30  # the throughput and model-mix columns
     assert 'class="bar"' in html  # time to merge
     assert "Qwen3.8 Flash Next IQ3_S" in html and "Gemini 4 Argon (Medium)" in html
     assert html.count("<table") >= 4  # every chart can be read as a table
@@ -408,14 +409,64 @@ def test_the_cockpit_splits_by_model_agent_or_repository(client: TestClient) -> 
 
 
 def test_an_entitys_colour_survives_a_change_of_view(client: TestClient) -> None:
-    def slot(html: str, name: str) -> str:
-        found = re.search(rf'<li><i class="key (s\d)"></i>{re.escape(name)}<', html)
+    def worn(html: str, name: str) -> str:
+        found = re.search(rf'<li><i class=key style="--c:([^"]+)"></i>{re.escape(name)}<', html)
         assert found, name
         return found.group(1)
 
     month = client.get("/workers").text
     quarter = client.get("/workers?days=90").text
-    assert slot(month, "GPT 6.1 Sol") == slot(quarter, "GPT 6.1 Sol")
+    assert worn(month, "GPT 6.1 Sol") == worn(quarter, "GPT 6.1 Sol")
+
+
+def test_the_time_to_merge_bars_wear_their_models_colour(client: TestClient) -> None:
+    """Scenario 6: the same model colours the time-to-merge bars wear come from the model."""
+    html = client.get("/workers").text
+    panel = html.split('id="time"', 1)[1].split("</section>", 1)[0]
+    worn = re.search(r'<li><i class=key style="--c:([^"]+)"></i>GPT 6.1 Sol<', html)
+    assert worn, "GPT 6.1 Sol"
+    assert f"--c:{worn.group(1)}" in panel
+
+
+def test_merged_over_time_draws_one_line_per_model_in_its_colour(client: TestClient) -> None:
+    """Scenario 7: the running total of merges is drawn per model, each in its own colour."""
+    panel = client.get("/workers").text.split('id="total"', 1)[1].split("</section>", 1)[0]
+    assert panel.count('class="series-line"') >= 3
+    for model in ("Claude Opus 5.5", "GPT 6.1 Sol", "Gemini 4 Argon (Medium)"):
+        worn = re.search(rf'<li><i class=key style="--c:([^"]+)"></i>{re.escape(model)}<', panel)
+        assert worn, model
+        assert f"--c:{worn.group(1)}" in panel
+
+
+def test_a_crew_lane_wears_its_model_colour_or_its_makers_default_hue(client: TestClient) -> None:
+    """Scenario 8: the lane background follows the model, and the agent's maker while none is known."""
+    html = client.get("/workers").text
+    crew = html.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
+    worn = re.search(r'<li><i class=key style="--c:([^"]+)"></i>Claude Opus 5.5<', html)
+    assert worn, "Claude Opus 5.5"
+    assert f'class="lane" style="--lane:{worn.group(1)}"' in crew
+    unknown = re.search(
+        r'<div class="lane(?: waiting)?" style="--lane:(oklch\([^"]+\))"[^>]*>'
+        r"<div><div class=name>opencode<",
+        crew,
+    )
+    assert unknown, "a lane of a worker with no model yet"
+    assert "oklch(" in unknown.group(1)
+
+
+def test_a_waiting_lane_greys_out_and_keeps_its_models_hue(client: TestClient) -> None:
+    """The feedback colours and the model colours meet: the lane stays gray and keeps its hue."""
+    crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
+    waiting = re.search(
+        r'<div class="lane waiting" style="--lane:(oklch\([^"]+\))"[^>]*>'
+        r"<div><div class=name>antigravity<",
+        crew,
+    )
+    assert waiting, "the lane of the crew that ran into its usage limit"
+    rule = STYLE[STYLE.index(".lane.waiting {") :]
+    rule = rule[: rule.index("}")]
+    assert "background-color: var(--wait-soft)" in rule
+    assert "var(--lane" in rule
 
 
 def test_the_cockpit_fragment_keeps_the_chosen_view(client: TestClient) -> None:
@@ -425,7 +476,7 @@ def test_the_cockpit_fragment_keeps_the_chosen_view(client: TestClient) -> None:
 
 
 def _square(html: str, repository: str) -> str:
-    found = re.search(rf'<li><i class="key (s\d)"></i>{re.escape(repository)}<', html)
+    found = re.search(rf'<li><i class=key style="--c:([^"]+)"></i>{re.escape(repository)}<', html)
     assert found, repository
     return found.group(1)
 
@@ -436,7 +487,10 @@ def test_the_crew_shows_each_issue_as_a_square_coloured_by_its_repository(
     html = client.get("/workers").text
     crew = html.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
     gateway = _square(crew, "acme/telemetry-gateway")
-    assert f'<i class="square {gateway}"' in crew.split("#214", 1)[0].rsplit("class=run", 1)[1]
+    assert (
+        f'<i class=square style="--c:{gateway}"'
+        in crew.split("#214", 1)[0].rsplit("class=run", 1)[1]
+    )
     assert 'href="https://github.com/acme/telemetry-gateway/issues/214"' in crew
     assert 'data-tip="Uploads to the gateway fail' in crew  # the description as tooltip
     assert 'action="/workers/claude/open"' in crew  # the worktree, named like its branch
@@ -457,7 +511,7 @@ def test_remote_workers_get_their_own_row_with_github_branch_links_and_no_contro
         in remote
     )
     assert "<button" not in remote and "/open" not in remote
-    assert f'<i class="square {_square(crew, "acme/billing-cli")}"' in remote  # same colour
+    assert f'<i class=square style="--c:{_square(crew, "acme/billing-cli")}"' in remote
 
 
 def test_opening_a_worktree_hands_it_to_the_file_manager(

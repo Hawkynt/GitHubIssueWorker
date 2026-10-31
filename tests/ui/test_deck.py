@@ -128,6 +128,7 @@ def test_every_settings_section_is_a_panel(client: TestClient) -> None:
         "This machine",
         "Polling and trust",
         "This page",
+        "Model colours",
         "Fleet",
         "Defaults for every repository",
         "Accounts",

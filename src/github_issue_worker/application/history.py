@@ -230,6 +230,25 @@ def cumulative_merged(records: list[RunRecord]) -> list[tuple[datetime, int]]:
     return [(moment, count) for count, moment in enumerate(merged, start=1)]
 
 
+def cumulative_by(
+    records: list[RunRecord], by: SplitBy = "model"
+) -> list[tuple[str, list[tuple[datetime, int]]]]:
+    """One running merge total per series, busiest series first; a ninth one folds into "Other"."""
+    moments: dict[str, list[datetime]] = defaultdict(list)
+    for record in records:
+        if record.verdict == "merged":
+            moments[_key(record, by)].append(record.finished)
+    ranked = sorted(moments.items(), key=lambda item: (-len(item[1]), item[0]))
+    kept = dict(ranked[: MAX_SERIES - 1])
+    rest = [moment for _, values in ranked[MAX_SERIES - 1 :] for moment in values]
+    if rest:
+        kept["Other"] = rest
+    return [
+        (name, [(moment, count) for count, moment in enumerate(sorted(values), start=1)])
+        for name, values in kept.items()
+    ]
+
+
 def activity(records: list[RunRecord]) -> list[list[int]]:
     """Runs finished per weekday (Monday first) and hour of the day, in UTC."""
     matrix = [[0] * 24 for _ in range(7)]

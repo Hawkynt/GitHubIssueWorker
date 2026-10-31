@@ -60,6 +60,23 @@ def test_the_readme_example_is_valid() -> None:
     assert config.repositories[1].mode == "labeled"
 
 
+def test_every_maker_has_a_hue_segment_by_default() -> None:
+    colors = parse("{}").model_colors
+    assert (colors.anthropic.hue, colors.anthropic.width) == (70, 90)
+    assert (colors.openai.hue, colors.openai.width) == (250, 55)
+    assert (colors.google.hue, colors.google.width) == (155, 55)
+    assert (colors.other.hue, colors.other.width) == (320, 120)
+
+
+def test_a_hue_off_the_wheel_is_refused() -> None:
+    paths = error_paths('{"modelColors": {"anthropic": {"hue": 400}}}')
+    assert paths == ["modelColors.anthropic.hue"]
+
+
+def test_a_segment_wider_than_the_wheel_is_refused() -> None:
+    assert error_paths('{"modelColors": {"other": {"width": 400}}}') == ["modelColors.other.width"]
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
