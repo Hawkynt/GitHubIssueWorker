@@ -210,3 +210,15 @@ def test_claudelocal_matches_the_id_claude_code_reports_through_the_gateway(tmp_
     adapter = ClaudeLocalAdapter(Path("claude.sh"), list_models=lambda: LIST_OUTPUT)
     stdout = json.dumps({"type": "system", "subtype": "init", "model": "local-claude-strata-iq3_s"})
     assert adapter.report(run(tmp_path), 0, stdout, "").model == "Qwen3.8-Flash-Next IQ3_S"
+
+
+def test_claudelocal_knows_its_model_before_any_run_reports_one() -> None:
+    # The launcher serves the one installed model when no --model is given.
+    adapter = ClaudeLocalAdapter(Path("claude.sh"), list_models=lambda: LIST_OUTPUT)
+    assert adapter.default_model() == "Qwen3.8-Flash-Next IQ3_S"
+
+
+def test_claudelocal_names_no_default_when_it_is_not_one_installed_model() -> None:
+    two = LIST_OUTPUT.replace("\x1b[33mavailable\x1b[0m", "\x1b[32minstalled\x1b[0m")
+    assert ClaudeLocalAdapter(Path("claude.sh"), list_models=lambda: two).default_model() is None
+    assert ClaudeLocalAdapter(Path("claude.sh"), list_models=lambda: "").default_model() is None

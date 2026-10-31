@@ -321,6 +321,11 @@ class Runtime:
             try:
                 self.adapters[worker.name] = make_adapter(worker, self.home)
                 available, reason = True, ""
+                if worker.model is None and self.state.model(worker.name) is None:
+                    default = getattr(self.adapters[worker.name], "default_model", None)
+                    known = default() if callable(default) else None
+                    if known:
+                        self.state.set_model(worker.name, known)
             except Unavailable as unavailable:
                 self.adapters.pop(worker.name, None)
                 available, reason = False, str(unavailable)

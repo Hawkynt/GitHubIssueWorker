@@ -167,6 +167,15 @@ _LISTED = re.compile(
 )
 
 
+def installed_models(listing: str) -> list[str]:
+    """The ids of the models ClaudeLocal's ``--list`` shows as installed."""
+    return [
+        match["id"]
+        for line in _ANSI.sub("", listing).splitlines()
+        if (match := _LISTED.match(line)) and " installed " in f" {line} "
+    ]
+
+
 def model_names(listing: str) -> dict[str, str]:
     """Model id to human name, from ClaudeLocal's ``--list`` output."""
     names = {}
@@ -217,6 +226,14 @@ class ClaudeLocalAdapter:
             None,
         )
         return self._names[known] if known else model
+
+    def default_model(self) -> str | None:
+        """The model the launcher serves without ``--model``: its one installed model."""
+        listing = self._list_models()
+        if self._names is None:
+            self._names = model_names(listing)
+        installed = installed_models(listing)
+        return self._describe(installed[0]) if len(installed) == 1 else None
 
     def invocation(self, run: AgentRun) -> Invocation:
         prepare(run)
