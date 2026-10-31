@@ -1,4 +1,4 @@
-"""Whether an issue needs a run now, and which kind (F2.2, F8.2, F9.1, F9.2, F11.5)."""
+"""Whether an issue needs a run now, and which kind (F2.2, F2.7, F8.2, F9.1, F9.2, F11.5)."""
 
 from __future__ import annotations
 

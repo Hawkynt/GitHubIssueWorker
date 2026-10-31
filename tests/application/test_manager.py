@@ -441,3 +441,63 @@ def test_the_claim_carries_the_model_and_every_finished_run_for_the_whole_fleet(
     assert [(run.manager, run.model, run.verdict) for run in claim.runs] == [
         (ME, "Claude Opus 5.5", "needs-input")
     ]
+
+
+def test_labeled_mode_ignores_issues_without_the_worker_label_and_works_labeled_ones() -> None:
+    f = Fixture([slot("claude")])
+    f.watch.mode = "labeled"
+    f.new_issues(issue(1, frozenset({"bug"})), issue(2, frozenset({"worker"}), minutes=1))
+    f.manager.tick()
+
+    assert f.runs == [Recorded("claude", 2, RunKind.FIRST)]
+    assert 1 not in f.host.worker_label
+    assert f.store.current(1) is None
+
+    # Adding the `worker` label later makes the issue eligible in labeled mode.
+    f.new_issues(issue(1, frozenset({"bug", "worker"}), minutes=2))
+    f.manager.tick()
+    assert [run.issue for run in f.runs] == [2, 1]
+
+
+@pytest.mark.parametrize("mode", ["all", "labeled"])
+def test_worker_skip_is_honoured_in_every_mode_and_clears_a_queued_issue(mode: str) -> None:
+    f = Fixture([slot("claude")], verdicts=[Verdict("paused", until=T0 + timedelta(hours=1))])
+    f.watch.mode = mode  # type: ignore[assignment]
+    labels = frozenset({"worker"}) if mode == "labeled" else frozenset()
+    f.new_issues(
+        issue(1, labels),
+        issue(2, labels, minutes=1),
+        issue(3, labels | {"worker:skip"}, minutes=2),
+    )
+    f.manager.tick()
+
+    assert [run.issue for run in f.runs] == [1]
+    assert f.host.worker_label[2] == "worker:queued"
+    assert 3 not in f.host.worker_label
+
+    # Issue 2 is now labelled worker:skip while waiting in the queue.
+    f.new_issues(issue(2, labels | {"worker:queued", "worker:skip"}, minutes=3))
+    f.clock.advance(timedelta(hours=1, minutes=1))
+    f.manager.tick()
+
+    assert f.host.worker_label[2] is None
+    assert [run.issue for run in f.runs] == [1, 1]
+
+
+def test_worker_skip_on_a_paused_or_adopted_claim_releases_the_claim_without_resuming() -> None:
+    reset = T0 + timedelta(hours=2)
+    f = Fixture([slot("claude", account="anthropic")], verdicts=[Verdict("paused", until=reset)])
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert f.store.current(1) is not None and f.store.current(1).state is ClaimState.PAUSED  # type: ignore[union-attr]
+
+    # Before the limit resets, the maintainer adds worker:skip to the paused issue.
+    f.new_issues(issue(1, frozenset({"worker:paused", "worker:skip"}), minutes=5))
+    f.manager.tick()
+
+    current = f.store.current(1)
+    assert (
+        current is not None and current.state is ClaimState.RELEASED and current.step == "skipped"
+    )
+    assert f.host.worker_label[1] is None
+    assert len(f.runs) == 1
