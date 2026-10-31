@@ -883,7 +883,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F2.4** Ignores input from untrusted authors (see Security above) and logs it.
 - [x] 🟥 **F2.5** First watch of a repository records the current position and queues nothing unless
   `processBacklog` is on.
-- [ ] 🟥 **F2.6** Honours `X-RateLimit-Remaining`/`Reset` and secondary-limit `Retry-After`, and
+- [x] 🟥 **F2.6** Honours `X-RateLimit-Remaining`/`Reset` and secondary-limit `Retry-After`, and
   backs off instead of failing.
 - [ ] 🟧 **F2.7** `mode: labeled` acts only on issues carrying `worker`. `worker:skip` is honoured in
   every mode and stops a run in progress at its next checkpoint.
