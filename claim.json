@@ -34,6 +34,16 @@
       "started": "2026-10-31T09:25:58Z",
       "verdict": "crashed",
       "worker": "antigravity.2"
+    },
+    {
+      "agent": "antigravity",
+      "finished": "2026-10-31T09:53:04Z",
+      "kind": "continuation",
+      "manager": "hawky-desktop-96a3",
+      "model": "Gemini 4 Argon (Medium)",
+      "started": "2026-10-31T09:37:37Z",
+      "verdict": "merged",
+      "worker": "antigravity.2"
     }
   ],
   "state": "done",
