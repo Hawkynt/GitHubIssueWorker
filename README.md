@@ -102,7 +102,7 @@ on a repository that account cannot push to.
 - **New issues, new comments, reopened issues** — detected by polling with conditional requests, so
   an idle repository costs no rate limit.
 - **Automatic triage** — an unlabelled issue gets labels chosen from the repository's existing label
-  set.
+  set; a label it lacks is only created with `createMissingLabels` on.
 - **Spec → scenarios → domain → tests → code** — every issue is worked SDD, BDD, DDD and TDD, in that
   order. See [How an issue is worked](#-how-an-issue-is-worked).
 - **One manager, many workers** — a single manager steers a Claude Code, a Codex, an Antigravity and
@@ -981,7 +981,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F4.1** An issue with no labels gets one or more labels from the repository's existing set,
   chosen by the first run itself: its prompt lists the existing labels and its outcome carries
   `labels`, so no separate agent call is spent. Labels outside the existing set are dropped.
-- [ ] 🟥 **F4.2** Labels that do not exist are never created unless `createMissingLabels` is on.
+- [x] 🟥 **F4.2** Labels that do not exist are never created unless `createMissingLabels` is on.
 - [ ] 🟥 **F4.3** An issue that already carries a non-`worker:*` label is not relabelled.
 - [ ] 🟧 **F4.4** Triage may conclude the issue is too vague to start, which goes straight to
   [F8](#f8--asking-for-input) with the missing information named.

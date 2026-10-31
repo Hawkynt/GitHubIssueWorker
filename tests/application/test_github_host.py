@@ -75,6 +75,24 @@ def test_missing_worker_labels_are_created() -> None:
     assert created == set(WORKER_LABELS) - {"worker:working"}
 
 
+def test_a_triage_label_is_created_on_the_repository() -> None:
+    gh, api = host({})
+    gh.create_label("invented")
+    assert ("POST", f"repos/{REPO}/labels", {"name": "invented", "color": "ededed"}) in api.calls
+
+
+def test_creating_a_label_another_manager_created_first_is_ignored() -> None:
+    gh, api = host({("POST", f"repos/{REPO}/labels"): GitHubError(422, "already_exists")})
+    gh.create_label("invented")
+    assert ("POST", f"repos/{REPO}/labels", {"name": "invented", "color": "ededed"}) in api.calls
+
+
+def test_creating_a_label_with_an_invalid_name_still_raises() -> None:
+    gh, _ = host({("POST", f"repos/{REPO}/labels"): GitHubError(422, "invalid name")})
+    with pytest.raises(GitHubError):
+        gh.create_label("invented")
+
+
 def test_setting_a_worker_label_removes_the_other_worker_labels_but_not_skip() -> None:
     labels = [{"name": "bug"}, {"name": "worker:queued"}, {"name": "worker:skip"}]
     gh, api = host({("GET", f"repos/{REPO}/issues/7/labels"): labels})
@@ -251,6 +269,7 @@ def test_runs_waiting_for_approval_are_found_and_approved() -> None:
         lambda h: h.set_worker_label(1, "worker:queued"),
         lambda h: h.set_worker_label(1, None),
         lambda h: h.add_labels(1, ["bug"]),
+        lambda h: h.create_label("bug"),
         lambda h: h.comment(1, "text"),
         lambda h: h.create_pull_request("issue/1", "main", "+ title", "body"),
         lambda h: h.merge(1, "squash", "head"),
@@ -264,6 +283,7 @@ def test_runs_waiting_for_approval_are_found_and_approved() -> None:
         "set-label",
         "remove-label",
         "add-label",
+        "create-label",
         "comment",
         "pull",
         "merge",

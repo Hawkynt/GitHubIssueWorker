@@ -118,6 +118,8 @@ class RunSettings:
     """First and reopen runs start with a run that restates the issue and posts it (F4.5)."""
     split_issues: bool = True
     """The understanding run may split a large issue with independent parts (F4.6)."""
+    create_missing_labels: bool = False
+    """Triage may create a label the repository does not have (F4.2); off, they are dropped."""
     gate: CommitGate = field(default_factory=CommitGate)
 
 
@@ -213,9 +215,7 @@ class IssueRun:
                     continue
                 outcome = report.outcome
                 if label_choices and outcome.labels:
-                    chosen = [label for label in outcome.labels if label in label_choices]
-                    if chosen:
-                        self._fenced(partial(self.host.add_labels, issue.number, chosen))
+                    self._apply_labels(issue, outcome.labels, label_choices)
                     label_choices = None
                 if outcome.kind != "done":
                     return self._ask(issue, outcome)
@@ -265,6 +265,20 @@ class IssueRun:
 
     # --- steps -----------------------------------------------------------------------------------
 
+    def _apply_labels(self, issue: Issue, proposed: tuple[str, ...], choices: set[str]) -> None:
+        """Apply the labels the run chose. With ``createMissingLabels`` on, a label the
+        repository lacks is created first; off, it is dropped (F4.2). The ``worker:*``
+        namespace stays the manager's own and is never created from an outcome."""
+        chosen = [label for label in proposed if label in choices]
+        if self.settings.create_missing_labels:
+            for label in proposed:
+                if label in choices or label.startswith("worker:"):
+                    continue
+                self._fenced(partial(self.host.create_label, label))
+                chosen.append(label)
+        if chosen:
+            self._fenced(partial(self.host.add_labels, issue.number, chosen))
+
     def _understand(
         self,
         tree: Path,
@@ -309,9 +323,7 @@ class IssueRun:
                 if parts:
                     self._create_sub_issues(issue, outcome)
                 if label_choices and outcome.labels:
-                    chosen = [label for label in outcome.labels if label in label_choices]
-                    if chosen:
-                        self._fenced(partial(self.host.add_labels, issue.number, chosen))
+                    self._apply_labels(issue, outcome.labels, label_choices)
                 body = (
                     f"{_UNDERSTANDING_HEADER}\n\n{outcome.restatement}\n\n"
                     f"{_UNDERSTANDING_FOOTER}\n\n{UNDERSTANDING_MARKER}"
