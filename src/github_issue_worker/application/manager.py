@@ -103,6 +103,7 @@ class RepositoryWatch:
     """Whatever the run factory needs for this repository (merge method, commands, ...)."""
     suspension_reason: str = ""
     """Empty while enabled; a denial or a failed access query blocks further work."""
+    max_active_issues_per_repository: int = 4
 
     def require_access(self) -> None:
         """Stop a running job before its next outward write, keeping its checkpoint."""
@@ -355,7 +356,16 @@ class Manager:
                 for slot in eligible
                 if self._idle(slot) and not self._limited(slot, now) and self._has_room(slot)
             ]
-            if not free:
+            if (
+                not free
+                or sum(
+                    1
+                    for number in watch.store.issues()
+                    if (stored := watch.store.read(number)) is not None
+                    and not watch.coordinator.policy.may_claim(stored.claim, now)
+                )
+                >= watch.max_active_issues_per_repository
+            ):
                 self._pending[watch.name].add(number)
                 self._label(watch, number, "worker:queued")
                 return

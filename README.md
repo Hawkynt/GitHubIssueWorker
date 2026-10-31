@@ -1100,7 +1100,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   worker can serve is labelled `worker:unserved` with one explanatory comment, and re-queued when an
   eligible worker appears in presence.
 - [ ] 🟥 **F11.12** `maxTakeovers` takeovers without progress mark the issue failed with the evidence.
-- [ ] 🟧 **F11.13** `maxActiveIssuesPerRepository` is honoured fleet-wide from the visible claims.
+- [x] 🟧 **F11.13** `maxActiveIssuesPerRepository` is honoured fleet-wide from the visible claims.
 - [ ] 🟧 **F11.14** Done claims and checkpoint refs of closed issues are garbage-collected after 30
   days, by compare-and-swap delete.
 - [ ] 🟦 **F11.15** Simulation test: 3 managers with 4 workers each, 4 agent kinds, random crashes,
