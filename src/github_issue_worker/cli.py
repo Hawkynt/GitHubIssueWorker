@@ -332,16 +332,31 @@ def _ui(args: argparse.Namespace) -> int:
 def _status(
     config: Configuration, args: argparse.Namespace, home: Path, runtime_factory: RuntimeFactory
 ) -> int:
-    from github_issue_worker.application.status import RepositoryClaims, render_status
+    from github_issue_worker.application.status import (
+        RepositoryClaims,
+        known_managers,
+        render_status,
+    )
     from github_issue_worker.domain.claim import ClaimPolicy
 
     runtime = runtime_factory(config, home, *_dirs(args))
     repositories = []
     for settings in config.repositories:
-        store = runtime.watch(settings).store
+        watch = runtime.watch(settings)
+        store = watch.store
         stored = (store.read(number) for number in store.issues())
         claims = tuple(entry.claim for entry in stored if entry)
-        repositories.append(RepositoryClaims(settings.repository, claims))
+        unserved = ()
+        host = getattr(watch, "host", None)
+        if host is not None:
+            with contextlib.suppress(Exception):
+                unserved = tuple(
+                    issue for issue in host.open_issues() if "worker:unserved" in issue.labels
+                )
+        managers = known_managers(claims, runtime.manager_id)
+        repositories.append(
+            RepositoryClaims(settings.repository, claims, managers=managers, unserved=unserved)
+        )
     fleet = config.fleet
     print(
         render_status(

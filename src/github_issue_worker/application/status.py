@@ -12,15 +12,30 @@ from datetime import datetime, timedelta
 
 from github_issue_worker.application.manager import WorkerSlot
 from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState
+from github_issue_worker.domain.issue import Issue
 from github_issue_worker.domain.model_name import display_model
 
 
 @dataclass(frozen=True, slots=True)
 class RepositoryClaims:
-    """Every claim recorded in one watched repository."""
+    """Every claim and fleet state recorded in one watched repository."""
 
     repository: str
-    claims: tuple[Claim, ...]
+    claims: tuple[Claim, ...] = ()
+    managers: tuple[str, ...] = ()
+    unserved: tuple[Issue, ...] = ()
+
+
+def known_managers(claims: Sequence[Claim], *extra: str) -> tuple[str, ...]:
+    """Every manager known in a repository from its claims, their run history, and presence."""
+    found = {manager for manager in extra if manager}
+    for claim in claims:
+        if claim.holder.manager:
+            found.add(claim.holder.manager)
+        for run in claim.runs:
+            if run.manager:
+                found.add(run.manager)
+    return tuple(sorted(found))
 
 
 def span(delta: timedelta) -> str:
@@ -63,6 +78,13 @@ def model_of(slot: WorkerSlot | None) -> str:
     if slot.observed_model:
         return display_model(slot.observed_model)
     return f"{display_model(slot.model)} (configured)" if slot.model else "-"
+
+
+def _claim_model(claim: Claim, slot: WorkerSlot | None) -> str:
+    from_slot = model_of(slot)
+    if from_slot != "-":
+        return from_slot
+    return display_model(claim.model) if claim.model else "-"
 
 
 def _worker_state(slot: WorkerSlot, limited_until: datetime | None, now: datetime) -> str:
@@ -118,6 +140,16 @@ def _claims(
     return [f"  {title}", *table(rows, "    ")]
 
 
+def _unserved(issues: Sequence[Issue]) -> list[str]:
+    rows = [["ISSUE", "ROUTING", "TITLE"]]
+    for issue in sorted(issues, key=lambda item: item.number):
+        routing = ", ".join(
+            sorted(label for label in issue.labels if label.startswith(("agent:", "needs:")))
+        )
+        rows.append([f"#{issue.number}", routing or "-", issue.title])
+    return ["  Unserved issues", *table(rows, "    ")]
+
+
 def _repository(
     repository: RepositoryClaims,
     manager_id: str,
@@ -132,6 +164,9 @@ def _repository(
     others = [claim for claim in held if claim.holder.manager != manager_id]
     finished = len(claims) - len(held)
     lines = [repository.repository]
+    if repository.managers:
+        managers = known_managers(claims, *repository.managers)
+        lines.append(f"  Known managers: {', '.join(managers)}")
     if mine:
         lines += _claims(
             "Claims held by this manager",
@@ -140,7 +175,7 @@ def _repository(
             lambda claim: claim.holder.worker,
             policy,
             now,
-            model=lambda claim: model_of(by_name.get(claim.holder.worker)),
+            model=lambda claim: _claim_model(claim, by_name.get(claim.holder.worker)),
         )
     if others:
         lines += _claims(
@@ -155,6 +190,8 @@ def _repository(
         lines.append("  no active claims")
     if finished:
         lines.append(f"  {finished} finished (done/released)")
+    if repository.unserved:
+        lines += _unserved(repository.unserved)
     return lines
 
 
