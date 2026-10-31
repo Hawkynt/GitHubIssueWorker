@@ -94,3 +94,17 @@ def test_a_page_that_lost_its_manager_says_so_and_recovers(browser: Browser) -> 
     finally:
         back.stop()
         page.close()
+
+
+def test_active_chips_pulse_slowly_and_blocked_ones_rapidly_in_red(
+    browser: Browser, server: UiServer
+) -> None:
+    page = browser.new_page(reduced_motion="no-preference")
+    page.goto(server.url + "/workers")
+    style = "el => { const s = getComputedStyle(el); return [s.animationName, s.animationDuration, s.color]; }"
+    active = page.eval_on_selector("[aria-label=claude] .track span.now", style)
+    blocked = page.eval_on_selector("[aria-label=codex] .track span.now.blocked", style)
+    assert active[:2] == ["beat", "2.4s"]
+    assert blocked[:2] == ["alarm", "0.6s"]
+    assert blocked[2] != active[2]  # red, not the steel of an active step
+    page.close()

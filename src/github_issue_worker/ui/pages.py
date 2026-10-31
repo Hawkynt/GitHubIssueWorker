@@ -115,6 +115,7 @@ h2 { font-size: 1.1rem; margin: 2rem 0 .5rem; }
 .flag.conflict { background: var(--brick-soft); color: var(--brick); }
 .track span.conflict { border-top-color: var(--brick); color: var(--brick); }
 .track span.waiting { border-top-color: var(--wait); color: var(--wait); }
+.track span.blocked { border-top-color: var(--brick); color: var(--brick); font-weight: 650; }
 .run.waiting { background: var(--wait-soft); }
 .lane.waiting { background-color: var(--wait-soft); border-radius: 8px;
   background-image: linear-gradient(90deg,
@@ -412,8 +413,12 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
   @keyframes blink { 50% { opacity: .35; } }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .track span.now:not(.conflict):not(.waiting) { animation: beat 2.4s ease-in-out infinite; }
+  .track span.now:not(.conflict):not(.waiting):not(.blocked) {
+    animation: beat 2.4s ease-in-out infinite; }
   @keyframes beat { 50% { border-top-color: var(--steel-soft); } }
+  .track span.blocked { animation: alarm .6s ease-in-out infinite; }
+  @keyframes alarm { 50% { border-top-color: var(--brick-soft); color: var(--muted);
+    box-shadow: 0 -3px 10px var(--brick); } }
 }
 """
 
@@ -765,7 +770,9 @@ def page(title: str, path: str, snapshot_id: str, body: str, live: bool = False)
 # --- workers -------------------------------------------------------------------------------------
 
 
-def _track(step: str | None, merge_conflict: bool = False, waiting: bool = False) -> str:
+def _track(
+    step: str | None, merge_conflict: bool = False, waiting: bool = False, blocked: str = ""
+) -> str:
     position = STEPS.index(step) if step in STEPS else -1
     cells = []
     for index, name in enumerate(STEPS):
@@ -774,6 +781,9 @@ def _track(step: str | None, merge_conflict: bool = False, waiting: bool = False
         if name == "merge" and merge_conflict:
             css = (css + " conflict").strip()
             title = ' title="Merge conflict"'
+        elif index == position and blocked:
+            css = (css + " blocked").strip()
+            title = f' title="Blocked: {e(blocked)}"'
         elif index == position and waiting:
             css = (css + " waiting").strip()
         current = ' aria-current="step"' if index == position else ""
@@ -886,7 +896,7 @@ def _instance(
         result = _run(
             palette.entities.get(worker.repository, FALLBACK),
             issue,
-            _track(worker.step, worker.merge_conflict, waiting),
+            _track(worker.step, worker.merge_conflict, waiting, worker.blocker),
             facts,
             label,
             actions,
