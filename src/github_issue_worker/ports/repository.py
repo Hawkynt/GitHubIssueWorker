@@ -47,6 +47,8 @@ class WaitingRun:
     id: int
     name: str
     url: str
+    event: str = ""
+    """What started it: ``pull_request`` is the run branch protection waits for."""
 
 
 @dataclass(frozen=True, slots=True)

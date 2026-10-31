@@ -202,9 +202,16 @@ class GitHubHost:
             self._path("actions/runs"),
             params={"head_sha": sha, "status": "action_required", "per_page": "100"},
         ).body
+        # The filter alone is not trusted: a run approved a moment ago may still be listed.
         return [
-            WaitingRun(int(run["id"]), str(run.get("name") or "workflow"), run.get("html_url", ""))
+            WaitingRun(
+                int(run["id"]),
+                str(run.get("name") or "workflow"),
+                run.get("html_url", ""),
+                str(run.get("event") or ""),
+            )
             for run in (data or {}).get("workflow_runs", [])
+            if run.get("status") == "completed" and run.get("conclusion") == "action_required"
         ]
 
     def approve_run(self, run: int) -> None:

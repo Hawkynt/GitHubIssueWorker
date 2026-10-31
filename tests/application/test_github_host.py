@@ -202,12 +202,29 @@ def test_runs_waiting_for_approval_are_found_and_approved() -> None:
         {
             ("GET", f"repos/{REPO}/actions/runs"): {
                 "workflow_runs": [
-                    {"id": 7, "name": "CI", "html_url": "https://x/runs/7"},
+                    {
+                        "id": 7,
+                        "name": "CI",
+                        "event": "pull_request",
+                        "status": "completed",
+                        "conclusion": "action_required",
+                        "html_url": "https://x/runs/7",
+                    },
+                    # approved a moment ago and running: no longer waiting, whatever the filter
+                    {
+                        "id": 8,
+                        "name": "CI",
+                        "event": "pull_request",
+                        "status": "in_progress",
+                        "conclusion": None,
+                        "html_url": "https://x/runs/8",
+                    },
                 ]
             }
         }
     )
     ((waiting),) = gh.waiting_for_approval("abc")
     assert (waiting.id, waiting.name, waiting.url) == (7, "CI", "https://x/runs/7")
+    assert waiting.event == "pull_request"
     gh.approve_run(7)
     assert ("POST", f"repos/{REPO}/actions/runs/7/approve", None) in api.calls

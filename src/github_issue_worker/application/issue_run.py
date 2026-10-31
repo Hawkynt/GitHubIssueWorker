@@ -29,7 +29,13 @@ from github_issue_worker.domain.split import (
 from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import AgentRun, RunReport
 from github_issue_worker.ports.clock import Clock
-from github_issue_worker.ports.repository import Blocker, Check, PullRequest, RepositoryHost
+from github_issue_worker.ports.repository import (
+    Blocker,
+    Check,
+    PullRequest,
+    RepositoryHost,
+    WaitingRun,
+)
 from github_issue_worker.ports.workspace import WorkspacePort
 from github_issue_worker.product import MARKER_PREFIX
 
@@ -65,6 +71,12 @@ _REBASE = frozenset({"dirty", "behind"})
 _FAILED = frozenset({"failure", "timed_out", "cancelled", "action_required", "startup_failure"})
 _NOT_STARTED = ("job was not started", "spending limit", "billing")
 """Signs that CI never ran the job, which no change to the code can repair (seen live)."""
+
+
+def _described(run: WaitingRun) -> str:
+    """ "CI's pull request run": which of the workflow's runs waits, by what started it."""
+    kind = {"pull_request": "pull request", "workflow_dispatch": "dispatched", "push": "push"}
+    return f"{run.name}'s {kind.get(run.event, run.event or 'held')} run"
 
 
 def _never_started(check: Check) -> bool:
@@ -430,10 +442,11 @@ class IssueRun:
         if not waiting:
             self.blocked(None)
             return
-        names = ", ".join(sorted({run.name for run in waiting}))
+        names = ", ".join(sorted({_described(run) for run in waiting}))
         self.blocked(
             Blocker(
-                reason=f"CI ({names}) waits for approval to run",
+                reason=f"{names} {'waits' if len(waiting) == 1 else 'wait'} for approval to run; "
+                "the merge needs it, whatever else already runs",
                 url=waiting[0].url or current.url,
                 approvals=tuple(run.id for run in waiting),
             )

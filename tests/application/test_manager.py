@@ -417,7 +417,10 @@ def test_a_finished_run_leaves_no_blocker_behind() -> None:
     original = f.run_issue
 
     def blocked_then_merged(watch, worker, handle, item, comments, kind):  # type: ignore[no-untyped-def]
-        worker.blocker = Blocker("CI (CI) waits for approval to run", approvals=(7,))
+        worker.blocker = Blocker(
+            "CI's pull request run waits for approval to run",
+            approvals=(7,),
+        )
         return original(watch, worker, handle, item, comments, kind)
 
     f.manager.run_issue = blocked_then_merged

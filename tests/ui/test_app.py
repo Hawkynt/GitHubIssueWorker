@@ -580,10 +580,13 @@ def test_a_run_blocked_on_ci_approval_says_so_and_can_be_approved(
     crew = html.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
     assert "Needs you" in crew and "1 run waits on something only you can do" in crew
     codex = crew.split('aria-label="codex"', 1)[1].split("class=lane", 1)[0]
-    assert '"flag blocked">Blocked</span> CI (CI) waits for approval to run' in codex
+    assert (
+        '"flag blocked">Blocked</span> CI&#x27;s pull request run waits for approval to run'
+        in codex
+    )
     assert "https://github.com/acme/billing-cli/actions/runs/9120391" in codex
     assert 'action="/workers/codex/approve-ci"' in codex
-    assert "blocked: CI (CI) waits for approval to run" in client.get("/").text
+    assert "blocked: CI&#x27;s pull request run waits for approval to run" in client.get("/").text
 
     response = client.post("/workers/codex/approve-ci")
     assert response.status_code == 200 and backend.approved == ["codex"]
@@ -594,6 +597,9 @@ def test_a_run_blocked_on_ci_approval_says_so_and_can_be_approved(
 def test_a_blocked_runs_current_step_chip_is_marked_blocked(client: TestClient) -> None:
     crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
     codex = crew.split('aria-label="codex"', 1)[1].split("class=lane", 1)[0]
-    assert '<span class="now blocked" aria-current="step" title="Blocked: CI (CI) waits' in codex
+    assert (
+        '<span class="now blocked" aria-current="step" title="Blocked: CI&#x27;s pull request run waits'
+        in codex
+    )
     claude = crew.split('aria-label="claude"', 1)[1].split("class=lane", 1)[0]
     assert '<span class="now" aria-current="step">verify<' in claude  # active, not blocked

@@ -428,9 +428,12 @@ def test_conflict_detected_at_merge_is_checkpointed_before_the_merge_fails(
 def test_ci_waiting_for_approval_is_reported_as_a_blocker_until_it_runs(tmp_path: Path) -> None:
     h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
     h.host.states = ["blocked", "blocked", "clean"]
-    h.host.approvals = [[WaitingRun(7, "CI", "https://x/runs/7")], []]
+    h.host.approvals = [[WaitingRun(7, "CI", "https://x/runs/7", "pull_request")], []]
     seen: list[str | None] = []
     run = h.run(blocked=lambda blocker: seen.append(blocker.reason if blocker else None))
     assert run.kind == "merged"
-    assert seen[0] is not None and "waits for approval" in seen[0] and "CI" in seen[0]
+    assert seen[0] == (
+        "CI's pull request run waits for approval to run; the merge needs it, whatever else "
+        "already runs"
+    )
     assert seen[-1] is None  # cleared once the run started
