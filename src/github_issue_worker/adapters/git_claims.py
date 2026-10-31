@@ -60,7 +60,8 @@ class GitClaimStore:
                 numbers.append(int(tail))
         return sorted(numbers)
 
-    def read(self, issue: int) -> StoredClaim | None:
+    def _fetch(self, issue: int) -> str | None:
+        """Fetch the claim ref of ``issue`` to its local mirror; None when there is none."""
         seen = f"{_SEEN}/{issue}"
         fetched = self._run(
             "fetch", "--quiet", "--no-tags", self._remote, f"+{_CLAIMS}/{issue}:{seen}", check=False
@@ -70,10 +71,37 @@ class GitClaimStore:
                 self._run("update-ref", "-d", seen, check=False)
                 return None
             raise ClaimStoreError(f"reading the claim of issue {issue}: {fetched.stderr.strip()}")
+        return seen
 
+    def read(self, issue: int) -> StoredClaim | None:
+        seen = self._fetch(issue)
+        if seen is None:
+            return None
         version = self._run("rev-parse", seen).stdout.strip()
         content = self._run("cat-file", "blob", f"{version}:{_FILE}").stdout
         return StoredClaim(version, Claim.from_json(json.loads(content)))
+
+    def history(self, issue: int, limit: int) -> list[Claim]:
+        seen = self._fetch(issue)
+        if seen is None:
+            return []
+        commits = self._run("log", "--first-parent", "--format=%H", f"-n{limit}", seen).stdout
+        wanted = "".join(f"{commit}:{_FILE}\n" for commit in commits.split())
+        listed = self._run("cat-file", "--batch", stdin=wanted).stdout
+        # Each object is a header line and the file's content; the JSON decoder finds its end, so
+        # the byte sizes in the headers are not needed on the decoded text.
+        decoder = json.JSONDecoder()
+        versions = []
+        position = 0
+        while (header := listed.find("\n", position)) != -1:
+            if listed[position:header].endswith(" missing"):
+                position = header + 1
+                continue
+            data, position = decoder.raw_decode(listed, header + 1)
+            versions.append(Claim.from_json(data))
+            while position < len(listed) and listed[position].isspace():
+                position += 1
+        return versions[::-1]
 
     def create(self, claim: Claim) -> str:
         commit = self._commit(claim, parent=None)

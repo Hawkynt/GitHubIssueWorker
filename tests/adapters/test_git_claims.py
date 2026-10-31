@@ -196,3 +196,16 @@ def test_claims_are_pushed_to_the_explicit_url_when_the_push_url_is_disabled(
     assert stored is not None and stored.version == version
     store.delete(42, version)
     assert store.read(42) is None
+
+
+def test_the_claim_history_is_read_from_the_refs_commits(store: GitClaimStore) -> None:
+    # F14.6: every version of a claim is a commit, so its history is the ref's commit chain.
+    first = claim()
+    version = store.create(first)
+    renewed = POLICY.renewed(first, T0 + timedelta(hours=1))
+    version = store.replace(version, renewed)
+    stepped = POLICY.renewed(renewed, T0 + timedelta(hours=2), step="implement")
+    store.replace(version, stepped)
+    assert store.history(42, 10) == [first, renewed, stepped]
+    assert store.history(42, 2) == [renewed, stepped]
+    assert store.history(7, 10) == []
