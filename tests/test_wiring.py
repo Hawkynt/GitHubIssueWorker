@@ -164,6 +164,7 @@ def _run_commit_through_wired_issue_run(
     host = FakeHost(repository=repository, issues={9: issue})
     workspace = FakeWorkspace(tmp_path)
     workspace.head_listener = lambda branch, sha: host.head_of.__setitem__(branch, sha)
+    host.link_listener = workspace.remote.__setitem__
     watch = RepositoryWatch(
         name=repository,
         host=host,

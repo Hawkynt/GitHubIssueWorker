@@ -43,6 +43,13 @@ class FakeHost:
     """Runs waiting for approval in successive calls; the last answer repeats."""
     approved: list[int] = field(default_factory=list)
     """Sub-issue numbers per parent, in the order they were attached."""
+    links: dict[int, list[str]] = field(default_factory=dict)
+    """The branches in each issue's Development panel."""
+    link_calls: list[tuple[int, str, str]] = field(default_factory=list)
+    link_errors: list[Exception] = field(default_factory=list)
+    """Raised by the next ``link_branch`` calls, one each, before anything is linked."""
+    link_listener: Callable[[str, str], None] | None = None
+    """Told the branch and commit ``createLinkedBranch`` created on the remote."""
 
     def info(self) -> RepositoryInfo:
         return RepositoryInfo("main", True, ("squash", "merge"))
@@ -140,6 +147,19 @@ class FakeHost:
     def sub_issues(self, parent: int) -> list[Issue]:
         return [self.issue(number) for number in self.children.get(parent, [])]
 
+    def linked_branches(self, issue: int) -> list[str]:
+        return list(self.links.get(issue, []))
+
+    def link_branch(self, issue: int, branch: str, oid: str) -> None:
+        self.link_calls.append((issue, branch, oid))
+        if self.link_errors:
+            raise self.link_errors.pop(0)
+        self.links.setdefault(issue, []).append(branch)
+        if branch not in self.remote_branches:
+            self.remote_branches.append(branch)
+        if self.link_listener:
+            self.link_listener(branch, oid)
+
 
 @dataclass
 class FakeWorkspace:
@@ -169,6 +189,9 @@ class FakeWorkspace:
     def head(self, worktree: Path) -> str:
         commits = self.trees[int(worktree.name)]
         return commits[-1].sha if commits else "base"
+
+    def fork_point(self, worktree: Path, base: str) -> str:
+        return "base"
 
     def rebase(self, worktree: Path, base: str) -> bool:
         return self.rebase_ok

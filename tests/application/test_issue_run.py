@@ -65,6 +65,7 @@ class Harness:
         self.workspace.head_listener = lambda branch, sha: self.host.head_of.__setitem__(
             branch, sha
         )
+        self.host.link_listener = self.workspace.remote.__setitem__
         self.agent = ScriptedAgent(steps(self) if callable(steps) else steps)
         self.verify_results = list(verify or [(True, "all green")])
         self.sessions: dict[tuple[int, str], str] = {}

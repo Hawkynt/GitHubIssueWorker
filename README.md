@@ -1003,7 +1003,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F5.1** One cached clone per repository and manager, fetched before each run.
 - [ ] 🟥 **F5.2** One `git worktree` per claimed issue on branch `issue/<n>-<slug>`, created from the
   freshly fetched base branch, or from the latest checkpoint when continuing.
-- [ ] 🟥 **F5.3** The branch is linked to the issue (GraphQL `createLinkedBranch`), so it shows in the
+- [x] 🟥 **F5.3** The branch is linked to the issue (GraphQL `createLinkedBranch`), so it shows in the
   issue's *Development* panel. The link is made, fenced, before the branch's first push:
   `createLinkedBranch` creates the remote branch at the base commit the work started from, and the
   push then fast-forwards it under the usual lease. A branch already among the issue's linked

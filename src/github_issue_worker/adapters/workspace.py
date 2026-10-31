@@ -140,6 +140,10 @@ class Workspace:
         except FileNotFoundError:
             return None
 
+    def fork_point(self, worktree: Path, base: str) -> str:
+        """The last commit the branch shares with the fetched ``base``: one GitHub already has."""
+        return self._git(worktree, "merge-base", "HEAD", f"origin/{base}").strip()
+
     def rebase(self, worktree: Path, base: str) -> bool:
         """Rebase onto the freshly fetched ``base``. A conflict is aborted and reported as False."""
         self._git(worktree, "fetch", "--quiet", "origin")
