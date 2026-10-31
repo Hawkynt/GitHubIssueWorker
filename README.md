@@ -1142,7 +1142,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   provider/model`, with every permission allowed in the run's own configuration, for models behind
   any provider OpenCode supports, local ones included. Tested against a fake replaying captured
   OpenCode output; verified against a real installation in F15.8.
-- [ ] 🟥 **F12.7** `command` adapter: argument template with `{prompt}`, `{worktree}`, `{outcome}`,
+- [x] 🟥 **F12.7** `command` adapter: argument template with `{prompt}`, `{worktree}`, `{outcome}`,
   `{session}` placeholders, configured limit patterns and exit codes, for any further CLI agent.
 - [ ] 🟥 **F12.8** `workers` command: list workers with agent, installation, version, account,
   availability and reset time. `--detect` proposes one worker per installation it finds. `add-worker`
