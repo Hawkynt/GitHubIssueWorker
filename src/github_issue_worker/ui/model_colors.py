@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import zlib
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 
 from github_issue_worker.configuration import HueSegment, ModelColorsSettings
 from github_issue_worker.domain.model_name import model_creator, model_family
@@ -70,7 +71,7 @@ def _segment(creator: str, colors: ModelColorsSettings) -> HueSegment:
     region = colors.other
     width = min(region.width, _SUBSEGMENT)
     reach = max(region.width - width, 0)
-    centre = region.hue + reach * (_unit("maker", creator) - 0.5)
+    centre = region.hue + reach * (maker_place(creator) - 0.5)
     return HueSegment(hue=int(centre) % 360, width=width)
 
 
@@ -89,6 +90,31 @@ def model_color(name: str, colors: ModelColorsSettings) -> str:
     return _color(_segment(creator, colors), _slot("hue", model_family(name), _HUES), 0)
 
 
+@dataclass(frozen=True, slots=True)
+class Placement:
+    """Where one model name lands: its maker, its family's hue place, its shade at that hue."""
+
+    name: str
+    creator: str
+    place: int
+    shade: int
+
+
+def placements(names: Iterable[str]) -> list[Placement]:
+    """Each model name's place, in order of first appearance; ``Other`` and blanks are left out."""
+    seen: dict[tuple[str, int], list[str]] = {}
+    placed: list[Placement] = []
+    for name in dict.fromkeys(names):
+        if name == OTHER or not name.strip():
+            continue
+        creator = model_creator(name)
+        place = _slot("hue", model_family(name), _HUES)
+        at_hue = seen.setdefault((creator, place), [])
+        at_hue.append(name)
+        placed.append(Placement(name, creator, place, len(at_hue) - 1))
+    return placed
+
+
 def model_series(names: Iterable[str], colors: ModelColorsSettings) -> dict[str, str]:
     """Colour per model name, in order of first appearance.
 
@@ -97,19 +123,23 @@ def model_series(names: Iterable[str], colors: ModelColorsSettings) -> dict[str,
     lightness steps in turn *within one hue*, so ``Claude Opus 5`` and ``Claude Opus 5.5`` are one
     hue in two shades and two names of one maker never land on one colour.
     """
-    seen: dict[tuple[str, int], list[str]] = {}
-    series: dict[str, str] = {}
-    for name in dict.fromkeys(names):
-        if name == OTHER or not name.strip():
-            series[name] = GREY
-            continue
-        creator = model_creator(name)
-        place = _slot("hue", model_family(name), _HUES)
-        at_hue = seen.setdefault((creator, place), [])
-        if name not in at_hue:
-            at_hue.append(name)
-        series[name] = _color(_segment(creator, colors), place, at_hue.index(name))
-    return series
+    ordered = list(dict.fromkeys(names))
+    placed = {p.name: p for p in placements(ordered)}
+    return {
+        name: _color(_segment(p.creator, colors), p.place, p.shade)
+        if (p := placed.get(name)) is not None
+        else GREY
+        for name in ordered
+    }
+
+
+def maker_place(creator: str) -> float:
+    """Where in the ``other`` segment an unlisted maker keeps its own part, from 0 to 1."""
+    return _unit("maker", creator)
+
+
+WHEEL = {"hues": _HUES, "lightness": _LIGHTNESS, "chroma": _CHROMA, "subsegment": _SUBSEGMENT}
+"""The constants a colour is made of, for a page that redraws model colours as a segment changes."""
 
 
 def entity_series(names: Iterable[str]) -> dict[str, str]:
