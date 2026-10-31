@@ -20,6 +20,7 @@ SCREENSHOTS = (
     ("issues.png", "/", True),
     ("workers.png", "/workers", True),
     ("log.png", "/workers/claude/log", False),
+    ("issue.png", "/issues/acme/telemetry-gateway/214", True),
     ("repositories.png", "/repositories", False),
     ("fleet.png", "/fleet", False),
     ("settings.png", "/settings", True),

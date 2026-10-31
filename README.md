@@ -243,6 +243,13 @@ runs, and their output, refreshed as it goes.
 
 ![The log of a worker: messages, commands and their output](docs/screenshots/log.png)
 
+**Issue.** One issue in full: who holds its claim, at which step and until when; every finished run
+on it, by any manager; the outcome and the journal of its worktree on this machine; the tail of the
+running agent's log; and the claim's history, newest first, its renewals folded into one row. Skip
+it, release it or open its pull request from the top of the page.
+
+![Issue page with its claim, runs, journal, log tail and claim history](docs/screenshots/issue.png)
+
 **Repositories.** Readouts for the watch list, then one panel per repository with its overrides; a
 repository is added only when your account can push to it.
 
