@@ -11,6 +11,7 @@ import random
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
+from github_issue_worker.application.accounts import account_usage
 from github_issue_worker.application.history import RunRecord
 from github_issue_worker.configuration import Configuration, validate
 from github_issue_worker.ui.model import (
@@ -77,6 +78,9 @@ CONFIG = {
     ],
 }
 
+GOOGLE_RESET = NOW + timedelta(hours=2, minutes=40)
+"""When the demo's google-pro account comes back from its usage limit."""
+
 WORKERS = (
     WorkerView(
         "claude",
@@ -141,19 +145,33 @@ WORKERS = (
     WorkerView(
         "codex.2", "Codex", "openai-plus", "GPT 6.1 Sol", "idle", group="codex", agent_kind="codex"
     ),
-    *(
-        WorkerView(
-            name,
-            "Antigravity",
-            "google-pro",
-            "Gemini 4 Argon (Medium)",
-            "limited",
-            limited_until=NOW + timedelta(hours=2, minutes=40),
-            group="antigravity",
-            reason="Token allowance reached",
-            agent_kind="antigravity",
-        )
-        for name in ("antigravity", "antigravity.2")
+    WorkerView(
+        "antigravity",
+        "Antigravity",
+        "google-pro",
+        "Gemini 4 Argon (Medium)",
+        "limited",
+        limited_until=GOOGLE_RESET,
+        repository="acme/design-tokens",
+        issue=61,
+        issue_title="Generate dark-mode variants of every surface token",
+        step="implement",
+        branch="issue/61-generate-dark-mode-variants-of-every-surface",
+        worktree="~/.cache/GitHubIssueWorker/acme/design-tokens/issues/61",
+        group="antigravity",
+        reason="Token allowance reached",
+        agent_kind="antigravity",
+    ),
+    WorkerView(
+        "antigravity.2",
+        "Antigravity",
+        "google-pro",
+        "Gemini 4 Argon (Medium)",
+        "limited",
+        limited_until=GOOGLE_RESET,
+        group="antigravity",
+        reason="Token allowance reached",
+        agent_kind="antigravity",
     ),
     WorkerView(
         "local",
@@ -235,6 +253,20 @@ CLAIMS = (
         "issue/91-export-statements-as-csv",
         model="Qwen3.8 Flash Next IQ3_S",
     ),
+    ClaimView(
+        "acme/design-tokens",
+        61,
+        f"{MANAGER}/antigravity",
+        True,
+        "paused",
+        "implement",
+        NOW - timedelta(minutes=6),
+        NOW + timedelta(days=7) - timedelta(minutes=6),
+        "issue/61-generate-dark-mode-variants-of-every-surface",
+        paused_until=GOOGLE_RESET,
+        wait_reason="Token allowance reached",
+        model="Gemini 4 Argon (Medium)",
+    ),
 )
 
 REPOSITORIES = (
@@ -246,7 +278,7 @@ REPOSITORIES = (
     RepositoryView(
         "acme/billing-cli", NOW - timedelta(days=3), {"working": 2, "awaiting-review": 1}
     ),
-    RepositoryView("acme/design-tokens", NOW - timedelta(hours=6), {}),
+    RepositoryView("acme/design-tokens", NOW - timedelta(hours=6), {"paused": 1}),
 )
 
 
@@ -313,6 +345,20 @@ ISSUES: tuple[IssueView, ...] = (
     ),
     IssueView(
         "acme/design-tokens", 12, "Rename the colour tokens to their roles", "waiting for a worker"
+    ),
+    IssueView(
+        "acme/design-tokens",
+        61,
+        "Generate dark-mode variants of every surface token",
+        "paused until the usage limit resets",
+        "antigravity",
+        MANAGER,
+        True,
+        "Gemini 4 Argon (Medium)",
+        "implement",
+        NOW - timedelta(minutes=6),
+        wait_reason="Token allowance reached",
+        paused_until=GOOGLE_RESET,
     ),
 )
 
@@ -477,6 +523,17 @@ class DemoBackend:
             ),
             claims=CLAIMS,
             issues=ISSUES,
+            accounts=account_usage(
+                self._config.accounts,
+                {worker.name: worker.account for worker in workers},
+                {w.account: w.limited_until for w in workers if w.limited_until}.get,
+                (
+                    (claim.repository, claim.issue, claim.holder.rpartition("/")[2])
+                    for claim in CLAIMS
+                    if claim.mine and claim.state == "paused"
+                ),
+                NOW,
+            ),
         )
 
     def config(self) -> Configuration:

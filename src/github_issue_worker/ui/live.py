@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from github_issue_worker.adapters.process import terminate
+from github_issue_worker.application.accounts import AccountUsage, account_usage
 from github_issue_worker.application.coordinator import ClaimHandle
 from github_issue_worker.application.github_host import GitHubHost
 from github_issue_worker.application.history import RunRecord, fleet_records, merged_history
@@ -134,7 +135,27 @@ class RuntimeBackend:
             for settings in self._runtime.config.repositories
         )
         return Snapshot(
-            self._runtime.manager_id, now, workers, repositories, self._claims, self._issues(now)
+            self._runtime.manager_id,
+            now,
+            workers,
+            repositories,
+            self._claims,
+            self._issues(now),
+            self._accounts(now),
+        )
+
+    def _accounts(self, now: datetime) -> tuple[AccountUsage, ...]:
+        paused = (
+            (claim.repository, claim.issue, claim.holder.rpartition("/")[2])
+            for claim in self._claims
+            if claim.mine and claim.state == "paused"
+        )
+        return account_usage(
+            self._runtime.config.accounts,
+            {slot.name: slot.account for slot in self._manager.workers},
+            self._runtime.state.limited_until,
+            paused,
+            now,
         )
 
     def _issues(self, now: datetime) -> tuple[IssueView, ...]:

@@ -194,8 +194,10 @@ be configured: they find each other's claims in the repository.
 comment, push and merge it would have made.
 
 `github-issue-worker status` shows what is going on, in headed sections: the manager, its workers
-(agent, account, and `limited until …` while the account waits for its reset), then one section per
-watched repository with the claims held by this manager apart from those held by other managers.
+(agent, account, and `limited until …` while the account waits for its reset), its accounts (each
+one `available` or `limited`, when the limit resets, and the issues its workers paused that wait on
+it), then one section per watched repository with the claims held by this manager apart from those
+held by other managers.
 Each claim shows its worker, state, step, branch, how long ago it was renewed and when it expires;
 paused claims show when they resume and claims nobody renewed for validity plus grace show as
 `abandoned`. Finished claims (done or released) are only counted. Times are UTC with the distance
@@ -219,8 +221,9 @@ the colour of the model it runs: agent, account and model, with a sub-row per in
 lets run at once: a square per issue, coloured by repository, with the issue (its description as
 tooltip), a track through the six steps of a run, its branch, which opens the worktree, and its own
 log and stop & release. When other managers hold issues, a remote row follows with a sub-row for
-each, its branch linked on GitHub. Below: a flight log of every run of the last day per worker,
-issues merged per day by model, agent or repository over 30, 90 or 180 days, the model share, the
+each, its branch linked on GitHub. Then the accounts: each one available or limited, its reset
+counting down, and the issues paused on it. Below: a flight log of every run of the last day per
+worker, issues merged per day by model, agent or repository over 30, 90 or 180 days, the model share, the
 running total of merges per model (a line each, or stacked into the total), time to merge, the busy hours by weekday, the weekly model mix
 and a ledger of every model used. Every model carries one colour through all of it, drawn from its
 maker's hue segment and the model's own name, so `Opus 5` and `Opus 5.5` stay the same hue and a
@@ -646,7 +649,7 @@ not a second program: what the UI changes, the manager does, with the same check
 
 | Page | Shows | Lets you |
 | --- | --- | --- |
-| **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
+| **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. Every account: available or limited, the reset time counting down, and each issue paused on it as a link. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
 | **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), with the box completing the owner and then, after the `/`, that owner's repositories your account can push to and does not watch yet; the list is read in the background and kept in memory for 10 minutes. Edit its per-repository overrides, remove one. |
 | **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, model colours, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. The model colours are edited on a colour wheel as well (F14.20). |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
@@ -1161,7 +1164,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   fleet.
 - [ ] 🟥 **F13.6** At reset plus jitter, one minimal probe. On success, paused issues resume and the
   account's workers claim again, with no human action.
-- [ ] 🟧 **F13.7** The UI and `status` show each account's state, reset time and which issues wait on
+- [x] 🟧 **F13.7** The UI and `status` show each account's state, reset time and which issues wait on
   it.
 
 ### F14 — Local UI
