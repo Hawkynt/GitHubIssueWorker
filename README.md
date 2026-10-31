@@ -721,7 +721,7 @@ forced termination; no stale PID cleanup is needed. Lock files live in the machi
 directory and are retained for safe reuse; they are not configuration settings. Failure to access
 or acquire the lock for reasons other than an existing owner refuses startup with a diagnostic.
 Managers using different configuration paths may run together (use different UI ports or `--no-ui`
-where needed). Managers on different machines remain independent even with the same configuration
+where needed); each keeps its own state, manager id and cache, see below. Managers on different machines remain independent even with the same configuration
 path. Repository claims continue to coordinate their issue ownership; this lock is not a fleet lock.
 
 **Every key below is editable in the UI's Settings page**, and the file, the CLI and the UI are three
@@ -830,9 +830,14 @@ first, and a moved UI listener reopens on its new address.
 | `maxProseLines` | 2 | Commit body lines allowed besides change lines (`+ - * # !` and a space, or their indented continuation). More, and the commit is sent back to be rewritten as change lines. |
 | `forbiddenWords` | agent and vendor names | Case-insensitive whole-word regular-expression fragments the commit gate refuses (`claude`, `anthropic`, `codex`, `openai`, `gemini`, `antigravity`, `opencode`, `llm`, `agents?`). `AI` as a word, `generated with` and 🤖 stay forbidden whatever this list says. |
 
-Local state (poll cursors, ETags, native conversation ids, costs) lives in
+Local state (poll cursors, ETags, native conversation ids, costs, the manager id) lives in
 `~/.local/state/GitHubIssueWorker/` (`%LOCALAPPDATA%` on Windows). Clones and worktrees live under
-`~/.cache/GitHubIssueWorker/`.
+`~/.cache/GitHubIssueWorker/`. Both belong to one configuration: the default configuration uses these
+directories themselves, any other configuration its own `configurations/<key>/` below each of them,
+where `<key>` derives from the canonical configuration path (F3.6). Two configurations therefore
+never share a manager id, a conversation or a worktree, and one manager's housekeeping never
+removes another's worktree. `--state-dir` and `--cache-dir` replace these defaults; giving two
+configurations the same explicit directory makes them one manager in the claims and is not supported.
 
 Each invocation keeps its transcript under the state directory's
 `logs/<owner>/<repository>/<issue>/` as a unique `.ndjson` file. A matching `.json` file records
