@@ -429,19 +429,22 @@ class IssueRun:
                 return "ci", "The pull request's checks fail:\n\n" + "\n".join(lines)
             if self.clock.now() >= deadline:
                 return "timeout", ""
-            self._report_approvals(current)
-            self.sleep(self.settings.check_interval.total_seconds())
+            waiting = self._report_approvals(current)
+            # Someone may approve any moment: look again soon, so the blocker goes as soon as
+            # the runs start.
+            interval = self.settings.check_interval.total_seconds()
+            self.sleep(min(interval, 10.0) if waiting else interval)
 
     def _conflict(self, conflict: bool) -> None:
         self._handle = self.coordinator.set_merge_conflict(self._handle, conflict)
         self.conflict_changed(conflict)
 
-    def _report_approvals(self, current: PullRequest) -> None:
+    def _report_approvals(self, current: PullRequest) -> bool:
         """CI that GitHub holds back for approval would wait silently; say so where it shows."""
         waiting = self.host.waiting_for_approval(current.head_sha)
         if not waiting:
             self.blocked(None)
-            return
+            return False
         names = ", ".join(sorted({_described(run) for run in waiting}))
         self.blocked(
             Blocker(
@@ -451,6 +454,7 @@ class IssueRun:
                 approvals=tuple(run.id for run in waiting),
             )
         )
+        return True
 
     def _merge(
         self, issue: Issue, pull: PullRequest, branch: str, tree: Path, base: str

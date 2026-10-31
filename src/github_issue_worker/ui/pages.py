@@ -422,7 +422,7 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
     50% { border-top-color: #e2f2ff; color: #e2f2ff; background-color: #4aa3ff40;
       box-shadow: inset 0 18px 22px -6px #4aa3ff, 0 0 22px 0 #4aa3ffcc;
       text-shadow: 0 0 10px #4aa3ff, 0 0 3px #ffffff; } }
-  .track span.blocked { animation: alarm .6s ease-in-out infinite; }
+  .track span.blocked, .track span.conflict { animation: alarm .6s ease-in-out infinite; }
   @keyframes alarm {
     0%, 100% { box-shadow: inset 0 8px 10px -8px var(--brick); text-shadow: none;
       background-color: #e07a6b14; }
@@ -788,12 +788,15 @@ def _track(
     for index, name in enumerate(STEPS):
         css = "now" if index == position else "past" if index < position else ""
         title = ""
-        if name == "merge" and merge_conflict:
-            css = (css + " conflict").strip()
-            title = ' title="Merge conflict"'
-        elif index == position and blocked:
-            css = (css + " blocked").strip()
-            title = f' title="Blocked: {e(blocked)}"'
+        # One chip is active: the current step. Whatever needs the user marks it, and only it.
+        reasons = [
+            *(["Merge conflict"] if merge_conflict else []),
+            *([f"Blocked: {blocked}"] if blocked else []),
+        ]
+        if index == position and reasons:
+            marks = [*(["conflict"] if merge_conflict else []), *(["blocked"] if blocked else [])]
+            css = " ".join([css, *marks])
+            title = f' title="{e("; ".join(reasons))}"'
         elif index == position and waiting:
             css = (css + " waiting").strip()
         current = ' aria-current="step"' if index == position else ""

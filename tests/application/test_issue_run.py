@@ -437,3 +437,17 @@ def test_ci_waiting_for_approval_is_reported_as_a_blocker_until_it_runs(tmp_path
         "already runs"
     )
     assert seen[-1] is None  # cleared once the run started
+
+
+def test_while_ci_waits_for_approval_the_run_looks_again_within_ten_seconds(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
+    h.host.states = ["blocked", "blocked", "clean"]
+    h.host.approvals = [[WaitingRun(7, "CI", "https://x/runs/7", "pull_request")], []]
+    slept: list[float] = []
+    original = h.clock.advance
+    h.clock.advance = lambda delta: (slept.append(delta.total_seconds()), original(delta))[1]  # type: ignore[method-assign]
+    assert h.run().kind == "merged"
+    assert slept[0] == 10.0  # blocked: soon again
+    assert slept[1] == 30.0  # no longer blocked: the normal interval

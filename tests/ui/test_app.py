@@ -598,8 +598,8 @@ def test_a_blocked_runs_current_step_chip_is_marked_blocked(client: TestClient) 
     crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
     codex = crew.split('aria-label="codex"', 1)[1].split("class=lane", 1)[0]
     assert (
-        '<span class="now blocked" aria-current="step" title="Blocked: CI&#x27;s pull request run waits'
-        in codex
-    )
+        '<span class="now conflict blocked" aria-current="step" '
+        'title="Merge conflict; Blocked: CI&#x27;s pull request run waits'
+    ) in codex
     claude = crew.split('aria-label="claude"', 1)[1].split("class=lane", 1)[0]
     assert '<span class="now" aria-current="step">verify<' in claude  # active, not blocked

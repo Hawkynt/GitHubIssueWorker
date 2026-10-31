@@ -1198,9 +1198,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟧 **F14.18** Feedback colours: an issue waiting for a requested human answer has a
   yellow status chip even after its claim is released. Token, spending-allowance and rate-limit
   waits have gray chips, with the reason and reset time when known. Idle, paused and resource-waiting
-  worker boxes are gray; a worker still executing stays active. A merge conflict makes the Merge
-  progress chip red through refreshes, repair steps and restarts until resolution, independently of
-  a gray worker box. Live refresh clears obsolete colours. Status text stays readable in light and
+  worker boxes are gray; a worker still executing stays active. A worker shows exactly one active
+  progress chip, its current step; what needs the user marks that chip and no other. A merge
+  conflict or CI waiting for approval turns the current chip red and makes it pulse rapidly, with
+  the reason as its title, through refreshes, repair steps and restarts until resolution,
+  independently of a gray worker box; otherwise the current chip pulses slowly. Live refresh clears obsolete colours. Status text stays readable in light and
   dark schemes, repository colours keep their meaning, and deterministic demos cover these states.
 - [x] 🟧 **F14.19** Model colours: every model series wears a colour of its maker's hue segment —
   `modelColors.anthropic` from orange to yellow, `.google` green, `.openai` blue, and `.other` a
