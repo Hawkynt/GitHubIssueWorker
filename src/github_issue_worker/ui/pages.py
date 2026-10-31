@@ -45,7 +45,7 @@ from github_issue_worker.ui.charts import (
     timeline,
 )
 from github_issue_worker.ui.forms import HELP, FormField, display, fields_of, is_set, value_at
-from github_issue_worker.ui.hue_wheel import hue_wheel
+from github_issue_worker.ui.hue_wheel import LABELS, hue_wheel
 from github_issue_worker.ui.model import STEPS, ClaimView, IssueView, Snapshot, WorkerView
 from github_issue_worker.ui.model_colors import (
     GREY,
@@ -163,6 +163,10 @@ legend { font-weight: 650; font-size: 1.05rem; padding: 0 .5rem 0 0; }
 .field label { font-weight: 550; }
 .field .help { color: var(--muted); font-size: 13px; }
 .field .source { color: var(--muted); font-size: 12px; }
+.field.segment .maker { font-weight: 550; }
+.field.segment .pair { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; }
+.field.segment .pair label { color: var(--muted); font-size: 13px; }
+.field.segment .pair input { width: 5.5rem; }
 .field.error input, .field.error select, .field.error textarea { border-color: var(--brick); }
 input.changed, select.changed, textarea.changed { background: var(--changed);
   border-color: var(--changed-rule); }
@@ -1684,6 +1688,10 @@ def _saved(saved: str | None, value: str) -> str:
     return f' data-saved="{e(saved)}"' + (' class="changed"' if changed else "")
 
 
+def _ident(field: FormField) -> str:
+    return "f-" + field.path.replace(".", "-").replace("[", "-").replace("]", "")
+
+
 def _input(
     field: FormField,
     value: str,
@@ -1693,7 +1701,7 @@ def _input(
     saved: str | None = None,
 ) -> str:
     name = e(field.path)
-    ident = "f-" + field.path.replace(".", "-").replace("[", "-").replace("]", "")
+    ident = _ident(field)
     # A secret is write-only: its control starts empty, so only what is typed into it counts.
     hint = _saved(saved, "" if field.kind == "secret" else value)
     if field.kind == "bool":
@@ -1732,6 +1740,26 @@ def _input(
     )
 
 
+def _segment_row(
+    maker: str, rows: Sequence[tuple[FormField, str, str, str]], source: str, error: bool
+) -> str:
+    """One maker's hue segment on one row: its name, then its hue and its width side by side."""
+    controls = "".join(
+        f'<label for="{_ident(field)}">{e(field.label)}</label>'
+        f'<input type=number step=any id="{_ident(field)}" name="{e(field.path)}" '
+        f'value="{e(value)}" placeholder="{e(placeholder)}" size=5{_saved(saved, value)}>'
+        for field, value, placeholder, saved in rows
+    )
+    help_text = " ".join(HELP.get(field.path, "") for field, *_ in rows)
+    return (
+        f'<div class="field segment{" error" if error else ""}" role="group" '
+        f'aria-labelledby="segment-{maker}"><span class=maker id="segment-{maker}">'
+        f"{e(LABELS[maker])}</span><div><div class=pair>{controls}</div>"
+        f"<div class=source>{e(source)}</div></div>"
+        f"<div class=help>{e(help_text)}</div></div><!-- segment -->"
+    )
+
+
 SECTIONS = (
     ("manager", "This machine"),
     ("pollInterval", "Polling and trust"),
@@ -1753,6 +1781,7 @@ def settings_page(
     fields = fields_of(Configuration, skip=frozenset({"workers", "repositories", "accounts"}))
     defaults = Configuration()
     groups: dict[str, list[str]] = {title: [] for _, title in SECTIONS}
+    segments: dict[str, list[tuple[FormField, str, str, str]]] = {}
     for field in fields:
         head = field.path.split(".")[0]
         title = next(
@@ -1770,6 +1799,17 @@ def settings_page(
             value = "set" if config.ui.token else ""
         source = "set in the configuration" if is_set(config, field.path) else "default"
         saved = "" if field.kind == "secret" else display(value_at(config, field.path))
+        if head == "modelColors":
+            maker = field.path.split(".")[1]
+            placeholder = display(value_at(defaults, field.path))
+            segments.setdefault(maker, []).append((field, value, placeholder, saved))
+            if len(segments[maker]) == 2:
+                paths = [f.path for f, *_ in segments[maker]]
+                error = any(path in error_paths for path in paths)
+                configured = any(is_set(config, path) for path in paths)
+                origin = "set in the configuration" if configured else "default"
+                groups[title].append(_segment_row(maker, segments[maker], origin, error))
+            continue
         groups[title].append(
             _input(
                 field,

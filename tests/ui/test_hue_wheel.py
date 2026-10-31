@@ -67,6 +67,19 @@ def test_the_model_colours_section_shows_a_wheel_with_an_arc_per_maker(client: T
             assert f'name="modelColors.{maker}.{part}"' in section  # the precise fallback stays
 
 
+def test_each_vendor_has_one_row_with_its_hue_and_width_side_by_side(client: TestClient) -> None:
+    section = _section(client.get("/settings").text)
+    rows = re.findall(r'<div class="field segment"[^>]*>(.*?)</div><!-- segment -->', section, re.S)
+    assert len(rows) == len(VENDORS)
+    for row, (maker, label) in zip(rows, VENDORS, strict=True):
+        assert f">{label}<" in row
+        hue = row.index(f'id="f-modelColors-{maker}-hue"')
+        width = row.index(f'id="f-modelColors-{maker}-width"')
+        assert hue < width
+        assert row.count("<input") == 2
+    assert section.count("<input") == 2 * len(VENDORS)
+
+
 def test_the_wheel_stays_hidden_until_its_script_runs(client: TestClient) -> None:
     html = client.get("/settings").text
     assert re.search(r'<div class="hue-wheel" hidden', html)
