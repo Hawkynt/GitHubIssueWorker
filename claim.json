@@ -14,6 +14,18 @@
   "issue": 14,
   "pausedUntil": null,
   "renewedAt": "2026-10-30T15:37:23Z",
+  "runs": [
+    {
+      "agent": "claude",
+      "finished": "2026-10-30T15:37:25Z",
+      "kind": "first",
+      "manager": "hawky-desktop-96a3",
+      "model": "Claude Opus 5.5",
+      "started": "2026-10-30T15:30:06Z",
+      "verdict": "merged",
+      "worker": "claude"
+    }
+  ],
   "state": "done",
   "step": "done",
   "takeovers": 0
