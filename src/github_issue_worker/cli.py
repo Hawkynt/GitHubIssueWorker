@@ -298,8 +298,14 @@ def _start_ui(runtime: Any, manager: Any, path: Path, open_browser: bool = False
             with contextlib.suppress(Exception):
                 webbrowser.open(server.url)
         return server
-    print(f"  ui: could not listen on {ui.bind}:{ui.port}; running without it", file=sys.stderr)
-    return None
+    print(
+        f"  ui: {ui.bind}:{ui.port} is still taken; trying again every 15 s in the background",
+        file=sys.stderr,
+    )
+    server.keep_trying(
+        on_listening=lambda: logging.getLogger(__name__).info("ui: listening on %s", server.url)
+    )
+    return server
 
 
 def _ui(args: argparse.Namespace) -> int:

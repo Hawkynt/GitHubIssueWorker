@@ -208,6 +208,11 @@ body.deck nav a[aria-current="page"] { background: linear-gradient(90deg, #1d4f8
 body.deck h1 { font-size: clamp(1.8rem, 2.6vw, 2.6rem); font-weight: 250; letter-spacing: .02em;
   background: linear-gradient(90deg, #ffffff, #8cc6ff 60%, #b39bff); -webkit-background-clip: text;
   background-clip: text; color: transparent; }
+.lost { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; margin: 0; padding: .6rem 1rem;
+  background: var(--brick-soft); color: var(--ink); border-bottom: 2px solid var(--brick);
+  font-weight: 600; text-align: center; }
+body.disconnected #live { opacity: .55; filter: grayscale(.6); transition: opacity .3s; }
+body.disconnected .status .dot { background: var(--brick); box-shadow: 0 0 10px var(--brick); }
 .status { display: flex; align-items: center; gap: .5rem; margin: -.4rem 0 .9rem; color: var(--muted);
   font-size: 13px; font-variant-numeric: tabular-nums; }
 .status .dot { width: .55rem; height: .55rem; border-radius: 50%; background: #3ddc97;
@@ -493,16 +498,39 @@ LIVE = """
     }
   };
   // Ask every 3 s whether anything changed; refresh at once if so, and every 15 s anyway.
+  // When the manager does not answer, the page says so instead of showing old state as live.
   let digest = "";
+  let lostSince = null;
+  const banner = document.createElement("p");
+  banner.className = "lost";
+  banner.setAttribute("role", "alert");
+  banner.hidden = true;
+  document.body.prepend(banner);
+  const lost = () => {
+    if (lostSince === null) lostSince = new Date(Date.now() + offset);
+    banner.textContent = "The manager is not answering. What you see is how it was at " +
+      lostSince.toISOString().slice(11, 19) + " UTC; this page reconnects by itself.";
+    banner.hidden = false;
+    document.body.classList.add("disconnected");
+  };
+  const found = () => {
+    const wasLost = lostSince !== null;
+    lostSince = null;
+    banner.hidden = true;
+    document.body.classList.remove("disconnected");
+    if (wasLost) refresh();
+  };
   const changed = async () => {
     if (document.hidden) return;
     try {
       const response = await fetch("/events", { cache: "no-store" });
-      const now = response.ok ? await response.text() : digest;
+      if (!response.ok) return lost();
+      const now = await response.text();
+      found();
       if (digest && now !== digest) refresh();
       digest = now;
     } catch (error) {
-      // the manager is restarting
+      lost();
     }
   };
   changed();
