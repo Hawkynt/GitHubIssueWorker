@@ -262,7 +262,10 @@ applies the change live.
 ## 🔄 Issue lifecycle
 
 Every watched issue is in exactly one state, and every state except *idle* and *done* is visible as a
-label on the issue. *Queued* means unclaimed: any idle, eligible worker may take it.
+label on the issue. *Queued* means unclaimed: any idle, eligible worker may take it. Within a
+repository, queued issues labelled `priority:high` are taken first and those labelled `priority:low`
+last; within each band the oldest pending event goes first. The labels only reorder, they never
+queue an issue by themselves.
 
 ```mermaid
 stateDiagram-v2
@@ -965,7 +968,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F3.6** Single-manager lock per configuration on one machine. A second `watch` with the same
   configuration exits with the PID of the first. Managers with different configurations, on the same
   or other machines, are coordinated by claims.
-- [ ] 🟧 **F3.7** `priority:high`/`priority:low` labels reorder the queue.
+- [x] 🟧 **F3.7** `priority:high`/`priority:low` labels reorder the queue.
+  Within a repository's pass: `priority:high`, then unlabelled, then `priority:low`, oldest pending
+  event first within each. Matching ignores case; an issue with both counts as high.
 
 ### F4 — Triage
 

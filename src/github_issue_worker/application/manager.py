@@ -25,6 +25,7 @@ from github_issue_worker.application.poller import PollResult, PollState
 from github_issue_worker.domain.claim import ClaimState, Holder, RunEntry
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.model_name import display_model
+from github_issue_worker.domain.queue import queue_key, queue_rank
 from github_issue_worker.domain.split import (
     SPLIT_LABEL,
     merged_pull,
@@ -229,7 +230,7 @@ class Manager:
             own = {number for (repo, number) in self._own if repo == watch.name}
         candidates = touched | self._pending.setdefault(watch.name, set()) | own
         since = state.watched_since or self.clock.now()
-        for number in sorted(candidates, key=lambda n: self._updated(watch, n)):
+        for number in sorted(candidates, key=lambda n: self._queue_key(watch, n)):
             try:
                 self._consider(watch, number, since)
             except Exception:
@@ -272,9 +273,12 @@ class Manager:
                     self._own[(watch.name, number)] = stored.claim.holder.worker
         self._adopted.add(watch.name)
 
-    def _updated(self, watch: RepositoryWatch, number: int) -> datetime:
+    def _queue_key(self, watch: RepositoryWatch, number: int) -> tuple[int, datetime, int]:
+        """Priority labels first, then the oldest pending event (F3.1, F3.7)."""
         known = self._known.get((watch.name, number))
-        return known.updated_at if known else self.clock.now()
+        if known is None:
+            return queue_rank(frozenset()), self.clock.now(), number
+        return queue_key(known)
 
     def _issue(self, watch: RepositoryWatch, number: int) -> Issue:
         key = (watch.name, number)
