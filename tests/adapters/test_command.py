@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from github_issue_worker.adapters.agents.command import CommandAdapter
+from github_issue_worker.configuration import WorkerSettings, parse
 from github_issue_worker.ports.agents import OUTCOME_FILE, PROMPT_FILE, AgentRun
+from github_issue_worker.wiring import execute, make_adapter
 
 TEMPLATE = ["mycli", "--cwd", "{worktree}", "--msg", "{prompt}", "--out", "{outcome}"]
 
@@ -151,3 +154,64 @@ def test_another_non_zero_exit_is_an_error_with_the_exit_code_and_the_end_of_std
     assert report.error is not None
     assert "exit 2" in report.error and "Traceback: boom" in report.error
     assert "line 0\n" not in report.error
+
+
+FAKE_CLI = """
+import json, pathlib, sys
+outcome, prompt, worktree, *rest = sys.argv[1:]
+pathlib.Path(worktree, "seen.json").write_text(json.dumps(sys.argv[1:]), encoding="utf-8")
+if prompt == "limit":
+    print("Quota exceeded for today", file=sys.stderr)
+    sys.exit(3)
+result = {"outcome": "done", "summary": prompt}
+pathlib.Path(outcome).write_text(json.dumps(result), encoding="utf-8")
+"""
+
+
+def fake_cli_worker(tmp_path: Path) -> WorkerSettings:
+    script = tmp_path / "fake_cli.py"
+    script.write_text(FAKE_CLI, encoding="utf-8")
+    body = {
+        "name": "fake",
+        "agent": "command",
+        "account": "a",
+        "installation": {"type": "executable", "path": sys.executable},
+        "command": [
+            "python",
+            "-I",
+            str(script),
+            "{outcome}",
+            "{prompt}",
+            "{worktree}",
+            "{session}",
+        ],
+        "limitPatterns": ["quota exceeded"],
+    }
+    return parse(json.dumps({"accounts": {"a": {}}, "workers": [body]})).workers[0]
+
+
+def test_a_fake_cli_gets_the_substituted_arguments_and_its_outcome_is_the_run_s(
+    tmp_path: Path,
+) -> None:
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    adapter = make_adapter(fake_cli_worker(tmp_path), tmp_path)
+    report = execute(adapter, AgentRun(worktree, "Fix it, with spaces."), timeout=30)
+    seen = json.loads((worktree / "seen.json").read_text(encoding="utf-8"))
+    assert seen == [
+        str((worktree / OUTCOME_FILE).resolve()),
+        "Fix it, with spaces.",
+        str(worktree.resolve()),
+    ]
+    assert report.error is None and report.limit is None
+    assert report.outcome is not None and report.outcome.summary == "Fix it, with spaces."
+
+
+def test_a_fake_cli_that_reports_a_limit_ends_its_run_with_a_usage_limit(tmp_path: Path) -> None:
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    adapter = make_adapter(fake_cli_worker(tmp_path), tmp_path)
+    report = execute(adapter, AgentRun(worktree, "limit", session="s-1"), timeout=30)
+    assert json.loads((worktree / "seen.json").read_text(encoding="utf-8"))[-1] == "s-1"
+    assert report.limit is not None and report.limit.message == "Quota exceeded for today"
+    assert report.session == "s-1"
