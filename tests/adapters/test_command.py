@@ -53,6 +53,13 @@ def test_a_placeholder_inside_an_argument_is_replaced_and_other_braces_stay(
     assert argv == ["cli", f"--dir={tmp_path.resolve()}", '{"a":1}', "{model}", "Fix issue 42.!"]
 
 
+def test_placeholders_inside_the_prompt_text_are_passed_unchanged(tmp_path: Path) -> None:
+    prompt = "Document {worktree}, {outcome} and {session}."
+    adapter = CommandAdapter(["cli", "{prompt}"])
+    argv = adapter.invocation(AgentRun(worktree=tmp_path, prompt=prompt, session="s")).argv
+    assert argv == ["cli", prompt]
+
+
 def test_the_program_comes_from_the_installation_when_one_is_given(tmp_path: Path) -> None:
     adapter = CommandAdapter(["mycli", "{prompt}"], executable="/opt/mycli/bin/mycli")
     assert adapter.invocation(run(tmp_path)).argv == ["/opt/mycli/bin/mycli", "Fix issue 42."]

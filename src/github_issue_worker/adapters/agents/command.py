@@ -1,9 +1,10 @@
 """Any further CLI agent, run from the worker's argument template (F12.7).
 
 The template is an argument list, program first. ``{prompt}``, ``{worktree}``, ``{outcome}`` and
-``{session}`` are replaced wherever they occur; nothing else is, so JSON or other braces pass
-through. On a fresh run an argument containing ``{session}`` is left out, which is why a flag and
-its value belong in one argument (``--resume={session}``).
+``{session}`` are replaced wherever they occur, in one pass so the prompt's own text stays as it is;
+nothing else is replaced, so JSON or other braces pass through. On a fresh run an argument
+containing ``{session}`` is left out, which is why a flag and its value belong in one argument
+(``--resume={session}``).
 
 A usage limit is what the worker's configuration says it is: an exit code in ``limitExitCodes``, or
 a failed run (non-zero exit or no outcome) with a line of output matching one of ``limitPatterns``.
@@ -19,6 +20,7 @@ from github_issue_worker.adapters.agents import prepare, read_outcome
 from github_issue_worker.ports.agents import AgentRun, Invocation, RunReport, UsageLimit
 
 _SESSION = "{session}"
+_PLACEHOLDER = re.compile(r"\{(?:prompt|worktree|outcome|session)\}")
 _STDERR_TAIL = 20
 
 
@@ -49,13 +51,11 @@ class CommandAdapter:
             "{outcome}": str(outcome.resolve()),
             _SESSION: run.session or "",
         }
-        argv = []
-        for argument in self._template:
-            if _SESSION in argument and not run.session:
-                continue
-            for placeholder, value in values.items():
-                argument = argument.replace(placeholder, value)
-            argv.append(argument)
+        argv = [
+            _PLACEHOLDER.sub(lambda match: values[match.group(0)], argument)
+            for argument in self._template
+            if run.session or _SESSION not in argument
+        ]
         if self._executable:
             argv[0] = self._executable
         return Invocation(argv=argv, cwd=run.worktree, env=self._env)
