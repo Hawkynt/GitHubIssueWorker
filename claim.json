@@ -1,0 +1,21 @@
+{
+  "branch": "issue/74-f8-3-a-parked-issue-is-never-pinged-agai",
+  "claimedAt": "2026-10-31T11:18:57Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-11-07T11:18:57Z",
+  "generation": 1,
+  "holder": {
+    "manager": "hawky-desktop-96a3",
+    "worker": "codex"
+  },
+  "issue": 74,
+  "model": "GPT 6.1 Sol",
+  "pausedUntil": null,
+  "renewedAt": "2026-10-31T11:18:57Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
