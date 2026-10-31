@@ -18,6 +18,7 @@ from github_issue_worker.application.prompt import build_prompt
 from github_issue_worker.domain.commit_message import CommitGate, change_lines
 from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.domain.outcome import Outcome
+from github_issue_worker.domain.run_limit import park_comment
 from github_issue_worker.domain.split import (
     SPLIT_LABEL,
     SPLIT_STEP,
@@ -185,7 +186,7 @@ class IssueRun:
             and kind in (RunKind.FIRST, RunKind.REOPEN)
         ):
             self._checkpoint("understand")
-            verdict = self._understand(tree, issue, comments, kind, branch, label_choices)
+            verdict = self._understand(tree, base, issue, comments, kind, branch, label_choices)
             if verdict is not None:
                 return verdict
             label_choices = None
@@ -202,6 +203,8 @@ class IssueRun:
                 report = self._agent(tree, issue, comments, kind, branch, label_choices, feedback)
                 if report.limit is not None:
                     return self._pause(issue, report)
+                if report.cut_off is not None:
+                    return self._park(issue, tree, base, report)
                 if report.outcome is None:
                     errors += 1
                     if errors > 1:
@@ -265,6 +268,7 @@ class IssueRun:
     def _understand(
         self,
         tree: Path,
+        base: str,
         issue: Issue,
         comments: tuple[Comment, ...],
         kind: RunKind,
@@ -289,6 +293,8 @@ class IssueRun:
             )
             if report.limit is not None:
                 return self._pause(issue, report)
+            if report.cut_off is not None:
+                return self._park(issue, tree, base, report)
             outcome = report.outcome
             if outcome is not None and outcome.kind != "done":
                 return self._ask(issue, outcome)
@@ -525,6 +531,25 @@ class IssueRun:
         return Verdict(
             outcome.kind if outcome.kind == "needs-input" else "needs-input", detail=outcome.summary
         )
+
+    def _park(self, issue: Issue, tree: Path, base: str, report: RunReport) -> Verdict:
+        """The run hit `runTimeout` or its budget (F6.7): another run would spend the same limit
+        again, so the issue waits for a person, told what was finished and what was not."""
+        assert report.cut_off is not None
+        subjects = [
+            (commit.message.splitlines() or [""])[0]
+            for commit in self.workspace.commits(tree, base)
+        ]
+        body = park_comment(
+            report.cut_off,
+            commits=[subject for subject in subjects if subject.strip()],
+            journal=self.workspace.journal(tree),
+            cost_usd=report.usage.cost_usd if report.usage else None,
+        )
+        self._fenced(lambda: self.host.comment(issue.number, body))
+        self.host.set_worker_label(issue.number, "worker:needs-input")
+        self.coordinator.release(self._handle, step="needs-input", consumed=self._consumed)
+        return Verdict("needs-input", detail=body.splitlines()[0])
 
     def _create_sub_issues(self, issue: Issue, outcome: Outcome) -> None:
         """One queued sub-issue per part. Parts that already exist, from a run that crashed half

@@ -14,6 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from github_issue_worker.adapters.home import tool_environment
+from github_issue_worker.ports.agents import JOURNAL_FILE
 from github_issue_worker.ports.workspace import CommitInfo
 
 __all__ = ["CommitInfo", "PushRejected", "Workspace", "WorkspaceError"]
@@ -131,6 +132,13 @@ class Workspace:
 
     def head(self, worktree: Path) -> str:
         return self._git(worktree, "rev-parse", "HEAD").strip()
+
+    def journal(self, worktree: Path) -> str | None:
+        path = worktree / JOURNAL_FILE
+        try:
+            return path.read_text(encoding="utf-8", errors="replace")
+        except FileNotFoundError:
+            return None
 
     def rebase(self, worktree: Path, base: str) -> bool:
         """Rebase onto the freshly fetched ``base``. A conflict is aborted and reported as False."""

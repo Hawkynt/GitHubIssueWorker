@@ -161,3 +161,11 @@ def test_remove_also_drops_branches_an_agent_left_behind(workspace: Workspace) -
     assert "issue/8-gone" not in branches and "backup/issue8-before-rebase" not in branches
     assert "issue/7-kept" in branches  # still checked out in its worktree
     assert workspace.worktrees(REPO) == {7: "issue/7-kept"}
+
+
+def test_the_journal_is_read_from_the_worktree_and_is_none_when_missing(tmp_path: Path) -> None:
+    workspace = Workspace(tmp_path / "cache", lambda repository: "", tmp_path)
+    assert workspace.journal(tmp_path) is None
+    (tmp_path / ".ghiw").mkdir()
+    (tmp_path / ".ghiw" / "journal.md").write_text("## Done\n- a\n", encoding="utf-8")
+    assert workspace.journal(tmp_path) == "## Done\n- a\n"

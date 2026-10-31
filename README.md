@@ -1037,7 +1037,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F6.6** Independent verification after `done`: clean working tree, configured or detected
   build and test commands pass, at least one commit on the branch. A failed check returns the output
   to the same conversation, once, before the issue is parked.
-- [ ] 🟥 **F6.7** `runTimeout` and the budget are enforced. Hitting either parks the issue with a
+- [x] 🟥 **F6.7** `runTimeout` and the budget are enforced. Hitting either parks the issue with a
   comment stating what was finished and what was not.
 - [x] 🟧 **F6.8** Each run's transcript, worker and cost (where the agent reports one) are kept with
   the issue's local log.

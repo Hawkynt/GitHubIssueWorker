@@ -10,8 +10,9 @@ from github_issue_worker.application.issue_run import IssueRun, RunSettings, Ver
 from github_issue_worker.domain.claim import ClaimPolicy, ClaimState, Holder
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.outcome import Outcome, Question
+from github_issue_worker.domain.run_limit import RunCutOff
 from github_issue_worker.domain.work import RunKind
-from github_issue_worker.ports.agents import AgentRun, RunReport, UsageLimit
+from github_issue_worker.ports.agents import AgentRun, RunReport, TokenUsage, UsageLimit
 from github_issue_worker.ports.repository import Check, WaitingRun
 from tests.application.run_fakes import FakeHost, FakeWorkspace, ScriptedAgent
 from tests.fakes import FakeClock, InMemoryClaimStore
@@ -559,3 +560,101 @@ def test_worker_skip_added_before_an_outward_write_stops_at_the_fence_and_releas
     assert (
         current is not None and current.state is ClaimState.RELEASED and current.step == "skipped"
     )
+
+
+# --- F6.7: runTimeout and the budget park the issue ---------------------------------------------
+
+TIMED_OUT = RunReport(
+    session="s1", outcome=None, error="timed out after 7200 s", cut_off=RunCutOff("time", "2 h")
+)
+OVER_BUDGET = RunReport(
+    session="s1",
+    outcome=None,
+    usage=TokenUsage(10, 20, cost_usd=5.0123),
+    error="error_max_budget_usd",
+    cut_off=RunCutOff("budget", "$5"),
+)
+JOURNAL = "## Done\n- retry count read from the configuration\n\n## Next\n- back-off\n"
+
+
+def write_journal(h: Harness, text: str) -> None:
+    path = h.workspace.root / "42" / ".ghiw" / "journal.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def assert_parked(h: Harness, verdict: Verdict) -> str:
+    assert verdict.kind == "needs-input"
+    assert len(h.agent.runs) == 1  # the limit is not spent a second time
+    assert h.host.worker_label[42] == "worker:needs-input"
+    current = h.store.current(42)
+    assert current is not None and current.state is ClaimState.RELEASED
+    assert current.step == "needs-input"
+    assert h.workspace.removed == [] and h.workspace.pushes == []
+    ((number, body),) = h.host.posted
+    assert number == 42
+    return body
+
+
+def test_an_implementation_run_stopped_by_the_time_limit_parks_the_issue_without_a_retry(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, TIMED_OUT), step(h.workspace, ok())])
+    body = assert_parked(h, h.run())
+    assert "`runTimeout`" in body and "2 h" in body
+
+
+def test_an_implementation_run_stopped_by_the_budget_parks_the_issue_without_a_retry(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, OVER_BUDGET), step(h.workspace, ok())])
+    body = assert_parked(h, h.run())
+    assert "`maxBudgetUsdPerRun`" in body and "$5" in body and "$5.01" in body
+
+
+def test_a_parked_run_says_what_was_finished_from_journal_and_commits_and_what_was_not(
+    tmp_path: Path,
+) -> None:
+    def setup(h: Harness) -> list:  # type: ignore[type-arg]
+        def work(run: AgentRun) -> RunReport:
+            h.workspace.add_commit(42, GOOD_COMMIT)
+            write_journal(h, JOURNAL)
+            return TIMED_OUT
+
+        return [work]
+
+    h = Harness(tmp_path, setup)
+    finished, rest = assert_parked(h, h.run()).split("**Not finished**")
+    assert "# the client retried only once" in finished
+    assert "retry count read from the configuration" in finished
+    assert "back-off" in rest
+
+
+def test_a_parked_run_with_no_journal_and_no_commit_says_nothing_was_finished(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, TIMED_OUT, commit=None)])
+    finished, rest = assert_parked(h, h.run()).split("**Not finished**")
+    assert "Nothing" in finished and "no journal" in rest
+
+
+@pytest.mark.parametrize("stopped", [TIMED_OUT, OVER_BUDGET], ids=["time", "budget"])
+def test_an_understanding_run_stopped_by_a_limit_parks_without_a_restatement(
+    tmp_path: Path, stopped: RunReport
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, stopped, commit=None)])
+    body = assert_parked(h, h.run(understand_first=True))
+    assert "How I understand" not in body and "I stopped working" in body
+
+
+def test_a_parked_issue_continues_in_the_same_conversation_on_the_next_trusted_comment(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, TIMED_OUT), step(h.workspace, ok())])
+    assert h.run().kind == "needs-input"
+    handle = h.coordinator.claim(42, WORKER, branch="issue/42-retry-on-timeout")
+    assert handle is not None
+    h.handle = handle
+    answer = Comment(90, 42, OWNER, "go on", T0, T0)
+    assert h.run(RunKind.REWORK, comments=(answer,)).kind == "merged"
+    assert h.agent.runs[1].session == "s1" and "go on" in h.agent.runs[1].prompt

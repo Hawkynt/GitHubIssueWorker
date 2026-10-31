@@ -10,7 +10,7 @@ from pathlib import Path
 
 from github_issue_worker.adapters.workspace import CommitInfo, PushRejected
 from github_issue_worker.domain.issue import Actor, Comment, Issue
-from github_issue_worker.ports.agents import AgentRun, RunReport
+from github_issue_worker.ports.agents import JOURNAL_FILE, AgentRun, RunReport
 from github_issue_worker.ports.repository import Check, PullRequest, RepositoryInfo, WaitingRun
 
 NOW = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
@@ -184,6 +184,10 @@ class FakeWorkspace:
     def remove(self, repository: str, issue: int, branch: str) -> None:
         self.removed.append(issue)
         self.local.pop(issue, None)
+
+    def journal(self, worktree: Path) -> str | None:
+        path = worktree / JOURNAL_FILE
+        return path.read_text(encoding="utf-8") if path.exists() else None
 
     def worktrees(self, repository: str) -> dict[int, str]:
         return dict(self.local)
