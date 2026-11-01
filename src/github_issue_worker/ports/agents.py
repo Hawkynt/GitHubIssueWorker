@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Protocol
 
 from github_issue_worker.domain.outcome import Outcome
+from github_issue_worker.domain.run_limit import RunCutOff
 
 OUTCOME_FILE = Path(".ghiw") / "outcome.json"
 PROMPT_FILE = Path(".ghiw") / "prompt.md"
@@ -62,6 +63,8 @@ class RunReport:
     """The share of the account's current usage window that is used up, when the agent says."""
     model: str | None = None
     """The model the run actually used, as far as the agent reveals it."""
+    cut_off: RunCutOff | None = None
+    """The run was stopped by `runTimeout` or its budget (F6.7): park the issue, do not retry."""
 
 
 class AgentAdapter(Protocol):

@@ -46,3 +46,10 @@ class ClaimStore(Protocol):
     def delete(self, issue: int, expected: str) -> None:
         """Remove the claim of ``issue`` if the current version is ``expected``."""
         ...
+
+    def history(self, issue: int, limit: int) -> list[Claim]:
+        """The newest ``limit`` versions of the claim of ``issue``, oldest first (F14.6).
+
+        Empty when the issue has no claim.
+        """
+        ...

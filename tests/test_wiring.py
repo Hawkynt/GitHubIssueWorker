@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import stat
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -74,6 +75,58 @@ def test_a_claudelocal_worker_gets_no_budget_flag(tmp_path: Path) -> None:
     assert "--max-budget-usd" not in argv(worker, tmp_path)
 
 
+def command_worker(
+    installation: dict[str, object] | None = None, **extra: object
+) -> WorkerSettings:
+    body: dict[str, object] = {
+        "name": "w",
+        "agent": "command",
+        "account": "a",
+        "command": ["mycli", "--message", "{prompt}"],
+        **extra,
+    }
+    if installation:
+        body["installation"] = installation
+    return parse(json.dumps({"accounts": {"a": {}}, "workers": [body]})).workers[0]
+
+
+def test_a_command_worker_runs_its_template_with_the_program_found_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Windows finds a program on PATH only by a PATHEXT extension.
+    mycli = executable(tmp_path / "bin" / ("mycli.cmd" if sys.platform == "win32" else "mycli"))
+    monkeypatch.setenv("PATH", str(mycli.parent))
+    worker = command_worker(limitExitCodes=[75], limitPatterns=["quota"])
+    adapter = make_adapter(worker, tmp_path)
+    assert adapter.kind == "command"
+    program, *arguments = argv(worker, tmp_path)
+    assert Path(program).name.lower() == mycli.name.lower()
+    assert arguments == ["--message", "Fix issue 5."]
+    run = AgentRun(worktree=tmp_path, prompt="x")
+    assert adapter.report(run, 75, "", "").limit is not None
+    assert adapter.report(run, 1, "", "quota gone").limit is not None
+
+
+def test_a_command_worker_with_an_executable_installation_gets_its_path_and_env(
+    tmp_path: Path,
+) -> None:
+    tool = executable(tmp_path / "opt" / "mycli-1.2")
+    worker = command_worker({"type": "executable", "path": str(tool), "env": {"MYCLI_HOME": "/p"}})
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    invocation = make_adapter(worker, tmp_path).invocation(AgentRun(worktree, "Fix issue 5."))
+    assert invocation.argv == [str(tool), "--message", "Fix issue 5."]
+    assert invocation.env == {"MYCLI_HOME": "/p"}
+
+
+def test_a_command_worker_whose_program_is_missing_is_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(wiring.Unavailable, match="mycli"):
+        make_adapter(command_worker(), tmp_path)
+
+
 class _DummyAdapter:
     def invocation(self, run: AgentRun) -> Invocation:
         return Invocation(argv=("true",), cwd=run.worktree)
@@ -111,6 +164,7 @@ def _run_commit_through_wired_issue_run(
     host = FakeHost(repository=repository, issues={9: issue})
     workspace = FakeWorkspace(tmp_path)
     workspace.head_listener = lambda branch, sha: host.head_of.__setitem__(branch, sha)
+    host.link_listener = workspace.remote.__setitem__
     watch = RepositoryWatch(
         name=repository,
         host=host,
@@ -243,6 +297,27 @@ def test_per_repository_forbidden_words_overrides_defaults_when_building_the_com
     )
     assert verdict == "merged"
     assert len(prompts) == 1
+
+
+def test_create_missing_labels_defaults_off_and_a_repository_override_turns_it_on() -> None:
+    raw: dict[str, object] = {
+        "repositories": [
+            {"repository": "Hawkynt/ShiftDiff"},
+            {"repository": "Hawkynt/GitHubIssueWorker", "createMissingLabels": True},
+        ]
+    }
+    config = parse(json.dumps(raw))
+    assert repository_run(config, config.repositories[0]).create_missing_labels is False
+    assert repository_run(config, config.repositories[1]).create_missing_labels is True
+
+
+def test_create_missing_labels_on_by_default_is_overridden_off_by_a_repository() -> None:
+    raw: dict[str, object] = {
+        "defaults": {"createMissingLabels": True},
+        "repositories": [{"repository": "Hawkynt/ShiftDiff", "createMissingLabels": False}],
+    }
+    config = parse(json.dumps(raw))
+    assert repository_run(config, config.repositories[0]).create_missing_labels is False
 
 
 @pytest.mark.parametrize(
@@ -573,3 +648,196 @@ def test_given_a_suspended_repository_when_starting_runtime_then_no_clone_or_wri
     with pytest.raises(RepositorySuspended):
         watch.coordinator.claim(1, Holder("manager", "w"), "issue/1")
     assert requests == [("GET", "repos/o/private")]
+
+
+class _SleepingAgent:
+    """An agent that is still working when its run reaches ``runTimeout``."""
+
+    kind = "fake"
+
+    def invocation(self, run: AgentRun) -> Invocation:
+        import sys
+
+        return Invocation(
+            argv=[sys.executable, "-c", "import time; time.sleep(30)"], cwd=run.worktree
+        )
+
+    def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
+        return RunReport(session=None, outcome=None, error=f"exit {exit_code}")
+
+
+def test_a_run_past_runtimeout_is_killed_and_reported_as_stopped_by_the_time_limit(
+    tmp_path: Path,
+) -> None:
+    report = wiring.execute(_SleepingAgent(), AgentRun(tmp_path, "work", session="s9"), 0.2)
+    assert report.cut_off is not None
+    assert report.cut_off.kind == "time" and report.cut_off.limit == "0.2 s"
+    assert report.outcome is None and report.limit is None
+    assert report.session == "s9"
+
+
+def test_max_takeovers_is_wired_into_the_claim_policy_and_updated_live(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from tests.application.test_manager import Fixture
+
+    body: dict[str, object] = {
+        "repositories": [{"repository": "o/r"}],
+        "fleet": {"maxTakeovers": 2},
+    }
+    config = parse(json.dumps(body))
+    runtime = Runtime(
+        config=config,
+        home=tmp_path,
+        api=SimpleNamespace(clock=FakeClock(datetime(2026, 10, 30, tzinfo=UTC))),  # type: ignore[arg-type]
+        state=JsonStateStore(tmp_path / "state.json"),
+        manager_id="m",
+        workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+    )
+    watch = runtime.watch(config.repositories[0])
+    assert watch.coordinator.policy.max_takeovers == 2
+
+    body["fleet"] = {"maxTakeovers": 5}
+    f = Fixture([])
+    f.manager.repositories = [watch]
+    runtime.apply(parse(json.dumps(body)), f.manager)
+    assert runtime.watches["o/r"].coordinator.policy.max_takeovers == 5
+
+
+def test_removal_releases_retained_claims_before_saving_only_the_selected_repository(
+    tmp_path: Path,
+) -> None:
+    from github_issue_worker.configuration import load, save
+    from tests.application.test_repository_removal import setup_watch
+
+    watch, store = setup_watch(tmp_path)
+    kept, kept_store = setup_watch(tmp_path)
+    kept.name = "o/kept"
+    kept_claims = {n: kept_store.read(n) for n in kept_store.issues()}
+    config = Configuration(
+        repositories=[RepositorySettings(repository="o/r"), RepositorySettings(repository="o/kept")]
+    )
+    path = tmp_path / "config.json"
+    save(config, path)
+    runtime = Runtime(
+        config,
+        tmp_path,
+        None,
+        JsonStateStore(tmp_path / "state.json"),
+        "here",
+        FakeWorkspace(tmp_path),
+        watches={"o/r": watch, "o/kept": kept},
+    )
+    checkpoints = []
+
+    def snapshot(repo: str, number: int, branch: str, base: str) -> str:
+        assert any(r.repository == "o/r" for r in load(path).repositories)
+        checkpoints.append(number)
+        return "saved"
+
+    runtime.workspace.checkpoint = snapshot
+    runtime.remove_repository("o/r", path)
+    assert checkpoints == [1, 2]
+    assert {n: kept_store.read(n) for n in kept_store.issues()} == kept_claims
+    assert [r.repository for r in load(path).repositories] == ["o/kept"]
+    assert store.current(1).state.value == "released"
+    runtime.remove_repository("o/r", path)
+    assert checkpoints == [1, 2]
+
+
+def test_removal_failure_retains_configuration_and_live_watch_for_retry(tmp_path: Path) -> None:
+    from github_issue_worker.configuration import load, save
+    from tests.application.test_repository_removal import setup_watch
+
+    watch, store = setup_watch(tmp_path)
+    config = Configuration(repositories=[RepositorySettings(repository="o/r")])
+    path = tmp_path / "config.json"
+    save(config, path)
+    runtime = Runtime(
+        config,
+        tmp_path,
+        None,
+        JsonStateStore(tmp_path / "state.json"),
+        "here",
+        FakeWorkspace(tmp_path),
+        watches={"o/r": watch},
+    )
+
+    def fail(*args: object) -> None:
+        raise OSError("offline")
+
+    runtime.workspace.checkpoint = fail
+    with pytest.raises(OSError, match="offline"):
+        runtime.remove_repository("o/r", path)
+    assert load(path).repositories[0].repository == "o/r"
+    assert "o/r" in runtime.watches and store.current(1).state.holds
+
+
+def test_live_removal_waits_for_stopped_run_before_checkpointing_and_acknowledging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    from github_issue_worker.application.issue_run import Verdict
+    from github_issue_worker.application.manager import Manager
+    from github_issue_worker.configuration import load, save
+    from tests.application.test_repository_removal import setup_watch
+
+    watch, store = setup_watch(tmp_path)
+    config = Configuration(repositories=[RepositorySettings(repository="o/r")])
+    path = tmp_path / "config.json"
+    save(config, path)
+    clock = FakeClock(datetime(2026, 10, 31, tzinfo=UTC))
+    runtime = Runtime(
+        config,
+        tmp_path,
+        None,
+        JsonStateStore(tmp_path / "state.json"),
+        "here",
+        FakeWorkspace(tmp_path),
+        watches={"o/r": watch},
+    )
+    worker = WorkerSlot("w1", "local", "a")
+    started, finished = threading.Event(), threading.Event()
+
+    def run(*args: object) -> Verdict:
+        started.set()
+        assert watch.stopping.wait(2)
+        finished.set()
+        return Verdict("stopped")
+
+    manager = Manager(
+        "here",
+        frozenset(),
+        [watch],
+        [worker],
+        lambda *a: None,
+        {},
+        runtime.state,
+        clock,
+        (),
+        run,
+        lambda job: threading.Thread(target=job).start(),
+    )
+    stored = store.read(1)
+    item = Issue(
+        1, "Work", "", "open", Actor("owner"), frozenset(), False, clock.now(), clock.now()
+    )
+    from github_issue_worker.application.coordinator import ClaimHandle
+
+    manager._start(
+        watch, worker, ClaimHandle(stored.version, stored.claim), item, (), RunKind.CONTINUATION
+    )
+    assert started.wait(2)
+
+    def checkpoint(*args: object) -> str:
+        assert finished.is_set()
+        assert not worker.busy
+        return "saved"
+
+    runtime.workspace.checkpoint = checkpoint
+    monkeypatch.setattr(wiring, "terminate", lambda name: False)
+    runtime.remove_repository("o/r", path, manager)
+    assert not manager.repositories and not runtime.watches
+    assert not load(path).repositories
+    assert store.current(1).state.value == "released"

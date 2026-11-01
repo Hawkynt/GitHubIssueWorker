@@ -10,9 +10,10 @@ from github_issue_worker.application.issue_run import IssueRun, RunSettings, Ver
 from github_issue_worker.domain.claim import ClaimPolicy, ClaimState, Holder
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.outcome import Outcome, Question
+from github_issue_worker.domain.run_limit import RunCutOff
 from github_issue_worker.domain.work import RunKind
-from github_issue_worker.ports.agents import AgentRun, RunReport, UsageLimit
-from github_issue_worker.ports.repository import Check, WaitingRun
+from github_issue_worker.ports.agents import AgentRun, RunReport, TokenUsage, UsageLimit
+from github_issue_worker.ports.repository import Check, PullRequest, WaitingRun
 from tests.application.run_fakes import FakeHost, FakeWorkspace, ScriptedAgent
 from tests.fakes import FakeClock, InMemoryClaimStore
 
@@ -64,6 +65,7 @@ class Harness:
         self.workspace.head_listener = lambda branch, sha: self.host.head_of.__setitem__(
             branch, sha
         )
+        self.host.link_listener = self.workspace.remote.__setitem__
         self.agent = ScriptedAgent(steps(self) if callable(steps) else steps)
         self.verify_results = list(verify or [(True, "all green")])
         self.sessions: dict[tuple[int, str], str] = {}
@@ -124,6 +126,65 @@ def test_the_first_run_labels_an_unlabelled_issue_from_the_existing_labels(tmp_p
     h = Harness(tmp_path, lambda h: [step(h.workspace, ok(outcome))])
     h.run()
     assert h.host.added_labels[42] == ["bug"]
+
+
+def test_a_missing_label_is_never_created_when_create_missing_labels_is_off(
+    tmp_path: Path,
+) -> None:
+    outcome = Outcome("done", "x", labels=("bug", "invented"))
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok(outcome))])
+    h.run()
+    assert h.host.added_labels[42] == ["bug"]
+    assert h.host.created_labels == []
+
+
+def test_a_missing_label_is_created_and_applied_when_create_missing_labels_is_on(
+    tmp_path: Path,
+) -> None:
+    outcome = Outcome("done", "x", labels=("bug", "invented"))
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok(outcome))])
+    h.run(create_missing_labels=True)
+    assert h.host.created_labels == ["invented"]
+    assert h.host.added_labels[42] == ["bug", "invented"]
+
+
+def test_an_existing_label_is_applied_without_being_created_when_create_missing_labels_is_on(
+    tmp_path: Path,
+) -> None:
+    outcome = Outcome("done", "x", labels=("bug",))
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok(outcome))])
+    h.run(create_missing_labels=True)
+    assert h.host.created_labels == []
+    assert h.host.added_labels[42] == ["bug"]
+
+
+def test_a_label_created_by_an_earlier_run_is_applied_again_without_being_created_twice(
+    tmp_path: Path,
+) -> None:
+    outcome = Outcome("done", "x", labels=("invented",))
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok(outcome))])
+    h.host.repo_labels.add("invented")  # an earlier run already created it on the repository
+    h.run(create_missing_labels=True)
+    assert h.host.created_labels == []
+    assert h.host.added_labels[42] == ["invented"]
+
+
+def test_the_understanding_run_creates_a_missing_label_when_create_missing_labels_is_on(
+    tmp_path: Path,
+) -> None:
+    def steps(h: Harness) -> list:  # type: ignore[type-arg]
+        understand = lambda run: RunReport(  # noqa: E731
+            session="s1",
+            outcome=Outcome(
+                "done", "Understood.", restatement="Goal: retry.", labels=("bug", "invented")
+            ),
+        )
+        return [understand, step(h.workspace, ok())]
+
+    h = Harness(tmp_path, steps)
+    h.run(understand_first=True, create_missing_labels=True)
+    assert h.host.created_labels == ["invented"]
+    assert h.host.added_labels[42] == ["bug", "invented"]
 
 
 def test_a_question_parks_the_issue_and_keeps_the_worktree(tmp_path: Path) -> None:
@@ -559,3 +620,177 @@ def test_worker_skip_added_before_an_outward_write_stops_at_the_fence_and_releas
     assert (
         current is not None and current.state is ClaimState.RELEASED and current.step == "skipped"
     )
+
+
+# --- F6.7: runTimeout and the budget park the issue ---------------------------------------------
+
+TIMED_OUT = RunReport(
+    session="s1", outcome=None, error="timed out after 7200 s", cut_off=RunCutOff("time", "2 h")
+)
+OVER_BUDGET = RunReport(
+    session="s1",
+    outcome=None,
+    usage=TokenUsage(10, 20, cost_usd=5.0123),
+    error="error_max_budget_usd",
+    cut_off=RunCutOff("budget", "$5"),
+)
+JOURNAL = "## Done\n- retry count read from the configuration\n\n## Next\n- back-off\n"
+
+
+def write_journal(h: Harness, text: str) -> None:
+    path = h.workspace.root / "42" / ".ghiw" / "journal.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def assert_parked(h: Harness, verdict: Verdict) -> str:
+    assert verdict.kind == "needs-input"
+    assert len(h.agent.runs) == 1  # the limit is not spent a second time
+    assert h.host.worker_label[42] == "worker:needs-input"
+    current = h.store.current(42)
+    assert current is not None and current.state is ClaimState.RELEASED
+    assert current.step == "needs-input"
+    assert h.workspace.removed == [] and h.workspace.pushes == []
+    ((number, body),) = h.host.posted
+    assert number == 42
+    return body
+
+
+def test_an_implementation_run_stopped_by_the_time_limit_parks_the_issue_without_a_retry(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, TIMED_OUT), step(h.workspace, ok())])
+    body = assert_parked(h, h.run())
+    assert "`runTimeout`" in body and "2 h" in body
+
+
+def test_an_implementation_run_stopped_by_the_budget_parks_the_issue_without_a_retry(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, OVER_BUDGET), step(h.workspace, ok())])
+    body = assert_parked(h, h.run())
+    assert "`maxBudgetUsdPerRun`" in body and "$5" in body and "$5.01" in body
+
+
+def test_a_parked_run_says_what_was_finished_from_journal_and_commits_and_what_was_not(
+    tmp_path: Path,
+) -> None:
+    def setup(h: Harness) -> list:  # type: ignore[type-arg]
+        def work(run: AgentRun) -> RunReport:
+            h.workspace.add_commit(42, GOOD_COMMIT)
+            write_journal(h, JOURNAL)
+            return TIMED_OUT
+
+        return [work]
+
+    h = Harness(tmp_path, setup)
+    finished, rest = assert_parked(h, h.run()).split("**Not finished**")
+    assert "# the client retried only once" in finished
+    assert "retry count read from the configuration" in finished
+    assert "back-off" in rest
+
+
+def test_a_parked_run_with_no_journal_and_no_commit_says_nothing_was_finished(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, TIMED_OUT, commit=None)])
+    finished, rest = assert_parked(h, h.run()).split("**Not finished**")
+    assert "Nothing" in finished and "no journal" in rest
+
+
+@pytest.mark.parametrize("stopped", [TIMED_OUT, OVER_BUDGET], ids=["time", "budget"])
+def test_an_understanding_run_stopped_by_a_limit_parks_without_a_restatement(
+    tmp_path: Path, stopped: RunReport
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, stopped, commit=None)])
+    body = assert_parked(h, h.run(understand_first=True))
+    assert "How I understand" not in body and "I stopped working" in body
+
+
+def test_a_parked_issue_continues_in_the_same_conversation_on_the_next_trusted_comment(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path, lambda h: [step(h.workspace, TIMED_OUT), step(h.workspace, ok())])
+    assert h.run().kind == "needs-input"
+    handle = h.coordinator.claim(42, WORKER, branch="issue/42-retry-on-timeout")
+    assert handle is not None
+    h.handle = handle
+    answer = Comment(90, 42, OWNER, "go on", T0, T0)
+    assert h.run(RunKind.REWORK, comments=(answer,)).kind == "merged"
+    assert h.agent.runs[1].session == "s1" and "go on" in h.agent.runs[1].prompt
+
+
+@pytest.mark.parametrize("cancel_stage", ["before", "agent", "verification", "checks"])
+def test_repository_removal_stops_the_run_without_releasing_before_checkpoint(
+    tmp_path: Path, cancel_stage: str
+) -> None:
+    import threading
+
+    stop = threading.Event()
+    h = Harness(tmp_path, [])
+
+    def act(run: AgentRun) -> RunReport:
+        h.workspace.add_commit(42, GOOD_COMMIT)
+        if cancel_stage == "agent":
+            stop.set()
+        return ok()
+
+    def verify(tree: Path) -> tuple[bool, str]:
+        if cancel_stage == "verification":
+            stop.set()
+        return True, "green"
+
+    def sleep(seconds: float) -> None:
+        stop.set()
+
+    if cancel_stage == "before":
+        stop.set()
+    if cancel_stage == "checks":
+        h.host.states = ["unknown"]
+    run = IssueRun(
+        h.host,
+        h.workspace,
+        h.coordinator,
+        act,
+        verify,
+        h.sessions,
+        h.clock,
+        sleep,
+        RunSettings(understand_first=False),
+        cancelled=stop.is_set,
+    )
+    verdict = run.run(h.handle, ISSUE, (), RunKind.FIRST)
+    assert verdict.kind == "stopped"
+    assert h.store.current(42).state.holds
+    assert not h.host.merged and not h.host.closed
+    if cancel_stage in ("before", "agent", "verification"):
+        assert not h.workspace.pushes and not h.host.pulls
+
+
+def test_current_claim_step_tracks_implementation_verification_and_shipping_for_list(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path, [])
+    observed = []
+
+    def act(run: AgentRun) -> RunReport:
+        observed.append(h.store.current(42).step)
+        h.workspace.add_commit(42, GOOD_COMMIT)
+        return ok()
+
+    h.agent.steps = [act]
+
+    def verify(tree: Path) -> tuple[bool, str]:
+        observed.append(h.store.current(42).step)
+        return True, "green"
+
+    h.verify = verify
+    original = h.host.create_pull_request
+
+    def open_pull(branch: str, base: str, title: str, body: str) -> PullRequest:
+        observed.append(h.store.current(42).step)
+        return original(branch, base, title, body)
+
+    h.host.create_pull_request = open_pull
+    assert h.run().kind == "merged"
+    assert observed == ["implement", "verify", "push"]

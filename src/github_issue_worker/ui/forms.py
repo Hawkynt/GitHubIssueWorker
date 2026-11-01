@@ -48,7 +48,7 @@ HELP: dict[str, str] = {
     "fleet.claimGrace": "Extra time before another worker may take an unrenewed claim over.",
     "fleet.checkpointInterval": "How often a running issue is checkpointed.",
     "fleet.releaseBrokenAfter": "How long a broken worker may keep its issue.",
-    "fleet.maxTakeovers": "Takeovers without progress before an issue is marked failed.",
+    "fleet.maxTakeovers": "Takeovers with no run ending in between before an issue fails.",
     "fleet.stopClaimingAt": "Usage share at which a worker takes no new issue.",
     "fleet.localHandOff": "On a usage limit, let an idle worker of this machine continue.",
     "fleet.handOffWhenPausedLongerThan": "Hand a paused issue to other machines after this.",
@@ -58,7 +58,9 @@ HELP: dict[str, str] = {
     "defaults.ciRepairAttempts": "Rounds of fixing red CI before asking.",
     "defaults.processBacklog": "Also work issues that were open before the repository was added.",
     "defaults.createMissingLabels": "Let triage create labels the repository does not have.",
-    "defaults.maxActiveIssuesPerRepository": "Claimed issues per repository across all machines.",
+    "defaults.maxActiveIssuesPerRepository": (
+        "Soft limit of live working and paused claims across all machines, including grace."
+    ),
     "defaults.runTimeout": "Longest single agent run.",
     "defaults.checksTimeout": "How long a pull request may wait for checks or a review.",
     "defaults.build": "Build command. Default: detected from the repository.",

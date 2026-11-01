@@ -102,7 +102,7 @@ on a repository that account cannot push to.
 - **New issues, new comments, reopened issues** — detected by polling with conditional requests, so
   an idle repository costs no rate limit.
 - **Automatic triage** — an unlabelled issue gets labels chosen from the repository's existing label
-  set.
+  set; a label it lacks is only created with `createMissingLabels` on.
 - **Spec → scenarios → domain → tests → code** — every issue is worked SDD, BDD, DDD and TDD, in that
   order. See [How an issue is worked](#-how-an-issue-is-worked).
 - **One manager, many workers** — a single manager steers a Claude Code, a Codex, an Antigravity and
@@ -181,6 +181,7 @@ From the command line:
 github-issue-worker add https://github.com/Hawkynt/ShiftDiff  # verifies push access, creates worker:* labels
 github-issue-worker workers --detect                          # finds installed agents and proposes one worker each
 github-issue-worker watch                                     # runs until stopped; the UI is at http://127.0.0.1:8765
+github-issue-worker once                                      # one poll-and-work pass, for cron or a scheduler
 ```
 
 Then open an issue in that repository. Within one poll interval an idle worker claims it and it is
@@ -193,9 +194,35 @@ be configured: they find each other's claims in the repository.
 `github-issue-worker watch --dry-run` does everything except write: it logs every claim, label,
 comment, push and merge it would have made.
 
+`github-issue-worker once` is `watch --once` as its own command, for cron or a scheduler: the same
+startup checks, exactly one poll-and-work pass, and it waits for the work that pass started before
+exiting — it never serves the UI.
+
+`github-issue-worker list` shows each watched repository's last successful poll (UTC, or
+`never polled`), counts by issue lifecycle state, and its current open issues with number, title,
+state and current holder when claimed. It includes queued and remotely worked issues, excludes
+pull requests, and does not start workers. Counts and current issues come from the same read-only
+snapshot; the poll timestamp is persisted separately from the issue/comment cursors. A successful
+unchanged poll advances it; a failed poll does not.
+
+`github-issue-worker remove <repo>` accepts the same repository references as `add`. It stops
+watching only that repository and checkpoints and releases all its working or paused claims held
+by this manager, including claims retained across a restart. A running manager handles the request
+through an authenticated loopback control channel, independent of the optional UI: it stops the
+affected runs before publishing their checkpoints and releasing their claims, and acknowledges
+completion before the command reports success. When the manager is offline, the command performs
+the same operation directly. The watch-list change is saved only after release succeeds; failures
+are reported and can be retried without discarding recoverable work. Other managers' claims and
+other repositories are untouched. Repeating removal is harmless. Use the same `--config` and
+`--state-dir` as `watch` (and the same `--cache-dir` when removing offline). If the manager is
+starting, stopping or unreachable while still running, removal reports an error asking for a retry
+rather than attempting an unsafe offline release.
+
 `github-issue-worker status` shows what is going on, in headed sections: the manager, its workers
-(agent, account, and `limited until …` while the account waits for its reset), then one section per
-watched repository with the claims held by this manager apart from those held by other managers.
+(agent, account, and `limited until …` while the account waits for its reset), its accounts (each
+one `available` or `limited`, when the limit resets, and the issues its workers paused that wait on
+it), then one section per watched repository with the claims held by this manager apart from those
+held by other managers.
 Each claim shows its worker, state, step, branch, how long ago it was renewed and when it expires;
 paused claims show when they resume and claims nobody renewed for validity plus grace show as
 `abandoned`. Finished claims (done or released) are only counted. Times are UTC with the distance
@@ -219,8 +246,9 @@ the colour of the model it runs: agent, account and model, with a sub-row per in
 lets run at once: a square per issue, coloured by repository, with the issue (its description as
 tooltip), a track through the six steps of a run, its branch, which opens the worktree, and its own
 log and stop & release. When other managers hold issues, a remote row follows with a sub-row for
-each, its branch linked on GitHub. Below: a flight log of every run of the last day per worker,
-issues merged per day by model, agent or repository over 30, 90 or 180 days, the model share, the
+each, its branch linked on GitHub. Then the accounts: each one available or limited, its reset
+counting down, and the issues paused on it. Below: a flight log of every run of the last day per
+worker, issues merged per day by model, agent or repository over 30, 90 or 180 days, the model share, the
 running total of merges per model (a line each, or stacked into the total), time to merge, the busy hours by weekday, the weekly model mix
 and a ledger of every model used. Every model carries one colour through all of it, drawn from its
 maker's hue segment and the model's own name, so `Opus 5` and `Opus 5.5` stay the same hue and a
@@ -234,6 +262,13 @@ motion.
 runs, and their output, refreshed as it goes.
 
 ![The log of a worker: messages, commands and their output](docs/screenshots/log.png)
+
+**Issue.** One issue in full: who holds its claim, at which step and until when; every finished run
+on it, by any manager; the outcome and the journal of its worktree on this machine; the tail of the
+running agent's log; and the claim's history, newest first, its renewals folded into one row. Skip
+it, release it or open its pull request from the top of the page.
+
+![Issue page with its claim, runs, journal, log tail and claim history](docs/screenshots/issue.png)
 
 **Repositories.** Readouts for the watch list, then one panel per repository with its overrides; a
 repository is added only when your account can push to it.
@@ -254,7 +289,10 @@ applies the change live.
 ## 🔄 Issue lifecycle
 
 Every watched issue is in exactly one state, and every state except *idle* and *done* is visible as a
-label on the issue. *Queued* means unclaimed: any idle, eligible worker may take it.
+label on the issue. *Queued* means unclaimed: any idle, eligible worker may take it. Within a
+repository, queued issues labelled `priority:high` are taken first and those labelled `priority:low`
+last; within each band the oldest pending event goes first. The labels only reorder, they never
+queue an issue by themselves.
 
 ```mermaid
 stateDiagram-v2
@@ -267,12 +305,12 @@ stateDiagram-v2
   Triage --> Split: large, with independent parts
   Split --> Done: every sub-issue completed
   Split --> Queued: trusted comment
-  Working --> NeedsInput: question or design decision
+  Working --> NeedsInput: question or design decision / runTimeout or budget reached
   Working --> Paused: agent hit its usage limit
   Paused --> Working: limit reset, or an idle local worker takes over
   Paused --> Queued: hand-off threshold reached (optional)
   Working --> Shipping: build + tests green, commit gate passed
-  Working --> Failed: budget exhausted / unrecoverable
+  Working --> Failed: unrecoverable
   Shipping --> Working: CI red (up to N attempts) / conflict
   Shipping --> AwaitingReview: merge blocked by required review
   Shipping --> Done: merged, issue closed, clean-up done
@@ -294,7 +332,7 @@ The next worker resumes from the last checkpoint.
 | Triage / Working | `worker:working` | yes | Labelling, then implementing in the worker's worktree. |
 | Paused | `worker:paused` | yes | The worker's agent hit its usage limit. It holds the issue and resumes at the reset. |
 | Shipping | `worker:working` | yes | Pushed, PR open, waiting for checks or merging. |
-| NeedsInput | `worker:needs-input` | no | A question is in the issue. Work is checkpointed, so whoever claims the answer continues from it. |
+| NeedsInput | `worker:needs-input` | no | A question is in the issue, or a run hit `runTimeout` or its budget and the comment says what was finished and what was not. Work is checkpointed, so whoever claims the answer continues from it. |
 | AwaitingReview | `worker:awaiting-review` | no | PR is green but the ruleset requires an approving review. |
 | Failed | `worker:failed` | no | Gave up. The last comment says why and what was tried. |
 | Split | `worker:split` | no | Split into sub-issues that are worked on their own. Closed as soon as every sub-issue is completed. |
@@ -302,6 +340,12 @@ The next worker resumes from the last checkpoint.
 
 Only states that are actively being worked hold a claim. An issue waiting for a human or a review
 holds nothing, so it never ties up a worker.
+
+An issue parked at `worker:needs-input` receives no reminders or repeated questions. Without new
+trusted input, polling, elapsed time, a manager restart or another manager discovering the issue
+never starts another run or renews its released claim. Its checkpoint and label remain until work
+resumes. Previously consumed comments, any manager's marked output, untrusted comments and metadata
+updates do not count as an answer. Ordinary repository polling continues; waiting uses no agent run.
 
 What counts as an event:
 
@@ -374,8 +418,12 @@ when:
 - the change needs a large design decision: a new dependency, a breaking public-API change, a data or
   storage migration, a new top-level component, or a change that contradicts the spec;
 - the request is impossible or contradicts itself;
-- the budget for the run is exhausted, or CI keeps failing after the configured number of repair
-  attempts.
+- CI keeps failing after the configured number of repair attempts.
+
+A run that reaches `runTimeout` or its budget is stopped and not started again. The issue is
+parked the same way, with one comment naming the limit that was hit, what was finished (the commits
+on the branch and what the journal marks as done) and what was not (what the journal has left).
+Commenting continues the work from the journal; raise the limit first if it was too tight.
 
 The question comment names the options, the trade-off of each, and the one the worker recommends, so
 that "go with your recommendation" is a complete answer.
@@ -417,8 +465,25 @@ Every agent is driven through the same contract, so agents are interchangeable m
 | `codex` | `codex exec --json --dangerously-bypass-approvals-and-sandbox` | `codex exec resume <id>` | `--output-schema` | `error` / `turn.failed` message text, "try again at …" |
 | `antigravity` | `agy -p --output-format stream-json --dangerously-skip-permissions`, prompt as a pointer to `.ghiw/prompt.md` | `--conversation <uuid>` | — | message and log text |
 | `opencode` | `opencode run --format json`, model as `provider/model` | `--session <id>` | — | provider error events |
-| `command` | any CLI, from a configured argument template | template-defined | — | configured patterns + exit code |
+| `command` | any CLI, from the worker's argument template `command` | an argument containing `{session}` | — | `limitExitCodes`, else `limitPatterns` on a failed run |
 | `remote` | a vendor's cloud agent: submit, poll, collect the diff | vendor-defined | — | vendor API |
+
+**A `command` worker** runs any further CLI agent from its argument template, `workers[].command`:
+an argument list whose first entry names the program, found on `PATH` or given by an `executable`
+installation. In every argument `{prompt}` becomes the prompt text, `{worktree}` the worktree's
+absolute path, `{outcome}` the absolute path of `.ghiw/outcome.json` and `{session}` the id of the
+conversation being continued; other braces stay as they are. On a fresh run an argument containing
+`{session}` is left out, so a flag and its value belong in one argument (`--resume={session}`). The
+prompt is also written to `.ghiw/prompt.md`, and stdin stays empty. An exit code listed in
+`limitExitCodes` means a usage limit; a run that exits non-zero or writes no outcome is a usage limit
+when a line of its output matches one of `limitPatterns` (regular expressions, case-insensitive), and
+an error otherwise. Exit code 0 with a valid outcome file is a finished run.
+
+```json
+{ "name": "aider", "agent": "command", "account": "openrouter", "priority": 5,
+  "command": ["aider", "--yes-always", "--message", "{prompt}"],
+  "limitPatterns": ["rate limit", "quota exceeded"], "limitExitCodes": [75] }
+```
 
 **Which model ran** is read from where each agent reveals it: Claude's init event, Codex's own
 session file in its home, Antigravity's log in its profile, and for ClaudeLocal the gateway's model
@@ -531,6 +596,8 @@ for good. Every case the manager knows about releases the claim at once, with a 
 - the issue moves to a waiting state (NeedsInput, AwaitingReview, Failed) or is done;
 - a worker is removed from the manager's configuration (CLI or UI): its claim is released on the
   next start, or immediately when the manager is running;
+- a repository is removed from the watch list: its local runs stop, their work is checkpointed,
+  and this manager's claims in that repository are released before removal completes;
 - a worker stays *unavailable* (not installed, logged out, broken) for more than `releaseBrokenAfter`
   (default 1 hour);
 - you release it yourself: `github-issue-worker release <owner/repo#n>`, or the UI. Releasing another
@@ -540,14 +607,14 @@ for good. Every case the manager knows about releases the claim at once, with a 
 A clean shutdown of the manager checkpoints but **keeps** its claims, because seven days are meant to
 cover a machine being off. `watch --release-on-exit` releases them instead.
 
-**Fencing.** Before every outward write (push, comment, label, merge) the manager confirms that the
-worker's claim is still the current value of the ref. If the claim has passed `expiresAt` (the
-machine was off for more than a week), it renews first and continues only if that compare-and-swap
-succeeds. A rejected renewal means another worker took over: the run is abandoned, and its local work
-is discarded, because the new holder resumes from the last checkpoint. Writes carry their own guards
-too: the issue branch is pushed with `--force-with-lease` against the commit this worker last pushed,
-and the merge passes the expected head `sha`, so a worker that lost its claim cannot overwrite or
-merge somebody else's work.
+**Fencing.** Before every outward write (push, branch link, comment, label, merge) the manager
+confirms that the worker's claim is still the current value of the ref. If the claim has passed
+`expiresAt` (the machine was off for more than a week), it renews first and continues only if that
+compare-and-swap succeeds. A rejected renewal means another worker took over: the run is abandoned,
+and its local work is discarded, because the new holder resumes from the last checkpoint. Writes
+carry their own guards too: the issue branch is pushed with `--force-with-lease` against the commit
+this worker last pushed, and the merge passes the expected head `sha`, so a worker that lost its
+claim cannot overwrite or merge somebody else's work.
 
 **No reservations.** A worker instance claims an issue only when, at that moment, it holds no other claim, it
 is eligible for the issue (routing labels), its installation is available, its account is not limited
@@ -563,8 +630,10 @@ same new comment race for the claim, and the loser drops it.
 **Checkpoints.** The manager pushes a checkpoint to `refs/ghiw/wip/<issue>` after each step, every
 `checkpointInterval` (default 5 minutes) during a run, and before it pauses or releases. A checkpoint
 is a commit whose first parent is the issue branch's local head and whose tree is the full worktree,
-uncommitted changes included. A new holder checks out the branch commits and restores the rest as
-uncommitted work. The issue branch itself only ever receives verified, gate-checked commits.
+uncommitted changes included. Ignored build output and transient run files are excluded; the
+journal is included even though its directory is ignored. A new holder checks out the branch
+commits and restores the rest as uncommitted work. The issue branch itself only ever receives
+verified, gate-checked commits.
 
 **Presence** on `refs/ghiw/managers/<manager>` is renewed every 15 minutes. It feeds the UI's fleet
 view, the *unserved* check, and shared account limits. It never decides a takeover, only the claim
@@ -583,9 +652,21 @@ does. A manager not seen for an hour shows as offline, and its presence ref is p
 | The issue crashes every holder it meets | After `maxTakeovers` takeovers without progress: `worker:failed` with the evidence, and no further attempts until a trusted comment. |
 | Labels drifted from claims (a manual edit, a crash between two writes) | The claim is the truth. The holder or, for unclaimed issues, any manager repairs the label on its next poll. |
 
+**Takeovers without progress.** `takeovers` counts the takeovers of abandoned claims since a run on
+the issue last ended: released, done, or paused at a usage limit. Each of those
+resets it to 0. The worker that finds an abandoned claim whose `takeovers` already reached
+`maxTakeovers` does not take it over a further time. It releases the claim at step `failed` in the
+same compare-and-swap, labels the issue `worker:failed`, and comments the evidence: the takeover
+count, the step the last holder reached, the last holder and its last renewal, and the finished runs.
+
 **Concurrency per repository** is a fleet-wide soft limit (`maxActiveIssuesPerRepository`, default
 4): a worker does not claim when it already sees that many live claims in the repository. Two
-managers racing can exceed it briefly. Merges need no lock, because each one is guarded by its
+managers racing can exceed it briefly. Working and paused claims count across all managers, even
+when their manager is offline or their issue is absent from the current poll. They count through
+claim validity and grace; released, done and abandoned claims do not count. Full repositories keep
+new candidates pending for later polls, while existing holders may continue or resume. Each manager
+uses its own effective default or repository override, including live configuration changes.
+Merges need no lock, because each one is guarded by its
 expected head `sha` and conflicts go back through rebase and re-verification.
 
 ## ⏳ Usage limits
@@ -641,11 +722,11 @@ not a second program: what the UI changes, the manager does, with the same check
 
 | Page | Shows | Lets you |
 | --- | --- | --- |
-| **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
+| **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. Every account: available or limited, the reset time counting down, and each issue paused on it as a link. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
 | **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), with the box completing the owner and then, after the `/`, that owner's repositories your account can push to and does not watch yet; the list is read in the background and kept in memory for 10 minutes. Edit its per-repository overrides, remove one. |
 | **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, model colours, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. The model colours are edited on a colour wheel as well (F14.20). |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
-| **Issue** | One issue's runs, the journal, the outcome, the log tail, and the claim's history. | Skip it, release it, open the PR. |
+| **Issue** (`/issues/<owner>/<repo>/<number>`, linked from every row of Issues and Fleet) | One issue's holder, state, step, branch, renewal and expiry; every finished run of it, from its claim and this manager's history; the journal and the outcome from this machine's worktree of the issue; the last 200 lines of a local agent's log, as on the Log page; and the claim's history, newest first, read from the commits of its claim ref, with consecutive renewals folded into one row. Journal and outcome of an issue worked on another machine say they are not available here. | Skip it (adds `worker:skip`; a run in progress stops at its next checkpoint), release it (a run of this manager is stopped as by *stop & release*; another manager's claim only after typing `<repo>#<number>`), open its pull request. |
 
 Every page wears the cockpit's deck: one dark look whatever the system's colour scheme, its
 sections as panels, and the overview pages (Issues, Repositories, Fleet) open with readouts counted
@@ -676,6 +757,23 @@ the `## 🖼️ Screenshots` tour to this README and switches the README check t
 One JSON file per manager: `~/.config/GitHubIssueWorker/config.json` on Linux (`$XDG_CONFIG_HOME`
 respected), `%APPDATA%\GitHubIssueWorker\config.json` on Windows, or `--config <path>`. Everything
 is optional. Managers share nothing but the repositories.
+
+
+**One manager per configuration on this machine (F3.6).** `watch`, `watch --once`, and `once`
+acquire a process lock before detecting workers, writing an initial configuration, contacting GitHub,
+or starting workers or the UI. A duplicate exits promptly with a nonzero status and reports the
+existing manager's PID; it leaves that manager running. Relative and absolute paths, symlinks, and
+an explicit path matching the default identify the same configuration. Identity is the canonical
+file path, not the file contents, manager name, or state/cache directories. Hard links need not be
+recognised as aliases. Editing or atomically replacing the configuration does not release the lock.
+
+Ownership lasts through shutdown and is released by the operating system even after a crash or
+forced termination; no stale PID cleanup is needed. Lock files live in the machine's temporary
+directory and are retained for safe reuse; they are not configuration settings. Failure to access
+or acquire the lock for reasons other than an existing owner refuses startup with a diagnostic.
+Managers using different configuration paths may run together (use different UI ports or `--no-ui`
+where needed); each keeps its own state, manager id and cache, see below. Managers on different machines remain independent even with the same configuration
+path. Repository claims continue to coordinate their issue ownership; this lock is not a fleet lock.
 
 **Every key below is editable in the UI's Settings page**, and the file, the CLI and the UI are three
 ways to change the same settings. All three go through one validation, writes are atomic, and an
@@ -757,13 +855,15 @@ first, and a moved UI listener reopens on its new address.
 | `workers[].installation` | `{ "type": "path" }` | `path`, `executable`, `claudecodeportable` or `claudelocal`; see [Installations](#installations). |
 | `workers[].priority` | 100 | Lower is preferred when several idle workers are eligible. |
 | `workers[].tags` | `[]` | Extra capabilities of this worker. |
-| `workers[].model`, `maxBudgetUsdPerRun` | agent default | Passed to agents that support them. |
-| `workers[].command`, `limitPatterns` | per kind | How a `command` agent is run and how its limits are recognised. |
+| `workers[].model`, `maxBudgetUsdPerRun` | agent default | Passed to agents that support them. The budget in US dollars is enforced by agents that have one (`claude`); a run that uses it up parks the issue (F6.7). |
+| `workers[].command` | — | A `command` worker's argument template, program first, with the `{prompt}`, `{worktree}`, `{outcome}` and `{session}` placeholders; see [Workers](#-workers). Required for `command` workers. |
+| `workers[].limitPatterns` | `[]` | Regular expressions (case-insensitive) that mark a failed `command` run as a usage limit when a line of its output matches. |
+| `workers[].limitExitCodes` | `[]` | Exit codes with which a `command` agent reports a usage limit. |
 | `fleet.claimValidity` | 7 days | Claim validity after the last renewal. |
 | `fleet.claimGrace` | 1 day | Added before another worker may take an unrenewed claim over (8 days in total). |
 | `fleet.checkpointInterval` | 5 min | Checkpoint cadence during a run. |
 | `fleet.releaseBrokenAfter` | 1 h | How long a worker may be unavailable while holding a claim before it is released. |
-| `fleet.maxTakeovers` | 3 | Takeovers without progress before an issue is marked failed. |
+| `fleet.maxTakeovers` | 3 | Takeovers without progress (no run ended in between) before an issue is marked failed. |
 | `fleet.stopClaimingAt` | 0.9 | Reported utilisation at which a worker takes no new issue. |
 | `fleet.localHandOff` | `true` | On a usage limit, pass the issue to an idle local worker on another account. |
 | `fleet.handOffWhenPausedLongerThan` | off | Release a paused issue to the fleet when its reset is further away than this. |
@@ -773,17 +873,31 @@ first, and a moved UI listener reopens on its new address.
 | `ciRepairAttempts` | 3 | Red-CI repair rounds before asking. |
 | `processBacklog` | `false` | On first watch, also queue issues that were already open. Off, so adding a repository never starts a flood. |
 | `createMissingLabels` | `false` | Let triage create a label that does not exist yet. The `worker:*` labels are always created. |
-| `maxActiveIssuesPerRepository` | 4 | Fleet-wide soft limit of claimed issues in one repository. |
-| `runTimeout` | 2 h | Wall-clock limit of one agent run. |
+| `maxActiveIssuesPerRepository` | 4 | Fleet-wide soft limit of live working and paused claims in one repository, including takeover grace. Defaults to 4; a repository override takes precedence. |
+| `runTimeout` | 2 h | Wall-clock limit of one agent run. A run that reaches it is stopped and the issue parked with what was finished and what was not (F6.7). |
 | `checksTimeout` | 2 h | How long a mergeable-looking pull request may wait for required checks or a review before it is labelled `worker:awaiting-review` and released. |
 | `build` / `test` | detected | Verification commands. Detected from `AGENTS.md`/`CONTRIBUTING.md`, then from the stack (`*.sln[x]`, `package.json`, `pyproject.toml`, `Cargo.toml`, …). |
 | `splitIssues` | `true` | Let the understanding run split a large issue with independent parts into sub-issues that are worked in parallel. |
 | `maxProseLines` | 2 | Commit body lines allowed besides change lines (`+ - * # !` and a space, or their indented continuation). More, and the commit is sent back to be rewritten as change lines. |
 | `forbiddenWords` | agent and vendor names | Case-insensitive whole-word regular-expression fragments the commit gate refuses (`claude`, `anthropic`, `codex`, `openai`, `gemini`, `antigravity`, `opencode`, `llm`, `agents?`). `AI` as a word, `generated with` and 🤖 stay forbidden whatever this list says. |
 
-Local state (poll cursors, ETags, native conversation ids, costs) lives in
+Local state (poll cursors, ETags, native conversation ids, costs, the manager id) lives in
 `~/.local/state/GitHubIssueWorker/` (`%LOCALAPPDATA%` on Windows). Clones and worktrees live under
-`~/.cache/GitHubIssueWorker/`. Deleting either loses nothing the repositories do not also know.
+`~/.cache/GitHubIssueWorker/`. Both belong to one configuration: the default configuration uses these
+directories themselves, any other configuration its own `configurations/<key>/` below each of them,
+where `<key>` derives from the canonical configuration path (F3.6). Two configurations therefore
+never share a manager id, a conversation or a worktree, and one manager's housekeeping never
+removes another's worktree. `--state-dir` and `--cache-dir` replace these defaults; giving two
+configurations the same explicit directory makes them one manager in the claims and is not supported.
+
+Each invocation keeps its transcript under the state directory's
+`logs/<owner>/<repository>/<issue>/` as a unique `.ndjson` file. A matching `.json` file records
+`transcript` (the filename), `worker` (the executing instance), `cost_usd` (`null` when unknown)
+and `stderr` (diagnostic output). Retries and continuations have separate records, including when
+started by the same worker within one second. Missing monetary costs remain unknown; reported zero
+is preserved. Failed, usage-limited, timed-out and stopped invocations retain their available output
+and any reported cost. These local records survive manager restarts and worktree cleanup; deleting
+the state directory removes them. No additional configuration is required.
 
 **Clean state after every PR.** When an issue's PR is merged, or closed unmerged, or the claim is
 released or lost, the manager removes that issue's worktree and local branch, deletes the remote
@@ -865,7 +979,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F1.2** `add` refuses a repository the authenticated account cannot push to
   (`permissions.push` is false), and says so.
 - [x] 🟥 **F1.3** `add` creates the `worker:*` labels that do not exist yet.
-- [ ] 🟥 **F1.4** `remove <repo>` and `list` (last poll, state counts, current issues). Removing a
+- [x] 🟥 **F1.4** `remove <repo>` and `list` (last poll, state counts, current issues). Removing a
   repository releases this manager's claims in it with a checkpoint.
 - [x] 🟥 **F1.5** Push access is re-checked on every start and every hour. A repository that lost it
   is suspended with a log entry, not skipped silently. Startup checks precede label creation,
@@ -915,17 +1029,19 @@ operational items, demonstrated on a real repository. Commits that implement an 
   scratch.
 - [ ] 🟥 **F3.5** Events that arrive while an issue is claimed are coalesced and delivered to the
   holder when its run ends. None is lost, and five quick comments produce one rework run.
-- [ ] 🟥 **F3.6** Single-manager lock per configuration on one machine. A second `watch` with the same
+- [x] 🟥 **F3.6** Single-manager lock per configuration on one machine. A second `watch` with the same
   configuration exits with the PID of the first. Managers with different configurations, on the same
   or other machines, are coordinated by claims.
-- [ ] 🟧 **F3.7** `priority:high`/`priority:low` labels reorder the queue.
+- [x] 🟧 **F3.7** `priority:high`/`priority:low` labels reorder the queue.
+  Within a repository's pass: `priority:high`, then unlabelled, then `priority:low`, oldest pending
+  event first within each. Matching ignores case; an issue with both counts as high.
 
 ### F4 — Triage
 
 - [ ] 🟥 **F4.1** An issue with no labels gets one or more labels from the repository's existing set,
   chosen by the first run itself: its prompt lists the existing labels and its outcome carries
   `labels`, so no separate agent call is spent. Labels outside the existing set are dropped.
-- [ ] 🟥 **F4.2** Labels that do not exist are never created unless `createMissingLabels` is on.
+- [x] 🟥 **F4.2** Labels that do not exist are never created unless `createMissingLabels` is on.
 - [ ] 🟥 **F4.3** An issue that already carries a non-`worker:*` label is not relabelled.
 - [ ] 🟧 **F4.4** Triage may conclude the issue is too vague to start, which goes straight to
   [F8](#f8--asking-for-input) with the missing information named.
@@ -947,8 +1063,15 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F5.1** One cached clone per repository and manager, fetched before each run.
 - [ ] 🟥 **F5.2** One `git worktree` per claimed issue on branch `issue/<n>-<slug>`, created from the
   freshly fetched base branch, or from the latest checkpoint when continuing.
-- [ ] 🟥 **F5.3** The branch is linked to the issue (GraphQL `createLinkedBranch`), so it shows in the
-  issue's *Development* panel.
+- [x] 🟥 **F5.3** The branch is linked to the issue (GraphQL `createLinkedBranch`), so it shows in the
+  issue's *Development* panel. The link is made, fenced, before the branch's first push:
+  `createLinkedBranch` creates the remote branch at the base commit the work started from, and the
+  push then fast-forwards it under the usual lease. A branch already among the issue's linked
+  branches is reused as it is. A remote branch that exists without the link (pushed earlier or by
+  hand) keeps its commits: the API only links a branch it creates, so the manager asks once in the
+  issue for it to be linked by hand and goes on; a later run finds the link and asks no more. A
+  rejected link, a GraphQL `errors` answer with status `200` included, fails the run with a comment
+  saying why, before anything is pushed; the next run looks the link up again first.
 - [x] 🟥 **F5.4** Commits use your git identity and signing configuration. The manager never sets an
   author, committer or e-mail of its own.
 - [ ] 🟥 **F5.5** Clean state after every PR: on merge, unmerged close, release or loss of the claim,
@@ -986,9 +1109,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F6.6** Independent verification after `done`: clean working tree, configured or detected
   build and test commands pass, at least one commit on the branch. A failed check returns the output
   to the same conversation, once, before the issue is parked.
-- [ ] 🟥 **F6.7** `runTimeout` and the budget are enforced. Hitting either parks the issue with a
+- [x] 🟥 **F6.7** `runTimeout` and the budget are enforced. Hitting either parks the issue with a
   comment stating what was finished and what was not.
-- [ ] 🟧 **F6.8** Each run's transcript, worker and cost (where the agent reports one) are kept with
+- [x] 🟧 **F6.8** Each run's transcript, worker and cost (where the agent reports one) are kept with
   the issue's local log.
 
 ### F7 — Commit, push, pull request, merge, close
@@ -1026,7 +1149,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   releases the claim.
 - [ ] 🟥 **F8.2** The next trusted comment queues the issue, and whoever claims it continues from the
   checkpoint and journal with the answer. The same worker resumes its native conversation.
-- [ ] 🟥 **F8.3** A parked issue is never pinged again by the manager. Silence costs nothing.
+- [x] 🟥 **F8.3** A parked issue is never pinged again by the manager. Silence costs nothing.
 - [ ] 🟧 **F8.4** An answer that does not resolve the question produces a follow-up question rather
   than a guess.
 
@@ -1037,7 +1160,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F9.2** A reopened issue gets a fresh branch `issue/<n>-<slug>-r<k>` from the current base,
   a run that is primed with the previous journal and told why it was reopened, and a new PR that
   references the previous one.
-- [ ] 🟥 **F9.3** Comments on closed issues are ignored.
+- [x] 🟥 **F9.3** Comments on closed issues are ignored.
 - [ ] 🟧 **F9.4** Reviews and review comments on the worker's PR are treated as rework input, and
   each review thread is answered or resolved.
 
@@ -1048,7 +1171,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   local agents with one concurrent run per account, writes the initial configuration and opens the
   local UI in the default browser. The first `Ctrl+C`/`SIGTERM` finishes each worker's current
   step, checkpoints and keeps the claims (`--release-on-exit` releases them). The second aborts.
-- [ ] 🟥 **F10.2** `once`: one poll-and-work pass, for cron or a scheduler.
+- [x] 🟥 **F10.2** `once`: one poll-and-work pass, for cron or a scheduler.
 - [ ] 🟥 **F10.3** `work <owner/repo#n> [--worker <name>]`: claim and work exactly one issue now with
   an idle worker, ignoring the queue order but never another worker's valid claim.
 - [ ] 🟥 **F10.4** `--dry-run` on every command: no claim, label, comment, push, merge or file outside
@@ -1094,8 +1217,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F11.11** Routing: `agent:<kind>` and `needs:<tag>` restrict who may claim. An issue no known
   worker can serve is labelled `worker:unserved` with one explanatory comment, and re-queued when an
   eligible worker appears in presence.
-- [ ] 🟥 **F11.12** `maxTakeovers` takeovers without progress mark the issue failed with the evidence.
-- [ ] 🟧 **F11.13** `maxActiveIssuesPerRepository` is honoured fleet-wide from the visible claims.
+- [x] 🟥 **F11.12** `maxTakeovers` takeovers without progress mark the issue failed with the evidence.
+- [x] 🟧 **F11.13** `maxActiveIssuesPerRepository` is honoured fleet-wide from the visible claims.
 - [ ] 🟧 **F11.14** Done claims and checkpoint refs of closed issues are garbage-collected after 30
   days, by compare-and-swap delete.
 - [ ] 🟦 **F11.15** Simulation test: 3 managers with 4 workers each, 4 agent kinds, random crashes,
@@ -1123,7 +1246,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   provider/model`, with every permission allowed in the run's own configuration, for models behind
   any provider OpenCode supports, local ones included. Tested against a fake replaying captured
   OpenCode output; verified against a real installation in F15.8.
-- [ ] 🟥 **F12.7** `command` adapter: argument template with `{prompt}`, `{worktree}`, `{outcome}`,
+- [x] 🟥 **F12.7** `command` adapter: argument template with `{prompt}`, `{worktree}`, `{outcome}`,
   `{session}` placeholders, configured limit patterns and exit codes, for any further CLI agent.
 - [ ] 🟥 **F12.8** `workers` command: list workers with agent, installation, version, account,
   availability and reset time. `--detect` proposes one worker per installation it finds. `add-worker`
@@ -1156,7 +1279,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   fleet.
 - [ ] 🟥 **F13.6** At reset plus jitter, one minimal probe. On success, paused issues resume and the
   account's workers claim again, with no human action.
-- [ ] 🟧 **F13.7** The UI and `status` show each account's state, reset time and which issues wait on
+- [x] 🟧 **F13.7** The UI and `status` show each account's state, reset time and which issues wait on
   it.
 
 ### F14 — Local UI
@@ -1177,7 +1300,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F14.11** Log page: a local agent's run as a chat log (messages, tool calls and their
   output, errors), read from the run's own output file while it is written and refreshed live.
 - [ ] 🟥 **F14.4** Worker actions: add from detected installations or by hand, edit every worker
-  setting (agent, installation, account, priority, tags, model, budget, command and limit patterns),
+  setting (agent, installation, account, priority, tags, model, budget, command, limit patterns and
+  limit exit codes),
   remove (releases the claim), pause, resume, release claim.
 - [x] 🟥 **F14.8** Settings page: every remaining configuration key, with its default and its source
   (file or default), inline validation through the F0.3 validator, atomic save and live apply (F0.7).
@@ -1263,7 +1387,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   remain. Mouse, touch and keyboard, phone width, light and dark; tested in a real browser.
 - [ ] 🟧 **F14.5** Fleet page: every claim per repository with holder, state, step, renewal and
   expiry; managers from presence; forced release after a typed confirmation.
-- [ ] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
+- [x] 🟧 **F14.6** Issue page: runs, journal, outcome, log tail, claim history; skip and release.
 - [x] 🟥 **F14.7** Demo mode `ui --demo <scenario>` renders every page through the real UI code with
   deterministic sample data (several workers of every agent kind, limited and paused accounts,
   claims from other managers). `generate.yml` captures each page, commits changed screenshots and
@@ -1332,7 +1456,8 @@ Three rules hold the design together. **Every GitHub write goes through one `Shi
 where the dry-run, the commit gate, the marker and the fencing check live, so no path can bypass
 them, the UI included. **Every step is idempotent and checkpointed**: a step repeated after a crash or
 a takeover detects its own earlier effect and skips it, which is what makes F3.4 and F11.5 possible.
-**The claim is the only lock**: there is no coordinator process, and a manager can disappear at any
+**The claim is the only fleet lock**: the local configuration lock (F3.6) only prevents duplicate
+manager processes on one machine. There is no coordinator process, and a manager can disappear at any
 moment without blocking the others for longer than one claim's validity plus grace.
 
 The manager is asynchronous (`asyncio`): polling, claim renewal, waiting for checks, supervising agent

@@ -263,8 +263,13 @@ def test_a_dragged_hue_survives_save_and_reload_with_its_width(
 def test_a_finger_drags_an_arc_without_scrolling_the_page(
     browser: Browser, server: UiServer
 ) -> None:
+    # The deck's entrance animation slides the wheel for a second and a half: a touch that lands
+    # while it moves grabs the arc at a point the test did not aim at.
     context = browser.new_context(
-        has_touch=True, is_mobile=True, viewport={"width": 390, "height": 844}
+        has_touch=True,
+        is_mobile=True,
+        reduced_motion="reduce",
+        viewport={"width": 390, "height": 844},
     )
     page = context.new_page()
     page.goto(server.url + "/settings")

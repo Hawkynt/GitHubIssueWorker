@@ -48,6 +48,8 @@ def render(
     repositories: list[RepositoryClaims],
     workers: list[WorkerSlot] | None = None,
     limits: dict[str, datetime] | None = None,
+    accounts: tuple[str, ...] = (),
+    now: datetime = NOW,
 ) -> str:
     return render_status(
         ME,
@@ -55,7 +57,8 @@ def render(
         (limits or {}).get,
         repositories,
         POLICY,
-        NOW,
+        now,
+        accounts,
     )
 
 
@@ -69,7 +72,12 @@ def section(text: str, heading: str) -> list[str]:
 def test_the_output_is_headed_sections_separated_by_blank_lines() -> None:
     text = render([RepositoryClaims("o/a", ())])
     blocks = text.rstrip("\n").split("\n\n")
-    assert [block.splitlines()[0] for block in blocks] == ["Manager", "Workers", "o/a"]
+    assert [block.splitlines()[0] for block in blocks] == [
+        "Manager",
+        "Workers",
+        "Accounts",
+        "o/a",
+    ]
     assert blocks[0].splitlines()[1] == "  manager@host"
 
 
@@ -187,3 +195,103 @@ def test_no_workers_says_so() -> None:
 def test_the_same_claims_and_clock_render_the_same_text() -> None:
     repositories = [RepositoryClaims("o/a", (claim(12), claim(2, state=ClaimState.DONE)))]
     assert render(repositories) == render(repositories)
+
+
+# --- F13.7: each account's state, reset time and the issues waiting on it ------------------------
+
+
+def account_rows(text: str) -> dict[str, list[str]]:
+    rows = section(text, "Accounts")
+    assert re.split(r"\s{2,}", rows[0].strip()) == ["ACCOUNT", "STATE", "RESETS", "WAITING"]
+    return {cells[0]: cells[1:] for cells in (re.split(r"\s{2,}", r.strip()) for r in rows[1:])}
+
+
+def anthropic_slots() -> list[WorkerSlot]:
+    return [
+        WorkerSlot(name="claude", agent="claude", account="anthropic-max", worker="claude"),
+        WorkerSlot(name="claude.2", agent="claude", account="anthropic-max", worker="claude"),
+        WorkerSlot(name="codex", agent="codex", account="openai-plus"),
+    ]
+
+
+def test_configured_accounts_without_a_limit_are_available_with_nothing_waiting() -> None:
+    text = render([RepositoryClaims("o/a", ())], [], accounts=("anthropic-max", "openai-plus"))
+    assert account_rows(text) == {
+        "anthropic-max": ["available", "-", "-"],
+        "openai-plus": ["available", "-", "-"],
+    }
+
+
+def test_a_limited_account_shows_its_reset_time() -> None:
+    now = datetime(2026, 10, 30, 11, 0, tzinfo=UTC)
+    limits = {"anthropic-max": datetime(2026, 11, 6, 10, 0, tzinfo=UTC)}
+    text = render(
+        [RepositoryClaims("o/a", ())],
+        anthropic_slots(),
+        limits,
+        ("anthropic-max", "openai-plus"),
+        now,
+    )
+    rows = account_rows(text)
+    assert rows["anthropic-max"] == ["limited", "2026-11-06 10:00 UTC (in 6d 23h)", "-"]
+    assert rows["openai-plus"] == ["available", "-", "-"]
+
+
+def test_a_paused_claim_waits_on_the_account_of_the_instance_holding_it() -> None:
+    paused = claim(
+        219, worker="claude.2", state=ClaimState.PAUSED, paused_until=NOW + timedelta(hours=1)
+    )
+    working = claim(220, worker="codex")
+    text = render(
+        [RepositoryClaims("owner/repo", (paused, working))],
+        anthropic_slots(),
+        {"anthropic-max": NOW + timedelta(hours=1)},
+        ("anthropic-max", "openai-plus"),
+    )
+    rows = account_rows(text)
+    assert rows["anthropic-max"][2] == "owner/repo#219"
+    assert rows["openai-plus"][2] == "-"
+
+
+def test_an_account_whose_limit_has_passed_is_available_again() -> None:
+    text = render(
+        [RepositoryClaims("o/a", ())],
+        anthropic_slots(),
+        {"anthropic-max": NOW - timedelta(minutes=5)},
+        ("anthropic-max",),
+    )
+    assert account_rows(text)["anthropic-max"] == ["available", "-", "-"]
+
+
+def test_a_paused_claim_of_another_manager_waits_on_no_local_account() -> None:
+    elsewhere = claim(
+        219,
+        manager="laptop@home",
+        worker="claude.2",
+        state=ClaimState.PAUSED,
+        paused_until=NOW + timedelta(hours=1),
+    )
+    text = render(
+        [RepositoryClaims("owner/repo", (elsewhere,))],
+        anthropic_slots(),
+        accounts=("anthropic-max",),
+    )
+    assert all(row[2] == "-" for row in account_rows(text).values())
+
+
+def test_accounts_named_only_by_a_worker_are_listed_after_the_configured_ones() -> None:
+    text = render([RepositoryClaims("o/a", ())], accounts=("work", "spare"))
+    assert list(account_rows(text)) == ["work", "spare", "personal"]
+
+
+def test_several_issues_waiting_on_one_account_are_listed_in_order() -> None:
+    pause = {"state": ClaimState.PAUSED, "paused_until": NOW + timedelta(hours=1)}
+    text = render(
+        [
+            RepositoryClaims("o/b", (claim(3, worker="claude", **pause),)),  # type: ignore[arg-type]
+            RepositoryClaims("o/a", (claim(9, worker="claude.2", **pause),)),  # type: ignore[arg-type]
+        ],
+        anthropic_slots(),
+        accounts=("anthropic-max",),
+    )
+    assert account_rows(text)["anthropic-max"][2] == "o/a#9, o/b#3"

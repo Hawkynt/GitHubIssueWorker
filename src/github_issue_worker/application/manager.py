@@ -22,9 +22,10 @@ from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.history import RunRecord
 from github_issue_worker.application.issue_run import Verdict
 from github_issue_worker.application.poller import PollResult, PollState
-from github_issue_worker.domain.claim import ClaimState, Holder, RunEntry
+from github_issue_worker.domain.claim import ClaimState, Holder, RunEntry, takeover_evidence
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.model_name import display_model
+from github_issue_worker.domain.queue import queue_key, queue_rank
 from github_issue_worker.domain.split import (
     SPLIT_LABEL,
     merged_pull,
@@ -99,10 +100,12 @@ class RepositoryWatch:
     store: ClaimStore
     mode: Literal["all", "labeled"] = "all"
     process_backlog: bool = False
+    stopping: threading.Event = field(default_factory=threading.Event)
     settings: object = None
     """Whatever the run factory needs for this repository (merge method, commands, ...)."""
     suspension_reason: str = ""
     """Empty while enabled; a denial or a failed access query blocks further work."""
+    max_active_issues_per_repository: int = 4
 
     def require_access(self) -> None:
         """Stop a running job before its next outward write, keeping its checkpoint."""
@@ -161,6 +164,22 @@ class Manager:
     )
     _initialized: set[str] = field(default_factory=set, init=False)
 
+    _jobs: dict[tuple[str, int], tuple[str, threading.Event]] = field(default_factory=dict)
+
+    def stop_repository(self, watch: RepositoryWatch) -> list[tuple[str, threading.Event]]:
+        """Stop scheduling; the caller drains these jobs before checkpointing or releasing."""
+        with self._lock:
+            watch.stopping.set()
+            return [job for (repo, _), job in self._jobs.items() if repo == watch.name]
+
+    def forget_repository(self, watch: RepositoryWatch) -> None:
+        with self._lock:
+            if watch in self.repositories:
+                self.repositories.remove(watch)
+            for key in list(self._own):
+                if key[0] == watch.name:
+                    del self._own[key]
+
     # --- the loop ------------------------------------------------------------------------------
 
     def start(self) -> None:
@@ -203,9 +222,11 @@ class Manager:
         return True
 
     def tick(self) -> None:
-        for watch in self.repositories:
+        for watch in list(self.repositories):
             try:
-                self._tick(watch)
+                with self._lock:
+                    if not watch.stopping.is_set():
+                        self._tick(watch)
             except Exception:
                 log.exception("%s: poll cycle failed", watch.name)
 
@@ -217,6 +238,9 @@ class Manager:
         state = self.poll_states.get(watch.name, PollState())
         result, state = self.poll(watch.name, state, watch.process_backlog)
         self.poll_states[watch.name] = state
+        # The streams advance independently; a comment-only update needs fresh issue state.
+        for comment in result.comments:
+            self._known.pop((watch.name, comment.issue), None)
         for issue in result.issues:
             self._known[(watch.name, issue.number)] = issue
 
@@ -225,7 +249,7 @@ class Manager:
             own = {number for (repo, number) in self._own if repo == watch.name}
         candidates = touched | self._pending.setdefault(watch.name, set()) | own
         since = state.watched_since or self.clock.now()
-        for number in sorted(candidates, key=lambda n: self._updated(watch, n)):
+        for number in sorted(candidates, key=lambda n: self._queue_key(watch, n)):
             try:
                 self._consider(watch, number, since)
             except Exception:
@@ -268,9 +292,12 @@ class Manager:
                     self._own[(watch.name, number)] = stored.claim.holder.worker
         self._adopted.add(watch.name)
 
-    def _updated(self, watch: RepositoryWatch, number: int) -> datetime:
+    def _queue_key(self, watch: RepositoryWatch, number: int) -> tuple[int, datetime, int]:
+        """Priority labels first, then the oldest pending event (F3.1, F3.7)."""
         known = self._known.get((watch.name, number))
-        return known.updated_at if known else self.clock.now()
+        if known is None:
+            return queue_rank(frozenset()), self.clock.now(), number
+        return queue_key(known)
 
     def _issue(self, watch: RepositoryWatch, number: int) -> Issue:
         key = (watch.name, number)
@@ -330,6 +357,9 @@ class Manager:
             return
 
         kind = pending_run(context)
+        if kind is RunKind.CONTINUATION and claim and watch.coordinator.policy.stalled(claim, now):
+            self._give_up(watch, number)
+            return
         if kind is None:
             self._pending[watch.name].discard(number)
             if (watch.name, number) in self._labelled or (
@@ -358,7 +388,16 @@ class Manager:
                 and not self._limited(slot, now)
                 and self._has_room(slot)
             ]
-            if not free:
+            if (
+                not free
+                or sum(
+                    1
+                    for number in watch.store.issues()
+                    if (stored := watch.store.read(number)) is not None
+                    and not watch.coordinator.policy.may_claim(stored.claim, now)
+                )
+                >= watch.max_active_issues_per_repository
+            ):
                 self._pending[watch.name].add(number)
                 self._label(watch, number, "worker:queued")
                 return
@@ -372,6 +411,17 @@ class Manager:
                 return
             self._start(watch, slot, handle, issue, new_input(context), kind)
 
+    def _give_up(self, watch: RepositoryWatch, number: int) -> None:
+        """Mark an issue failed that crashed every holder it met (F11.12)."""
+        stalled = watch.coordinator.give_up(number)
+        if stalled is None:
+            return
+        self._pending[watch.name].discard(number)
+        policy = watch.coordinator.policy
+        watch.host.comment(number, takeover_evidence(stalled, policy.max_takeovers))
+        watch.host.set_worker_label(number, "worker:failed")
+        log.warning("%s#%d: failed after %d takeovers", watch.name, number, stalled.takeovers)
+
     def _continue_own(
         self, watch: RepositoryWatch, issue: Issue, handle: ClaimHandle, context: WorkContext
     ) -> None:
@@ -384,6 +434,8 @@ class Manager:
                     watch.coordinator.release(handle, step="skipped")
                     self._own.pop((watch.name, issue.number), None)
                     self._labelled.pop((watch.name, issue.number), None)
+                return
+            if issue.state != "open":
                 return
             self._own[(watch.name, issue.number)] = claim.holder.worker
             if slot is None or not slot.available or slot.busy:
@@ -480,6 +532,9 @@ class Manager:
         )
 
         started = self.clock.now()
+        finished = threading.Event()
+        key = (watch.name, issue.number)
+        self._jobs[key] = (slot.name, finished)
 
         def job() -> None:
             verdict = Verdict("failed", detail="the run crashed")
@@ -493,23 +548,29 @@ class Manager:
                 log.exception("%s#%d: run crashed; the claim is kept", watch.name, issue.number)
                 crashed = True
             finally:
-                with self._lock:
-                    if crashed or verdict.kind == "suspended":
-                        pass
-                    elif verdict.kind == "paused":
-                        self.limits.set_limited(slot.account, verdict.until)
-                    else:
-                        self._own.pop((watch.name, issue.number), None)
-                    slot.busy = False
-                    slot.current = None
-                    slot.issue_title = None
-                    slot.started_at = None
-                    slot.branch = None
-                    slot.step = None
-                    slot.blocker = None
-                self._record(
-                    watch, slot, issue, kind, "crashed" if crashed else verdict.kind, started
-                )
+                try:
+                    self._record(
+                        watch, slot, issue, kind, "crashed" if crashed else verdict.kind, started
+                    )
+                finally:
+                    # A worker stays occupied through its last outward write. Otherwise a
+                    # second run could replace this job before removal has drained it.
+                    with self._lock:
+                        if crashed or verdict.kind == "suspended":
+                            pass
+                        elif verdict.kind == "paused":
+                            self.limits.set_limited(slot.account, verdict.until)
+                        else:
+                            self._own.pop((watch.name, issue.number), None)
+                        slot.busy = False
+                        slot.current = None
+                        slot.issue_title = None
+                        slot.started_at = None
+                        slot.branch = None
+                        slot.step = None
+                        slot.blocker = None
+                        self._jobs.pop(key, None)
+                    finished.set()
                 log.info(
                     "%s#%d: %s by %s on %s %s",
                     watch.name,

@@ -187,6 +187,7 @@ class WorkerSettings(_Settings):
     max_budget_usd_per_run: float | None = Field(default=None, gt=0)
     command: list[str] | None = None
     limit_patterns: list[str] = Field(default_factory=list)
+    limit_exit_codes: list[int] = Field(default_factory=list)
 
 
 class FleetSettings(_Settings):
@@ -301,6 +302,16 @@ def _semantic_problems(config: Configuration) -> list[Problem]:
             problems.append(
                 Problem(path=f"{at}.command", message="a command worker needs a command")
             )
+        for number, pattern in enumerate(worker.limit_patterns):
+            try:
+                re.compile(pattern)
+            except re.error as error:
+                problems.append(
+                    Problem(
+                        path=f"{at}.limitPatterns[{number}]",
+                        message=f"not a regular expression: {error}",
+                    )
+                )
         installation = worker.installation
         if isinstance(installation, ClaudeLocalInstallation) and worker.agent != "claude":
             problems.append(

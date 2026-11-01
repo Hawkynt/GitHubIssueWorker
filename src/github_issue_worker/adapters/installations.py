@@ -68,6 +68,12 @@ def resolve(worker: WorkerSettings, home: Path | None = None) -> Resolved:
             raise Unavailable(f"{worker.name}: no ClaudeLocal launcher at {launcher}")
         return Resolved(launcher, local=True)
 
+    if worker.agent == "command":
+        program = str(_expand(worker.command[0], home)) if worker.command else ""
+        found = shutil.which(program) if program else None
+        if not found:
+            raise Unavailable(f"{worker.name}: `{program}` is not on PATH")
+        return Resolved(Path(found))
     name = EXECUTABLES.get(worker.agent)
     found = (shutil.which(name) if name else None) or shutil.which(worker.agent)
     if not found:

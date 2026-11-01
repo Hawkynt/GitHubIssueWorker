@@ -44,6 +44,7 @@ class Verifier:
     build: str | None = None
     test: str | None = None
     timeout: float = 3600
+    name: str | None = None
 
     def commands(self, worktree: Path) -> list[str]:
         configured = [command for command in (self.build, self.test) if command]
@@ -55,7 +56,7 @@ class Verifier:
             return True, "no build or test command configured or detected"
         output = []
         for command in commands:
-            result = run_invocation(_invocation(command, worktree), self.timeout)
+            result = run_invocation(_invocation(command, worktree), self.timeout, name=self.name)
             output.append(f"$ {command}\n{result.stdout}{result.stderr}")
             if result.timed_out:
                 output.append(f"(timed out after {self.timeout:.0f} s)")

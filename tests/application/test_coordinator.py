@@ -178,3 +178,56 @@ def test_a_finished_run_is_appended_to_the_claim_even_after_a_concurrent_write(
     coordinator.record_run(5, entry)  # recorded once, whoever repeats it
     current = store.current(5)
     assert current is not None and current.runs == (entry,) and current.step == "renamed"
+
+
+def test_given_a_stalled_claim_when_given_up_then_it_is_released_as_failed(
+    store: InMemoryClaimStore, clock: FakeClock
+) -> None:
+    c = coordinator(store, clock)
+    handle = c.claim(42, CODEX, branch="issue/42-x")
+    assert handle is not None
+    store.force_create(handle.claim.replace(takeovers=3, step="verify"))
+    clock.advance(timedelta(days=8))
+    stalled = c.give_up(42)
+    assert stalled is not None and stalled.takeovers == 3 and stalled.step == "verify"
+    failed = store.current(42)
+    assert failed is not None and failed.state is ClaimState.RELEASED and failed.step == "failed"
+
+
+def test_a_claim_that_has_not_stalled_is_not_given_up(
+    store: InMemoryClaimStore, clock: FakeClock
+) -> None:
+    c = coordinator(store, clock)
+    c.claim(42, CODEX, branch="issue/42-x")
+    clock.advance(timedelta(days=8))
+    assert c.give_up(42) is None
+    current = store.current(42)
+    assert current is not None and current.state is ClaimState.WORKING
+
+
+@pytest.mark.parametrize("ending", ["release", "complete", "pause"])
+def test_a_run_that_ends_is_progress_and_resets_takeovers(
+    store: InMemoryClaimStore, clock: FakeClock, ending: str
+) -> None:
+    c = coordinator(store, clock)
+    handle = c.claim(42, CODEX, branch="issue/42-x")
+    assert handle is not None
+    clock.advance(timedelta(days=8))
+    taken = c.claim(42, CLAUDE, branch="issue/42-x")
+    assert taken is not None and taken.claim.takeovers == 1
+    if ending == "release":
+        ended = c.release(taken, step="needs-input")
+    elif ending == "complete":
+        ended = c.complete(taken)
+    else:
+        ended = c.pause(taken, until=clock.now() + timedelta(hours=1))
+    assert ended.claim.takeovers == 0
+
+
+def test_renewing_within_a_run_is_not_progress(store: InMemoryClaimStore, clock: FakeClock) -> None:
+    c = coordinator(store, clock)
+    c.claim(42, CODEX, branch="issue/42-x")
+    clock.advance(timedelta(days=8))
+    taken = c.claim(42, CLAUDE, branch="issue/42-x")
+    assert taken is not None
+    assert c.renew(taken, step="implement").claim.takeovers == 1

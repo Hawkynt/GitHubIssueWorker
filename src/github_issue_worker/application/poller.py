@@ -29,6 +29,7 @@ class PollState:
     comments_since: datetime | None = None
     issues_etag: str | None = None
     comments_etag: str | None = None
+    last_polled_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +113,7 @@ class Poller:
             comments_since=comments_since,
             issues_etag=issues_etag,
             comments_etag=comments_etag,
+            last_polled_at=self.clock.now(),
         )
         return PollResult(issues=issues, comments=comments), new_state
 

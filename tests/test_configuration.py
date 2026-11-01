@@ -175,6 +175,30 @@ def test_a_command_worker_needs_a_command() -> None:
     assert "workers[0].command" in error_paths(text)
 
 
+def _command_worker(**extra: object) -> str:
+    worker = {"name": "a", "agent": "command", "account": "x", "command": ["cli", "{prompt}"]}
+    return json.dumps({"accounts": {"x": {}}, "workers": [{**worker, **extra}]})
+
+
+def test_a_limit_pattern_that_is_no_regular_expression_is_refused() -> None:
+    paths = error_paths(_command_worker(limitPatterns=["quota", "rate (limit"]))
+    assert "workers[0].limitPatterns[1]" in paths
+
+
+def test_limit_exit_codes_default_to_none_and_round_trip(tmp_path: Path) -> None:
+    assert parse(_command_worker()).workers[0].limit_exit_codes == []
+    config = parse(_command_worker(limitExitCodes=[75, 3]))
+    assert config.workers[0].limit_exit_codes == [75, 3]
+    path = tmp_path / "config.json"
+    save(config, path)
+    assert json.loads(path.read_text(encoding="utf-8"))["workers"][0]["limitExitCodes"] == [75, 3]
+    assert load(path) == config
+
+
+def test_a_limit_exit_code_must_be_a_number() -> None:
+    assert "workers[0].limitExitCodes[0]" in error_paths(_command_worker(limitExitCodes=["x"]))
+
+
 def test_claudelocal_serves_only_claude_workers() -> None:
     text = json.dumps(
         {

@@ -8,6 +8,7 @@ validity is never raced. Released and done claims are free at once.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -175,10 +176,11 @@ class Claim:
 
 @dataclass(frozen=True, slots=True)
 class ClaimPolicy:
-    """The timing rules of claims (F11.3)."""
+    """The timing rules of claims (F11.3) and how many takeovers an issue survives (F11.12)."""
 
     validity: timedelta
     grace: timedelta
+    max_takeovers: int = 3
 
     def new_claim(
         self, issue: int, holder: Holder, now: datetime, branch: str, model: str = ""
@@ -204,6 +206,21 @@ class ClaimPolicy:
         """Whether a worker other than the holder may claim the issue now."""
         return claim is None or not claim.state.holds or self.is_abandoned(claim, now)
 
+    def stalled(self, claim: Claim, now: datetime) -> bool:
+        """An abandoned claim already taken over ``max_takeovers`` times without progress."""
+        return self.is_abandoned(claim, now) and claim.takeovers >= self.max_takeovers
+
+    def given_up(self, claim: Claim, now: datetime) -> Claim:
+        """The stalled claim, released to wait at ``failed`` for a trusted comment."""
+        return claim.replace(
+            state=ClaimState.RELEASED,
+            step="failed",
+            renewed_at=now,
+            paused_until=None,
+            wait_reason="",
+            takeovers=0,
+        )
+
     def renewed(self, claim: Claim, now: datetime, **changes: Any) -> Claim:
         return claim.replace(renewed_at=now, expires_at=now + self.validity, **changes)
 
@@ -222,3 +239,103 @@ class ClaimPolicy:
             wait_reason="",
             takeovers=claim.takeovers + (1 if self.is_abandoned(claim, now) else 0),
         )
+
+
+def takeover_evidence(claim: Claim, max_takeovers: int) -> str:
+    """Why a stalled issue was given up: what the comment marking it failed reports."""
+    lines = [
+        f"I gave up on this issue: {claim.takeovers} takeovers without progress "
+        f"(maxTakeovers is {max_takeovers}), and its holder was lost again.",
+        "",
+        f"- step reached: `{claim.step}`",
+        f"- last holder: {claim.holder}, last renewed {_timestamp(claim.renewed_at)}",
+        f"- claim generation: {claim.generation}",
+    ]
+    if claim.runs:
+        lines += ["", "Finished runs:"]
+        lines += [
+            f"- {_timestamp(run.started)} {run.manager}/{run.worker} ({run.kind}): {run.verdict}"
+            for run in claim.runs
+        ]
+    lines += ["", "Comment here and the work starts again."]
+    return "\n".join(lines)
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimChange:
+    """One row of a claim's history (F14.6): a version, or a run of renewals folded into one."""
+
+    at: datetime
+    """When the version was written; for folded renewals, the newest of them."""
+    holder: Holder
+    generation: int
+    state: ClaimState
+    step: str
+    what: str
+    """What this version changed, in words: ``claimed``, ``taken over``, ``step``, ``paused``, …"""
+    renewals: int = 0
+    """How many consecutive renew-only versions this row stands for; 0 for any other change."""
+
+
+_LEASE = frozenset({"renewed_at", "expires_at"})
+
+
+def _changed(before: Claim, after: Claim) -> set[str]:
+    return {
+        name
+        for name in (field.name for field in dataclasses.fields(Claim))
+        if getattr(before, name) != getattr(after, name)
+    }
+
+
+def _what(before: Claim | None, after: Claim) -> str:
+    if before is None:
+        return "claimed"
+    if after.generation > before.generation:
+        return "taken over" if after.holder != before.holder else "claimed again"
+    if after.state != before.state:
+        if before.state is ClaimState.PAUSED and after.state is ClaimState.WORKING:
+            return "resumed"
+        return after.state.value
+    changed = _changed(before, after)
+    if "step" in changed:
+        return "step"
+    if "runs" in changed:
+        return "run recorded"
+    if "merge_conflict" in changed:
+        return "merge conflict" if after.merge_conflict else "merge conflict resolved"
+    return "renewed" if changed <= _LEASE else "changed"
+
+
+def claim_history(versions: Sequence[Claim], complete: bool = True) -> list[ClaimChange]:
+    """The rows of a claim's history, newest first, from its versions oldest first.
+
+    A claim is renewed every few minutes for as long as it is held, so consecutive versions that
+    only moved the lease become one row that counts them. When ``versions`` are only the newest
+    part of the history (not ``complete``), the oldest one serves as the baseline of the next and
+    gets no row of its own: what it changed is not known.
+    """
+    rows: list[ClaimChange] = []
+    before: Claim | None = None
+    if not complete and versions:
+        before, versions = versions[0], versions[1:]
+    for claim in versions:
+        what = _what(before, claim)
+        before = claim
+        if what == "renewed" and rows and rows[-1].what == "renewed":
+            rows[-1] = dataclasses.replace(
+                rows[-1], at=claim.renewed_at, renewals=rows[-1].renewals + 1
+            )
+            continue
+        rows.append(
+            ClaimChange(
+                at=claim.renewed_at,
+                holder=claim.holder,
+                generation=claim.generation,
+                state=claim.state,
+                step=claim.step,
+                what=what,
+                renewals=1 if what == "renewed" else 0,
+            )
+        )
+    return rows[::-1]

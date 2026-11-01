@@ -49,6 +49,44 @@ def test_executable_is_taken_as_given_with_its_environment(tmp_path: Path) -> No
     assert resolved.executable == tool and resolved.env == {"X": "1"}
 
 
+def command_worker(program: str, installation: dict[str, object] | None = None) -> object:
+    import json
+
+    body: dict[str, object] = {
+        "name": "w",
+        "agent": "command",
+        "account": "a",
+        "command": [program, "{prompt}"],
+    }
+    if installation:
+        body["installation"] = installation
+    return parse(json.dumps({"accounts": {"a": {}}, "workers": [body]})).workers[0]
+
+
+def test_path_finds_a_command_worker_s_program_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tool = executable(tmp_path / "bin" / ("mycli.cmd" if sys.platform == "win32" else "mycli"))
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    resolved = resolve(command_worker("mycli"))  # type: ignore[arg-type]
+    assert resolved.executable.name.lower() == tool.name.lower()
+
+
+def test_path_takes_a_command_worker_s_program_given_as_a_path(tmp_path: Path) -> None:
+    tool = executable(tmp_path / "tools" / "mycli")
+    if sys.platform == "win32":
+        tool = executable(tmp_path / "tools" / "mycli.exe")
+    assert resolve(command_worker(str(tool))).executable == tool  # type: ignore[arg-type]
+
+
+def test_path_reports_a_command_worker_s_missing_program(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(Unavailable, match="mycli"):
+        resolve(command_worker("mycli"))  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize(
     ("agent", "variable", "value"),
     [

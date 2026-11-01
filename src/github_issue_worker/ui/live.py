@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from github_issue_worker.adapters.process import terminate
+from github_issue_worker.application.accounts import AccountUsage, account_usage
 from github_issue_worker.application.coordinator import ClaimHandle
 from github_issue_worker.application.github_host import GitHubHost
 from github_issue_worker.application.history import RunRecord, fleet_records, merged_history
@@ -21,17 +22,24 @@ from github_issue_worker.application.repository_suggestions import (
     pushable_repositories,
 )
 from github_issue_worker.configuration import ClaudeLocalInstallation, Configuration, save
+from github_issue_worker.domain.claim import ClaimChange, claim_history
 from github_issue_worker.domain.issue import Issue
 from github_issue_worker.domain.model_name import display_model
+from github_issue_worker.domain.outcome import Outcome, OutcomeError
+from github_issue_worker.domain.work import SKIP_LABEL
+from github_issue_worker.ports.agents import JOURNAL_FILE, OUTCOME_FILE
+from github_issue_worker.ports.claims import ClaimStoreError
 from github_issue_worker.ports.github import GhUnavailable, GitHubError
 from github_issue_worker.ui.model import (
     ActionError,
     ClaimView,
+    IssueDetail,
     IssueView,
     RepositoryView,
     Snapshot,
     WorkerState,
     WorkerView,
+    tail,
 )
 from github_issue_worker.wiring import Runtime
 
@@ -47,6 +55,10 @@ AGENT_NAMES = {
 }
 CLAIM_REFRESH = 30.0
 """Seconds between background refreshes of the claims: reading them costs a git fetch each."""
+HISTORY_VERSIONS = 500
+"""Claim versions read for the Issue page's claim history, newest first."""
+HISTORY_ROWS = 50
+"""Rows of claim history the Issue page shows, newest first."""
 
 
 _LABEL_STATES = (
@@ -78,6 +90,25 @@ def worker_model(slot: WorkerSlot, history: list[RunRecord]) -> str:
     if known:
         return display_model(known)
     return next((r.model for r in reversed(history) if r.worker == slot.name), "-")
+
+
+def _read(path: Path) -> str | None:
+    """A file of the worktree as text, or None when it is not there."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def _outcome(path: Path) -> Outcome | None:
+    """The worktree's outcome, or None when there is none or it breaks the contract."""
+    text = _read(path)
+    if text is None:
+        return None
+    try:
+        return Outcome.parse(text)
+    except OutcomeError:
+        return None
 
 
 def open_folder(path: Path) -> None:
@@ -112,6 +143,7 @@ class RuntimeBackend:
         self._history_at = 0.0
         self._claims_at = 0.0
         self._refreshing = threading.Lock()
+        self._issue_cache: dict[tuple[str, int], tuple[float, tuple[ClaimChange, ...]]] = {}
         self._pushable = PushableRepositories(lambda: pushable_repositories(self._runtime.api))
         self._pushable.refresh()
 
@@ -134,7 +166,27 @@ class RuntimeBackend:
             for settings in self._runtime.config.repositories
         )
         return Snapshot(
-            self._runtime.manager_id, now, workers, repositories, self._claims, self._issues(now)
+            self._runtime.manager_id,
+            now,
+            workers,
+            repositories,
+            self._claims,
+            self._issues(now),
+            self._accounts(now),
+        )
+
+    def _accounts(self, now: datetime) -> tuple[AccountUsage, ...]:
+        paused = (
+            (claim.repository, claim.issue, claim.holder.rpartition("/")[2])
+            for claim in self._claims
+            if claim.mine and claim.state == "paused"
+        )
+        return account_usage(
+            self._runtime.config.accounts,
+            {slot.name: slot.account for slot in self._manager.workers},
+            self._runtime.state.limited_until,
+            paused,
+            now,
         )
 
     def _issues(self, now: datetime) -> tuple[IssueView, ...]:
@@ -312,8 +364,8 @@ class RuntimeBackend:
     # --- changing --------------------------------------------------------------------------------
 
     def save_config(self, config: Configuration) -> None:
-        save(config, self._path)
         self._runtime.apply(config, self._manager)
+        save(config, self._path)
 
     def check_repository(self, repository: str) -> None:
         try:
@@ -379,6 +431,85 @@ class RuntimeBackend:
         if slot is None or slot.log_path is None or not slot.log_path.exists():
             return None
         return slot.log_path.read_text(encoding="utf-8", errors="replace")
+
+    # --- one issue (F14.6) ------------------------------------------------------------------------
+
+    def issue(self, repository: str, number: int) -> IssueDetail | None:
+        watch = self._runtime.watches.get(repository)
+        if watch is None:
+            return None
+        self._refresh_claims()
+        key = (repository, number)
+        claim = self._checkpoints.get(key)
+        now = self._runtime.api.clock.now()
+        view = next(
+            (found for found in self._issues(now) if (found.repository, found.number) == key),
+            None,
+        )
+        if view is None:
+            if claim is None:
+                return None
+            view = IssueView(repository, number, "", f"not open; its claim is {claim.state}")
+        slot = next(
+            (s for s in self._manager.workers if s.busy and s.current == key),
+            None,
+        )
+        log = self.log(slot.name) if slot is not None else None
+        worktree = self._runtime.workspace.worktree_path(repository, number)
+        return IssueDetail(
+            issue=view,
+            claim=claim,
+            runs=tuple(
+                sorted(
+                    (r for r in self.history() if (r.repository, r.issue) == key),
+                    key=lambda run: run.started,
+                )
+            ),
+            history=self._claim_history(repository, number),
+            journal=_read(worktree / JOURNAL_FILE),
+            outcome=_outcome(worktree / OUTCOME_FILE),
+            log=tail(log) if log is not None else None,
+            log_worker=slot.name if slot is not None else None,
+        )
+
+    def _claim_history(self, repository: str, number: int) -> tuple[ClaimChange, ...]:
+        """The folded claim history, read at most every `CLAIM_REFRESH` seconds per issue."""
+        key = (repository, number)
+        cached = self._issue_cache.get(key)
+        if cached is not None and time.monotonic() - cached[0] < CLAIM_REFRESH:
+            return cached[1]
+        try:
+            versions = self._runtime.watches[repository].store.history(number, HISTORY_VERSIONS)
+        except ClaimStoreError:
+            log.exception("could not read the claim history of %s#%d", repository, number)
+            return cached[1] if cached else ()
+        complete = len(versions) < HISTORY_VERSIONS
+        rows = tuple(claim_history(versions, complete)[:HISTORY_ROWS])
+        self._issue_cache[key] = (time.monotonic(), rows)
+        return rows
+
+    def pull_request(self, repository: str, number: int) -> str | None:
+        watch = self._runtime.watches.get(repository)
+        claim = self._checkpoints.get((repository, number))
+        if watch is None or claim is None or not claim.branch:
+            return None
+        try:
+            pull = watch.host.find_pull_request(claim.branch)
+        except (GitHubError, GhUnavailable):
+            log.exception("could not look up the pull request of %s#%d", repository, number)
+            return None
+        return pull.url if pull is not None and pull.url else None
+
+    def skip(self, repository: str, number: int) -> None:
+        watch = self._runtime.watches.get(repository)
+        if watch is None:
+            raise ActionError(f"{repository} is not watched")
+        try:
+            watch.host.add_labels(number, [SKIP_LABEL])
+        except GitHubError as error:
+            raise ActionError(f"{repository}#{number}: {error}") from None
+        except GhUnavailable as error:
+            raise ActionError(f"gh cannot reach GitHub ({error}); run `gh auth login`") from None
 
     def release(self, repository: str, issue: int, force: bool) -> None:
         watch = self._runtime.watches.get(repository)

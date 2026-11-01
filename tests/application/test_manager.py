@@ -12,7 +12,7 @@ from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.issue_run import Verdict
 from github_issue_worker.application.manager import Manager, RepositoryWatch, WorkerSlot
 from github_issue_worker.application.poller import PollResult, PollState
-from github_issue_worker.domain.claim import ClaimPolicy, ClaimState, Holder
+from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState, Holder
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.outcome import SubIssue
 from github_issue_worker.domain.split import sub_issue_body
@@ -244,6 +244,111 @@ def test_another_managers_claim_is_left_alone() -> None:
     f.new_issues(issue(5))
     f.manager.tick()
     assert f.runs == []
+
+
+@pytest.mark.parametrize(
+    ("state", "step"),
+    [
+        (None, "triage"),
+        (ClaimState.WORKING, "implement"),
+        (ClaimState.PAUSED, "implement"),
+        (ClaimState.DONE, "close"),
+        (ClaimState.RELEASED, "needs-input"),
+        (ClaimState.RELEASED, "awaiting-review"),
+        (ClaimState.RELEASED, "failed"),
+        (ClaimState.RELEASED, "split"),
+        (ClaimState.RELEASED, "implement"),
+    ],
+)
+@pytest.mark.parametrize("edited", [False, True], ids=["new-comment", "edited-comment"])
+@pytest.mark.parametrize("reason", ["completed", "not_planned"])
+def test_given_a_closed_issue_when_comments_are_polled_then_no_run_or_claim_write(
+    state: ClaimState | None,
+    step: str,
+    edited: bool,
+    reason: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    f = Fixture([slot("worker")])
+    closed = replace(issue(1), state="closed", state_reason=reason)
+    if state is not None:
+        claim = POLICY.new_claim(1, Holder(ME, "worker"), T0, "issue/1-x")
+        f.store.force_create(claim.replace(state=state, step=step, paused_until=T0))
+    before = f.store.read(1)
+    created = T0 - timedelta(days=1) if edited else T0
+    comment = Comment(10, 1, OWNER, "please do more", created, T0)
+    f.host.issue_comments = [comment]
+    f.new_issues(closed)
+    f.manager.tick()
+
+    for _ in range(2):
+        f.polls.append(PollResult(comments=(comment,)))
+        f.manager.tick()
+
+    assert f.runs == []
+    assert f.store.read(1) == before
+    assert f.host.worker_label == {}
+    assert f.host.posted == [] and f.host.pulls == {} and f.host.merged == []
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
+def test_given_a_cached_open_issue_when_only_a_closed_issues_comment_is_polled_then_no_run(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    f = Fixture([slot("worker")])
+    old = replace(issue(1), created_at=T0 - timedelta(days=2))
+    f.new_issues(old)
+    f.manager.tick()
+    assert f.runs == []
+
+    f.host.issues[1] = replace(old, state="closed", updated_at=T0 + timedelta(minutes=1))
+    comment = Comment(10, 1, OWNER, "please do more", T0, T0)
+    f.host.issue_comments = [comment]
+    f.polls.append(PollResult(comments=(comment,)))
+    f.manager.tick()
+
+    assert f.runs == []
+    assert f.store.read(1) is None
+    assert f.host.posted == [] and f.host.worker_label == {}
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
+@pytest.mark.parametrize("waiting", [False, True], ids=["first-run", "rework"])
+def test_given_an_open_issue_when_a_trusted_comment_arrives_then_work_is_scheduled(
+    waiting: bool,
+) -> None:
+    f = Fixture([slot("worker")])
+    old = replace(issue(1), created_at=T0 - timedelta(days=2))
+    if waiting:
+        claim = POLICY.new_claim(1, Holder(ME, "worker"), T0, "issue/1-x")
+        f.store.force_create(claim.replace(state=ClaimState.RELEASED, step="needs-input"))
+    f.new_issues(old)
+    f.manager.tick()
+    assert f.runs == []
+
+    comment = Comment(10, 1, OWNER, "please do more", T0, T0)
+    f.host.issue_comments = [comment]
+    f.polls.append(PollResult(comments=(comment,)))
+    f.manager.tick()
+
+    expected = RunKind.REWORK if waiting else RunKind.FIRST
+    assert f.runs == [Recorded("worker", 1, expected)]
+
+
+def test_given_a_completed_closed_issue_when_reopened_then_a_reopen_run_is_scheduled() -> None:
+    f = Fixture([slot("worker")])
+    claim = POLICY.new_claim(1, Holder(ME, "worker"), T0, "issue/1-x")
+    f.store.force_create(claim.replace(state=ClaimState.DONE, step="close"))
+    comment = Comment(10, 1, OWNER, "please do more", T0, T0)
+    f.host.issue_comments = [comment]
+    f.new_issues(replace(issue(1), state="closed"))
+    f.manager.tick()
+    assert f.runs == []
+
+    f.new_issues(issue(1, minutes=1))
+    f.manager.tick()
+
+    assert f.runs == [Recorded("worker", 1, RunKind.REOPEN)]
 
 
 def test_an_unavailable_worker_is_never_used() -> None:
@@ -551,3 +656,113 @@ def test_worker_skip_on_a_paused_or_adopted_claim_releases_the_claim_without_res
     )
     assert f.host.worker_label[1] is None
     assert len(f.runs) == 1
+
+
+def test_given_an_older_issue_and_a_newer_priority_high_one_then_high_is_claimed_first() -> None:
+    f = Fixture([slot("claude")], verdicts=[Verdict("paused", until=T0 + timedelta(hours=1))])
+    f.new_issues(issue(1), issue(2, frozenset({"priority:high"}), minutes=5))
+    f.manager.tick()
+    assert [run.issue for run in f.runs] == [2]
+    assert f.host.worker_label[1] == "worker:queued"
+
+
+def test_given_an_older_priority_low_issue_and_a_newer_plain_one_then_plain_goes_first() -> None:
+    f = Fixture([slot("claude")], verdicts=[Verdict("needs-input"), Verdict("merged")])
+    f.new_issues(issue(1, frozenset({"priority:low"})), issue(2, minutes=5))
+    f.manager.tick()
+    assert [run.issue for run in f.runs] == [2, 1]
+
+
+def test_given_a_waiting_issue_labelled_priority_high_then_the_label_alone_queues_nothing() -> None:
+    f = Fixture([slot("claude")], verdicts=[Verdict("needs-input")])
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert [run.issue for run in f.runs] == [1]
+    relabelled = issue(1, frozenset({"priority:high"}), minutes=30)
+    f.new_issues(relabelled)
+    f.manager.tick()
+    assert [run.issue for run in f.runs] == [1]
+
+
+def test_given_a_priority_high_issue_claimed_elsewhere_then_the_next_candidate_is_claimed() -> None:
+    f = Fixture([slot("claude")])
+    f.store.force_create(POLICY.new_claim(5, Holder("laptop-01ab", "codex"), T0, "issue/5-x"))
+    f.new_issues(issue(5, frozenset({"priority:high"}), minutes=5), issue(6, minutes=9))
+    f.manager.tick()
+    assert f.runs == [Recorded("claude", 6, RunKind.FIRST)]
+
+
+def stalled_claim(takeovers: int) -> Claim:
+    claim = POLICY.new_claim(5, Holder("laptop-01ab", "codex"), T0, "issue/5-x")
+    return claim.replace(takeovers=takeovers, step="verify")
+
+
+def test_given_an_abandoned_claim_below_max_takeovers_when_polled_then_it_is_taken_over() -> None:
+    f = Fixture([slot("claude")])
+    f.store.force_create(stalled_claim(2))
+    f.clock.advance(timedelta(days=8))
+    f.new_issues(issue(5))
+    f.manager.tick()
+    assert f.runs == [Recorded("claude", 5, RunKind.CONTINUATION)]
+
+
+def test_given_max_takeovers_without_progress_when_abandoned_again_then_the_issue_fails() -> None:
+    f = Fixture([slot("claude")])
+    f.store.force_create(stalled_claim(3))
+    f.clock.advance(timedelta(days=8))
+    f.new_issues(issue(5))
+    f.manager.tick()
+
+    assert f.runs == []
+    claim = f.store.current(5)
+    assert claim is not None
+    assert claim.state is ClaimState.RELEASED and claim.step == "failed"
+    assert f.host.worker_label[5] == "worker:failed"
+    [(number, body)] = f.host.posted
+    assert number == 5
+    assert "3 takeovers" in body and "`verify`" in body and "laptop-01ab/codex" in body
+
+
+def test_given_a_failed_stalled_issue_then_only_a_trusted_comment_brings_it_back() -> None:
+    f = Fixture([slot("claude")])
+    f.store.force_create(stalled_claim(3))
+    f.clock.advance(timedelta(days=8))
+    f.new_issues(issue(5))
+    f.manager.tick()
+    f.manager.tick()
+    assert f.runs == []
+
+    comment = Comment(10, 5, OWNER, "try again", f.clock.now(), f.clock.now())
+    f.host.issue_comments = [comment]
+    f.polls.append(PollResult(comments=(comment,)))
+    f.manager.tick()
+    assert f.runs == [Recorded("claude", 5, RunKind.REWORK)]
+
+
+def test_removing_a_repository_stops_scheduling_and_waits_through_run_recording() -> None:
+    jobs = []
+    f = Fixture([slot("w")])
+    f.manager.spawn = jobs.append
+    f.new_issues(issue(1))
+    f.manager.tick()
+    pending = f.manager.stop_repository(f.watch)
+    assert len(pending) == 1 and not pending[0][1].is_set()
+    assert f.watch.stopping.is_set()
+    f.manager.on_finished = lambda record: pytest.fail("recording is replaced below")
+    recorded = []
+    f.manager.on_finished = lambda record: recorded.append(not pending[0][1].is_set())
+    jobs.pop()()
+    assert pending[0][1].is_set() and recorded == [True]
+    f.new_issues(issue(2))
+    f.manager.tick()
+    assert not jobs
+
+
+def test_removal_keeps_worker_busy_until_claim_history_recording_has_finished() -> None:
+    f = Fixture([slot("w")])
+    observed = []
+    f.manager.on_finished = lambda record: observed.append(f.manager.workers[0].busy)
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert observed == [True]
+    assert not f.manager.workers[0].busy

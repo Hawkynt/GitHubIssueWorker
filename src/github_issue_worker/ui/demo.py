@@ -11,15 +11,27 @@ import random
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
+from github_issue_worker.application.accounts import account_usage
 from github_issue_worker.application.history import RunRecord
 from github_issue_worker.configuration import Configuration, validate
+from github_issue_worker.domain.claim import (
+    Claim,
+    ClaimPolicy,
+    ClaimState,
+    Holder,
+    RunEntry,
+    claim_history,
+)
+from github_issue_worker.domain.outcome import Outcome, Question
 from github_issue_worker.ui.model import (
     ActionError,
     ClaimView,
+    IssueDetail,
     IssueView,
     RepositoryView,
     Snapshot,
     WorkerView,
+    tail,
 )
 
 NOW = datetime(2026, 10, 30, 14, 20, tzinfo=UTC)
@@ -76,6 +88,9 @@ CONFIG = {
         {"repository": "acme/design-tokens"},
     ],
 }
+
+GOOGLE_RESET = NOW + timedelta(hours=2, minutes=40)
+"""When the demo's google-pro account comes back from its usage limit."""
 
 WORKERS = (
     WorkerView(
@@ -141,19 +156,33 @@ WORKERS = (
     WorkerView(
         "codex.2", "Codex", "openai-plus", "GPT 6.1 Sol", "idle", group="codex", agent_kind="codex"
     ),
-    *(
-        WorkerView(
-            name,
-            "Antigravity",
-            "google-pro",
-            "Gemini 4 Argon (Medium)",
-            "limited",
-            limited_until=NOW + timedelta(hours=2, minutes=40),
-            group="antigravity",
-            reason="Token allowance reached",
-            agent_kind="antigravity",
-        )
-        for name in ("antigravity", "antigravity.2")
+    WorkerView(
+        "antigravity",
+        "Antigravity",
+        "google-pro",
+        "Gemini 4 Argon (Medium)",
+        "limited",
+        limited_until=GOOGLE_RESET,
+        repository="acme/design-tokens",
+        issue=61,
+        issue_title="Generate dark-mode variants of every surface token",
+        step="implement",
+        branch="issue/61-generate-dark-mode-variants-of-every-surface",
+        worktree="~/.cache/GitHubIssueWorker/acme/design-tokens/issues/61",
+        group="antigravity",
+        reason="Token allowance reached",
+        agent_kind="antigravity",
+    ),
+    WorkerView(
+        "antigravity.2",
+        "Antigravity",
+        "google-pro",
+        "Gemini 4 Argon (Medium)",
+        "limited",
+        limited_until=GOOGLE_RESET,
+        group="antigravity",
+        reason="Token allowance reached",
+        agent_kind="antigravity",
     ),
     WorkerView(
         "local",
@@ -235,6 +264,20 @@ CLAIMS = (
         "issue/91-export-statements-as-csv",
         model="Qwen3.8 Flash Next IQ3_S",
     ),
+    ClaimView(
+        "acme/design-tokens",
+        61,
+        f"{MANAGER}/antigravity",
+        True,
+        "paused",
+        "implement",
+        NOW - timedelta(minutes=6),
+        NOW + timedelta(days=7) - timedelta(minutes=6),
+        "issue/61-generate-dark-mode-variants-of-every-surface",
+        paused_until=GOOGLE_RESET,
+        wait_reason="Token allowance reached",
+        model="Gemini 4 Argon (Medium)",
+    ),
 )
 
 REPOSITORIES = (
@@ -246,7 +289,7 @@ REPOSITORIES = (
     RepositoryView(
         "acme/billing-cli", NOW - timedelta(days=3), {"working": 2, "awaiting-review": 1}
     ),
-    RepositoryView("acme/design-tokens", NOW - timedelta(hours=6), {}),
+    RepositoryView("acme/design-tokens", NOW - timedelta(hours=6), {"paused": 1}),
 )
 
 
@@ -313,6 +356,20 @@ ISSUES: tuple[IssueView, ...] = (
     ),
     IssueView(
         "acme/design-tokens", 12, "Rename the colour tokens to their roles", "waiting for a worker"
+    ),
+    IssueView(
+        "acme/design-tokens",
+        61,
+        "Generate dark-mode variants of every surface token",
+        "paused until the usage limit resets",
+        "antigravity",
+        MANAGER,
+        True,
+        "Gemini 4 Argon (Medium)",
+        "implement",
+        NOW - timedelta(minutes=6),
+        wait_reason="Token allowance reached",
+        paused_until=GOOGLE_RESET,
     ),
 )
 
@@ -436,6 +493,166 @@ def demo_history() -> list[RunRecord]:
     return sorted(records, key=lambda record: record.finished)
 
 
+POLICY = ClaimPolicy(validity=timedelta(days=7), grace=timedelta(days=1))
+GATEWAY = "acme/telemetry-gateway"
+
+
+def _gateway_runs() -> tuple[RunRecord, ...]:
+    """The finished runs on #214: one other manager's, two of this one."""
+    began = NOW - timedelta(days=1, hours=5, minutes=8)
+
+    def run(
+        manager: str, worker: str, agent: str, model: str, kind: str, verdict: str, start: datetime
+    ) -> RunRecord:
+        took = {"done": 18, "needs-input": 26, "failed": 41}[verdict]
+        return RunRecord(
+            GATEWAY,
+            214,
+            worker,
+            agent,
+            model,
+            kind,
+            verdict,
+            start,
+            start + timedelta(minutes=took),
+            began,
+            manager,
+        )
+
+    return (
+        run("laptop-01ab", "claude", "claude", "Claude Sonnet 5.5", "understand", "done", began),
+        run(
+            MANAGER,
+            "codex",
+            "codex",
+            "GPT 6.1 Sol",
+            "first",
+            "needs-input",
+            NOW - timedelta(hours=6, minutes=2),
+        ),
+        run(
+            MANAGER,
+            "claude",
+            "claude",
+            "Claude Opus 5.5",
+            "continue",
+            "failed",
+            NOW - timedelta(hours=1, minutes=24),
+        ),
+    )
+
+
+def _gateway_claims() -> list[Claim]:
+    """Every version of #214's claim, oldest first, as its claim ref would hold them."""
+    runs = _gateway_runs()
+    entries = tuple(
+        RunEntry(r.manager, r.worker, r.agent, r.model, r.kind, r.verdict, r.started, r.finished)
+        for r in runs
+    )
+    branch = "issue/214-retry-uploads-after-a-gateway-timeout"
+    laptop = Holder("laptop-01ab", "claude")
+    versions = [POLICY.new_claim(214, laptop, runs[0].started - timedelta(minutes=1), branch)]
+
+    def then(at: datetime, **changes: object) -> None:
+        versions.append(POLICY.renewed(versions[-1], at, **changes))
+
+    then(runs[0].started, step="understand")
+    for minutes in (5, 10, 15):
+        then(runs[0].started + timedelta(minutes=minutes))
+    then(runs[0].finished, state=ClaimState.RELEASED, step="awaiting-review")
+    versions.append(versions[-1].replace(runs=entries[:1]))
+    versions.append(
+        POLICY.taken_over(versions[-1], Holder(MANAGER, "codex"), runs[1].started, "GPT 6.1 Sol")
+    )
+    then(runs[1].started + timedelta(minutes=2), step="implement")
+    then(runs[1].finished, state=ClaimState.RELEASED, step="needs-input")
+    versions.append(versions[-1].replace(runs=entries[:2]))
+    claude = Holder(MANAGER, "claude")
+    versions.append(POLICY.taken_over(versions[-1], claude, runs[2].started, "Claude Opus 5.5"))
+    then(runs[2].started + timedelta(minutes=1), step="understand")
+    then(runs[2].finished)
+    versions.append(versions[-1].replace(runs=entries))
+    for minutes in range(12):
+        then(runs[2].finished + timedelta(minutes=2 + 3 * minutes))
+    then(NOW - timedelta(minutes=4), step="implement")
+    return versions
+
+
+JOURNAL = """# Journal: acme/telemetry-gateway#214
+
+## Scenarios
+- Given a gateway answering 504, when a batch is uploaded, then it is retried with backoff.
+- Given <5 retries> all failing, when the last one fails, then the batch is reported as lost.
+
+## Decisions
+- Retries back off 1, 2 and 4 seconds; the count comes from `uploads.retries` (default 5).
+- The previous run failed on a flaky clock in the test: the backoff now takes a sleep function.
+
+## Done
+- failing scenario for the 504 retry; backoff in `upload()`
+
+## Next
+- the lost-batch report, then the full suite
+"""
+
+QUESTION = Outcome(
+    kind="needs-input",
+    summary="The gateway URL can come from the environment alone or from the environment over "
+    "the configuration file; the two lead to different code.",
+    scenarios=("Given GATEWAY_URL is set, when the service starts, then it uploads to that URL.",),
+    questions=(
+        Question(
+            "Where should the gateway URL come from?",
+            (
+                "GATEWAY_URL only: simplest, but the configuration file loses its gateway key",
+                "GATEWAY_URL over the configuration file: both keep working",
+            ),
+            "GATEWAY_URL over the configuration file, so existing setups keep working",
+        ),
+    ),
+)
+"""The outcome #221's understanding run left in its worktree: it asks before it builds."""
+
+
+def _claimed(claim: ClaimView) -> Claim:
+    """The first version of a demo claim: enough history for the issues that are not #214."""
+    manager, _, worker = claim.holder.rpartition("/")
+    return POLICY.new_claim(claim.issue, Holder(manager, worker), claim.renewed, claim.branch)
+
+
+def demo_details() -> dict[tuple[str, int], IssueDetail]:
+    """What the Issue page shows for every issue of the demo (F14.6)."""
+    claims = {(claim.repository, claim.issue): claim for claim in CLAIMS}
+    working = {(w.repository, w.issue): w.name for w in WORKERS if w.state == "working"}
+    details = {}
+    for issue in ISSUES:
+        key = (issue.repository, issue.number)
+        worker = working.get(key)
+        details[key] = IssueDetail(
+            issue=issue,
+            claim=claims.get(key),
+            log=tail(LOG) if worker else None,
+            log_worker=worker,
+            history=tuple(claim_history([_claimed(claims[key])])) if key in claims else (),
+        )
+    gateway = (GATEWAY, 214)
+    details[gateway] = replace(
+        details[gateway],
+        runs=_gateway_runs(),
+        history=tuple(claim_history(_gateway_claims())),
+        journal=JOURNAL,
+    )
+    question = (GATEWAY, 221)
+    details[question] = replace(details[question], outcome=QUESTION)
+    return details
+
+
+PULL_REQUESTS = {
+    (GATEWAY, 214): "https://github.com/acme/telemetry-gateway/pull/230",
+    ("acme/billing-cli", 88): "https://github.com/acme/billing-cli/pull/96",
+}
+
+
 PUSHABLE = (
     "acme/telemetry-gateway",
     "acme/billing-cli",
@@ -460,6 +677,10 @@ class DemoBackend:
         self.stopped: list[str] = []
         self.opened: list[str] = []
         self.approved: list[str] = []
+        self.skipped: list[tuple[str, int]] = []
+        self.refuse_skip = ""
+        self.released: list[tuple[str, int, bool]] = []
+        self.details = demo_details()
         self._history = demo_history()
 
     def snapshot(self) -> Snapshot:
@@ -477,6 +698,17 @@ class DemoBackend:
             ),
             claims=CLAIMS,
             issues=ISSUES,
+            accounts=account_usage(
+                self._config.accounts,
+                {worker.name: worker.account for worker in workers},
+                {w.account: w.limited_until for w in workers if w.limited_until}.get,
+                (
+                    (claim.repository, claim.issue, claim.holder.rpartition("/")[2])
+                    for claim in CLAIMS
+                    if claim.mine and claim.state == "paused"
+                ),
+                NOW,
+            ),
         )
 
     def config(self) -> Configuration:
@@ -521,7 +753,18 @@ class DemoBackend:
         ]
 
     def release(self, repository: str, issue: int, force: bool) -> None:
-        return None
+        self.released.append((repository, issue, force))
+
+    def issue(self, repository: str, number: int) -> IssueDetail | None:
+        return self.details.get((repository, number))
+
+    def pull_request(self, repository: str, number: int) -> str | None:
+        return PULL_REQUESTS.get((repository, number))
+
+    def skip(self, repository: str, number: int) -> None:
+        if self.refuse_skip:
+            raise ActionError(self.refuse_skip)
+        self.skipped.append((repository, number))
 
     def approve_ci(self, name: str) -> None:
         worker = next((w for w in self._workers if w.name == name), None)

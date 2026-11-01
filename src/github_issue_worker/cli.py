@@ -1,4 +1,5 @@
-"""The command line (F1, F10, F12.8): add, remove, list, workers, watch, work, release, status."""
+"""The command line (F1, F10, F12.8): add, remove, list, workers, watch, once, work, release,
+status."""
 
 from __future__ import annotations
 
@@ -16,9 +17,16 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from github_issue_worker.adapters.control import ControlError, ControlLease, ControlServer
 from github_issue_worker.adapters.home import account_home
 from github_issue_worker.adapters.installations import EXECUTABLES, portable_tool
+from github_issue_worker.adapters.manager_lock import (
+    ManagerLockError,
+    configuration_identity,
+    manager_lock,
+)
 from github_issue_worker.adapters.workspace import WorkspaceError
+from github_issue_worker.application.coordinator import ClaimLost
 from github_issue_worker.configuration import (
     AccountSettings,
     Configuration,
@@ -29,7 +37,8 @@ from github_issue_worker.configuration import (
     load,
     save,
 )
-from github_issue_worker.ports.github import GhUnavailable
+from github_issue_worker.ports.claims import ClaimStoreError
+from github_issue_worker.ports.github import GhUnavailable, GitHubError
 from github_issue_worker.product import NAME, version
 
 if TYPE_CHECKING:
@@ -40,6 +49,7 @@ _REPOSITORY = re.compile(
     r"(?:\.git)?(?:/issues/(?P<issue>\d+))?/?$"
 )
 _PRIORITY = {"claude": 1, "codex": 2, "antigravity": 3, "opencode": 5}
+_DRAIN_WAIT_SECONDS = 5.0
 
 
 class _Host(Protocol):
@@ -160,10 +170,26 @@ def _add(config: Configuration, path: Path, args: argparse.Namespace, hosts: Hos
     return 0
 
 
-def _remove(config: Configuration, path: Path, args: argparse.Namespace) -> int:
+def _control_directory(args: argparse.Namespace, home: Path) -> Path:
+    from github_issue_worker.wiring import state_dir
+
+    state, _ = _dirs(args)
+    return state.parent if state is not None else state_dir(home)
+
+
+def _remove(
+    path: Path, args: argparse.Namespace, home: Path, runtime_factory: RuntimeFactory
+) -> int:
+    from github_issue_worker.adapters.control import remove_or_request
+
     repository = normalize_repository(args.repository)
-    config.repositories = [r for r in config.repositories if r.repository != repository]
-    save(config, path)
+
+    def offline() -> None:
+        config = load(path)
+        runtime = runtime_factory(config, home, *_dirs(args))
+        runtime.remove_repository(repository, path)
+
+    remove_or_request(_control_directory(args, home), path, repository, offline)
     print(f"no longer watching {repository}")
     return 0
 
@@ -195,6 +221,9 @@ def _watch(
     home: Path,
     runtime_factory: RuntimeFactory,
     path: Path | None = None,
+    *,
+    once: bool = False,
+    no_ui: bool = False,
 ) -> int:
     from github_issue_worker.adapters.process import terminate_all
 
@@ -233,29 +262,40 @@ def _watch(
     prev_int = signal.signal(signal.SIGINT, interrupt)
     prev_term = signal.signal(signal.SIGTERM, interrupt)
     try:
-        count = len(manager.repositories)
-        print(f"{NAME} {version()} as {runtime.manager_id}, watching {count} repositories")
-        for row in manager.snapshot():
-            print(f"  worker {row['worker']}: {'ok' if row['available'] else row['reason']}")
-        server = None
-        if path is not None and not args.once and not getattr(args, "no_ui", False):
-            server = _start_ui(runtime, manager, path, open_browser=first_run)
-        seen = _mtime(path)
-        while not stop.is_set():
-            try:
-                manager.tick()
-                if args.once or stop.is_set():
+        control = (
+            ControlServer(
+                _control_directory(args, home),
+                path,
+                lambda repository: runtime.remove_repository(repository, path, manager),
+            )
+            if path is not None
+            else contextlib.nullcontext()
+        )
+        with control:
+            count = len(manager.repositories)
+            print(f"{NAME} {version()} as {runtime.manager_id}, watching {count} repositories")
+            for row in manager.snapshot():
+                print(f"  worker {row['worker']}: {'ok' if row['available'] else row['reason']}")
+            server = None
+            if path is not None and not once and not no_ui:
+                server = _start_ui(runtime, manager, path, open_browser=first_run)
+            seen = _mtime(path)
+            while not stop.is_set():
+                try:
+                    with getattr(runtime, "configuration_lock", contextlib.nullcontext()):
+                        manager.tick()
+                    if once or stop.is_set():
+                        break
+                    stop.wait(runtime.config.poll_interval.total_seconds())
+                    seen = _reload_if_changed(runtime, manager, path, seen)
+                except KeyboardInterrupt:
+                    stop.set()
                     break
-                stop.wait(runtime.config.poll_interval.total_seconds())
-                seen = _reload_if_changed(runtime, manager, path, seen)
-            except KeyboardInterrupt:
-                stop.set()
-                break
-        while any(slot.busy for slot in manager.workers):
-            stop.wait(5)
-        if server is not None:
-            server.stop()
-        return 0
+            while any(slot.busy for slot in manager.workers):
+                stop.wait(_DRAIN_WAIT_SECONDS)
+            if server is not None:
+                server.stop()
+            return 0
     finally:
         signal.signal(signal.SIGINT, prev_int)
         signal.signal(signal.SIGTERM, prev_term)
@@ -278,10 +318,19 @@ def _reload_if_changed(
     try:
         runtime.apply(load(path), manager)
         logging.getLogger(__name__).info("configuration reloaded from %s", path)
-    except ConfigurationError as error:
+    except (
+        ConfigurationError,
+        WorkspaceError,
+        ClaimLost,
+        ClaimStoreError,
+        GitHubError,
+        GhUnavailable,
+        OSError,
+    ) as error:
         logging.getLogger(__name__).error(
-            "%s is invalid, keeping the running configuration: %s", path, error
+            "%s could not be applied, keeping the running configuration: %s", path, error
         )
+        return seen
     return current
 
 
@@ -329,6 +378,41 @@ def _ui(args: argparse.Namespace) -> int:
     return 0
 
 
+def _list(
+    config: Configuration, args: argparse.Namespace, home: Path, runtime_factory: RuntimeFactory
+) -> int:
+    from github_issue_worker.application.repository_listing import RepositoryListing, render_list
+    from github_issue_worker.domain.claim import ClaimPolicy
+
+    if not config.repositories:
+        print("no repositories watched")
+        return 0
+    runtime = runtime_factory(config, home, *_dirs(args))
+    repositories = []
+    for settings in config.repositories:
+        watch = runtime.watch(settings)
+        issues = tuple(watch.host.open_issues())
+        stored = (watch.store.read(number) for number in watch.store.issues())
+        repositories.append(
+            RepositoryListing(
+                settings.repository,
+                runtime.state.poll_state(settings.repository).last_polled_at,
+                issues,
+                tuple(entry.claim for entry in stored if entry),
+            )
+        )
+    fleet = config.fleet
+    print(
+        render_list(
+            repositories,
+            ClaimPolicy(fleet.claim_validity, fleet.claim_grace),
+            runtime.api.clock.now(),
+        ),
+        end="",
+    )
+    return 0
+
+
 def _status(
     config: Configuration, args: argparse.Namespace, home: Path, runtime_factory: RuntimeFactory
 ) -> int:
@@ -351,6 +435,7 @@ def _status(
             repositories,
             ClaimPolicy(fleet.claim_validity, fleet.claim_grace),
             runtime.api.clock.now(),
+            tuple(config.accounts),
         ),
         end="",
     )
@@ -416,8 +501,18 @@ def _build_runtime() -> RuntimeFactory:
 
 
 def _dirs(args: argparse.Namespace) -> tuple[Path | None, Path | None]:
+    """Explicit directories, else the configuration's own; the default one keeps the base dirs."""
+    from github_issue_worker.wiring import cache_dir, state_dir
+
+    path, home = args.config_path, args.home
+    scope = None
+    if configuration_identity(path) != configuration_identity(default_path(home=home)):
+        scope = Path("configurations") / configuration_identity(path)[:16]
     state = args.state_dir / "state.json" if args.state_dir else None
-    return state, args.cache_dir
+    if state is None and scope is not None:
+        state = state_dir(home) / scope / "state.json"
+    cache = args.cache_dir or (cache_dir(home) / scope if scope is not None else None)
+    return state, cache
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -433,9 +528,13 @@ def _parser() -> argparse.ArgumentParser:
 
     add = commands.add_parser("add", help="watch a repository you can push to")
     add.add_argument("repository")
-    remove = commands.add_parser("remove", help="stop watching a repository")
+    remove = commands.add_parser(
+        "remove", help="checkpoint local work, release claims and stop watching"
+    )
     remove.add_argument("repository")
-    commands.add_parser("list", help="list the watched repositories")
+    commands.add_parser(
+        "list", help="watched repositories: last poll, state counts and current issues"
+    )
 
     workers = commands.add_parser("workers", help="list workers, or detect agent installations")
     workers.add_argument(
@@ -445,7 +544,13 @@ def _parser() -> argparse.ArgumentParser:
         "--save", action="store_true", help="with --detect: add them to the config"
     )
 
-    watch = commands.add_parser("watch", help="run the manager until stopped")
+    ownership_help = (
+        "Only one manager may run per configuration on this machine. "
+        "A duplicate exits with a diagnostic containing the existing manager PID."
+    )
+    watch = commands.add_parser(
+        "watch", help="run the manager until stopped", description=ownership_help
+    )
     watch.add_argument("--once", action="store_true", help="one poll-and-work pass, then exit")
     watch.add_argument("--no-ui", action="store_true", help="do not serve the local UI")
     watch.add_argument("--config", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
@@ -454,6 +559,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     watch.add_argument("--state-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     watch.add_argument("--cache-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+
+    once = commands.add_parser(
+        "once", help="one poll-and-work pass, then exit (for cron)", description=ownership_help
+    )
+    once.add_argument("--config", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    once.add_argument(
+        "-v", "--verbose", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS
+    )
+    once.add_argument("--state-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    once.add_argument("--cache-dir", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
 
     ui = commands.add_parser("ui", help="serve the demo fleet, or capture its screenshots")
     ui.add_argument("--demo", action="store_true", help="serve fixed, believable sample data")
@@ -486,6 +601,26 @@ def main(
     )
     home = home or account_home()
     path = args.config or default_path(home=home)
+    args.config_path, args.home = path, home
+    try:
+        if args.command in {"watch", "once"}:
+            with manager_lock(path) as target:
+                # Use the exact target locked, even if a symlink is retargeted during startup.
+                return _run_command(args, parser, target, home, host_factory, runtime_factory)
+        return _run_command(args, parser, path, home, host_factory, runtime_factory)
+    except ManagerLockError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+
+
+def _run_command(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    path: Path,
+    home: Path,
+    host_factory: HostFactory | None,
+    runtime_factory: RuntimeFactory | None,
+) -> int:
     try:
         config = load(path)
     except ConfigurationError as error:
@@ -503,15 +638,33 @@ def main(
         if args.command == "add":
             return _add(config, path, args, host_factory or hosts)
         if args.command == "remove":
-            return _remove(config, path, args)
+            return _remove(path, args, home, runtime_factory or _build_runtime())
         if args.command == "list":
-            for repository in config.repositories:
-                print(repository.repository)
-            return 0
+            return _list(config, args, home, runtime_factory or _build_runtime())
         if args.command == "workers":
             return _workers(config, path, args, home)
         if args.command == "watch":
-            return _watch(config, args, home, runtime_factory or _build_runtime(), path)
+            with ControlLease(_control_directory(args, home)):
+                return _watch(
+                    config,
+                    args,
+                    home,
+                    runtime_factory or _build_runtime(),
+                    path,
+                    once=args.once,
+                    no_ui=args.no_ui,
+                )
+        if args.command == "once":
+            with ControlLease(_control_directory(args, home)):
+                return _watch(
+                    config,
+                    args,
+                    home,
+                    runtime_factory or _build_runtime(),
+                    path,
+                    once=True,
+                    no_ui=True,
+                )
         if args.command == "ui":
             return _ui(args)
         if args.command == "status":
@@ -519,8 +672,19 @@ def main(
         if args.command == "release":
             return _release(config, args, home)
         if args.command == "work":
-            return _work(config, args, home)
-    except (ValueError, ConfigurationError) as error:
+            with ControlLease(_control_directory(args, home)):
+                return _work(config, args, home)
+    except (
+        ValueError,
+        ConfigurationError,
+        ControlError,
+        WorkspaceError,
+        ClaimLost,
+        ClaimStoreError,
+        GitHubError,
+        GhUnavailable,
+        OSError,
+    ) as error:
         print(str(error), file=sys.stderr)
         return 2
     parser.error(f"unknown command {args.command}")

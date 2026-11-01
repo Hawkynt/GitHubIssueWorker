@@ -32,7 +32,7 @@ jobs:
       - run: github-issue-worker ui --demo --screenshots docs/screenshots
       - name: Validate screenshots
         run: |
-          for file in issues workers log repositories fleet settings; do
+          for file in issues workers log issue repositories fleet settings; do
             path="docs/screenshots/$file.png"
             test -f "$path" || { echo "missing $path"; exit 1; }
             test "$(stat -c %s "$path")" -gt 10000 || { echo "implausibly small $path"; exit 1; }
@@ -45,6 +45,10 @@ jobs:
         with:
           file: docs/screenshots/log.png
           message: '* refresh the log page screenshot'
+      - uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
+        with:
+          file: docs/screenshots/issue.png
+          message: '* refresh the issue page screenshot'
       - uses: Hawkynt/RepositoryTemplate/commit-generated-file@v1
         with:
           file: docs/screenshots/workers.png

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from github_issue_worker.adapters.workspace import CommitInfo, PushRejected
 from github_issue_worker.domain.issue import Actor, Comment, Issue
-from github_issue_worker.ports.agents import AgentRun, RunReport
+from github_issue_worker.ports.agents import JOURNAL_FILE, AgentRun, RunReport
 from github_issue_worker.ports.repository import Check, PullRequest, RepositoryInfo, WaitingRun
 
 NOW = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
@@ -24,6 +24,7 @@ class FakeHost:
     repo_labels: set[str] = field(default_factory=lambda: {"bug", "enhancement"})
     worker_label: dict[int, str | None] = field(default_factory=dict)
     added_labels: dict[int, list[str]] = field(default_factory=dict)
+    created_labels: list[str] = field(default_factory=list)
     posted: list[tuple[int, str]] = field(default_factory=list)
     pulls: dict[int, PullRequest] = field(default_factory=dict)
     pull_bodies: dict[int, tuple[str, str]] = field(default_factory=dict)
@@ -42,6 +43,13 @@ class FakeHost:
     """Runs waiting for approval in successive calls; the last answer repeats."""
     approved: list[int] = field(default_factory=list)
     """Sub-issue numbers per parent, in the order they were attached."""
+    links: dict[int, list[str]] = field(default_factory=dict)
+    """The branches in each issue's Development panel."""
+    link_calls: list[tuple[int, str, str]] = field(default_factory=list)
+    link_errors: list[Exception] = field(default_factory=list)
+    """Raised by the next ``link_branch`` calls, one each, before anything is linked."""
+    link_listener: Callable[[str, str], None] | None = None
+    """Told the branch and commit ``createLinkedBranch`` created on the remote."""
 
     def info(self) -> RepositoryInfo:
         return RepositoryInfo("main", True, ("squash", "merge"))
@@ -72,6 +80,10 @@ class FakeHost:
 
     def add_labels(self, issue: int, labels: list[str]) -> None:
         self.added_labels.setdefault(issue, []).extend(labels)
+
+    def create_label(self, name: str) -> None:
+        self.created_labels.append(name)
+        self.repo_labels.add(name)
 
     def comment(self, issue: int, body: str) -> None:
         self.posted.append((issue, body))
@@ -135,6 +147,19 @@ class FakeHost:
     def sub_issues(self, parent: int) -> list[Issue]:
         return [self.issue(number) for number in self.children.get(parent, [])]
 
+    def linked_branches(self, issue: int) -> list[str]:
+        return list(self.links.get(issue, []))
+
+    def link_branch(self, issue: int, branch: str, oid: str) -> None:
+        self.link_calls.append((issue, branch, oid))
+        if self.link_errors:
+            raise self.link_errors.pop(0)
+        self.links.setdefault(issue, []).append(branch)
+        if branch not in self.remote_branches:
+            self.remote_branches.append(branch)
+        if self.link_listener:
+            self.link_listener(branch, oid)
+
 
 @dataclass
 class FakeWorkspace:
@@ -149,11 +174,16 @@ class FakeWorkspace:
     shas: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
     head_listener: Callable[[str, str], None] | None = None
 
-    def worktree(self, repository: str, issue: int, branch: str, base: str) -> Path:
+    def worktree(
+        self, repository: str, issue: int, branch: str, base: str, resume: bool = True
+    ) -> Path:
         path = self.root / str(issue)
         path.mkdir(parents=True, exist_ok=True)
         self.trees.setdefault(issue, [])
         return path
+
+    def checkpoint(self, repository: str, issue: int, branch: str, base: str) -> str:
+        return f"checkpoint-{issue}"
 
     def add_commit(self, issue: int, message: str) -> None:
         self.trees[issue].append(CommitInfo(f"c{next(self.shas)}", message))
@@ -164,6 +194,9 @@ class FakeWorkspace:
     def head(self, worktree: Path) -> str:
         commits = self.trees[int(worktree.name)]
         return commits[-1].sha if commits else "base"
+
+    def fork_point(self, worktree: Path, base: str) -> str:
+        return "base"
 
     def rebase(self, worktree: Path, base: str) -> bool:
         return self.rebase_ok
@@ -184,6 +217,10 @@ class FakeWorkspace:
     def remove(self, repository: str, issue: int, branch: str) -> None:
         self.removed.append(issue)
         self.local.pop(issue, None)
+
+    def journal(self, worktree: Path) -> str | None:
+        path = worktree / JOURNAL_FILE
+        return path.read_text(encoding="utf-8") if path.exists() else None
 
     def worktrees(self, repository: str) -> dict[int, str]:
         return dict(self.local)

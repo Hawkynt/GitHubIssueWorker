@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import socket
 import threading
@@ -10,18 +11,20 @@ from collections.abc import Callable, Iterator, MutableMapping
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
+from uuid import uuid4
 
 from github_issue_worker.adapters.agents.antigravity import AntigravityAdapter
 from github_issue_worker.adapters.agents.claude import ClaudeAdapter, ClaudeLocalAdapter
 from github_issue_worker.adapters.agents.codex import CodexAdapter
+from github_issue_worker.adapters.agents.command import CommandAdapter
 from github_issue_worker.adapters.gh_api import GhApi
 from github_issue_worker.adapters.git_claims import GitClaimStore
 from github_issue_worker.adapters.home import account_home
 from github_issue_worker.adapters.installations import Unavailable, resolve
-from github_issue_worker.adapters.process import run_invocation
+from github_issue_worker.adapters.process import run_invocation, terminate
 from github_issue_worker.adapters.state_store import JsonStateStore
 from github_issue_worker.adapters.verifier import Verifier
-from github_issue_worker.adapters.workspace import Workspace
+from github_issue_worker.adapters.workspace import Workspace, WorkspaceError
 from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.github_host import GitHubHost
 from github_issue_worker.application.history import HistoryStore, RunRecord
@@ -34,11 +37,19 @@ from github_issue_worker.application.manager import (
     instance_name,
 )
 from github_issue_worker.application.poller import Poller, PollState
-from github_issue_worker.configuration import Configuration, RepositorySettings, WorkerSettings
+from github_issue_worker.application.repository_removal import release_repository
+from github_issue_worker.configuration import (
+    Configuration,
+    RepositorySettings,
+    WorkerSettings,
+    load,
+    save,
+)
 from github_issue_worker.domain.claim import ClaimPolicy, RunEntry
 from github_issue_worker.domain.commit_message import DEFAULT_FORBIDDEN_WORDS, CommitGate
 from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.domain.model_name import display_model
+from github_issue_worker.domain.run_limit import RunCutOff, duration_text
 from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import AgentAdapter, AgentRun, Invocation, RunReport
 
@@ -76,6 +87,7 @@ class RepositoryRun:
     forbidden_words: tuple[str, ...] = DEFAULT_FORBIDDEN_WORDS
     max_prose_lines: int = 2
     split_issues: bool = True
+    create_missing_labels: bool = False
 
     @property
     def gate(self) -> CommitGate:
@@ -102,6 +114,7 @@ def repository_run(config: Configuration, repository: RepositorySettings) -> Rep
         forbidden_words=tuple(pick("forbidden_words")),  # type: ignore[arg-type]
         max_prose_lines=int(pick("max_prose_lines")),  # type: ignore[call-overload]
         split_issues=bool(pick("split_issues")),
+        create_missing_labels=bool(pick("create_missing_labels")),
     )
 
 
@@ -118,6 +131,14 @@ def make_adapter(
         return CodexAdapter(executable, env=resolved.env)
     if worker.agent == "antigravity":
         return AntigravityAdapter(executable, env=resolved.env, now=now)
+    if worker.agent == "command" and worker.command:
+        return CommandAdapter(
+            worker.command,
+            executable=executable,
+            env=resolved.env,
+            limit_patterns=worker.limit_patterns,
+            limit_exit_codes=worker.limit_exit_codes,
+        )
     raise Unavailable(f"{worker.name}: the {worker.agent} adapter is not implemented yet")
 
 
@@ -129,20 +150,53 @@ def execute(
     name: str | None = None,
 ) -> RunReport:
     """One agent run. Its output streams to ``log``; ``name`` lets the UI stop it (F14.4)."""
-    invocation = adapter.invocation(run)
-    result = run_invocation(
-        Invocation(invocation.argv, invocation.cwd, invocation.stdin, dict(invocation.env)),
-        timeout,
-        log=log,
-        name=name,
-    )
-    if result.killed:
-        raise RunStopped("stopped by the maintainer")
-    if result.timed_out:
-        return RunReport(
-            session=run.session, outcome=None, error=f"timed out after {timeout:.0f} s"
+    report: RunReport | None = None
+    stderr = ""
+    if log is not None:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.touch(exist_ok=False)
+        _write_log_metadata(log, name, report, stderr)
+    try:
+        invocation = adapter.invocation(run)
+        result = run_invocation(
+            Invocation(invocation.argv, invocation.cwd, invocation.stdin, dict(invocation.env)),
+            timeout,
+            log=log,
+            name=name,
         )
-    return adapter.report(run, result.exit_code, result.stdout, result.stderr)
+        stderr = result.stderr
+        # Read reported usage even on timeout or stop, before deciding the workflow's outcome.
+        report = adapter.report(run, result.exit_code, result.stdout, result.stderr)
+        if result.killed:
+            raise RunStopped("stopped by the maintainer")
+        if result.timed_out:
+            return RunReport(
+                session=report.session or run.session,
+                outcome=None,
+                usage=report.usage,
+                error=f"timed out after {timeout:.0f} s",
+                cut_off=RunCutOff("time", duration_text(timeout)),
+            )
+        return report
+    finally:
+        if log is not None:
+            _write_log_metadata(log, name, report, stderr)
+
+
+def _write_log_metadata(
+    transcript: Path, worker: str | None, report: RunReport | None, stderr: str
+) -> None:
+    """Keep invocation metadata beside its transcript, outside the disposable worktree (F6.8)."""
+    metadata = {
+        "transcript": transcript.name,
+        "worker": worker,
+        "cost_usd": report.usage.cost_usd if report is not None and report.usage else None,
+        "stderr": stderr,
+    }
+    path = transcript.with_suffix(".json")
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
 
 
 class _PollStates(MutableMapping[str, PollState]):
@@ -177,6 +231,7 @@ class Runtime:
     state_path: Path = Path("state.json")
     adapters: dict[str, AgentAdapter] = field(default_factory=dict)
     slots: list[WorkerSlot] = field(default_factory=list)
+    configuration_lock: threading.RLock = field(default_factory=threading.RLock)
 
     def watch(self, settings: RepositorySettings) -> RepositoryWatch:
         name = settings.repository
@@ -186,7 +241,9 @@ class Runtime:
             )
             fleet = self.config.fleet
             coordinator = Coordinator(
-                store, self.api.clock, ClaimPolicy(fleet.claim_validity, fleet.claim_grace)
+                store,
+                self.api.clock,
+                ClaimPolicy(fleet.claim_validity, fleet.claim_grace, fleet.max_takeovers),
             )
             host = GitHubHost(self.api, name)
             watch = RepositoryWatch(
@@ -201,6 +258,11 @@ class Runtime:
                     else self.config.defaults.process_backlog
                 ),
                 settings=repository_run(self.config, settings),
+                max_active_issues_per_repository=(
+                    settings.max_active_issues_per_repository
+                    if settings.max_active_issues_per_repository is not None
+                    else self.config.defaults.max_active_issues_per_repository
+                ),
             )
             watch.coordinator = replace(coordinator, before_write=watch.require_access)
             host.before_write = watch.require_access
@@ -224,6 +286,10 @@ class Runtime:
         method = (
             run.merge_method if run.merge_method in info.merge_methods else info.merge_methods[0]
         )
+
+        def wait(seconds: float) -> None:
+            watch.stopping.wait(seconds)
+
         return IssueRun(
             host=watch.host,
             workspace=self.workspace,
@@ -238,10 +304,12 @@ class Runtime:
                     name=slot.name,
                 ),
             ),
-            verify=Verifier(build=run.build, test=run.test, timeout=run.run_timeout).verify,
+            verify=Verifier(
+                build=run.build, test=run.test, timeout=run.run_timeout, name=slot.name
+            ).verify,
             sessions=self.state.sessions(watch.name),
             clock=self.api.clock,
-            sleep=time.sleep,
+            sleep=wait,
             settings=RunSettings(
                 worker=slot.name,
                 model=slot.model,
@@ -251,16 +319,21 @@ class Runtime:
                 checks_timeout=timedelta(seconds=run.checks_timeout),
                 gate=run.gate,
                 split_issues=run.split_issues,
+                create_missing_labels=run.create_missing_labels,
             ),
             progress=lambda step: setattr(slot, "step", step),
             conflict_changed=lambda conflict: setattr(slot, "merge_conflict", conflict),
             blocked=lambda blocker: setattr(slot, "blocker", blocker),
+            cancelled=watch.stopping.is_set,
         ).run(handle, issue, comments, kind)
 
     def _new_log(self, slot: WorkerSlot, repository: str, issue: int) -> Path:
         """Each agent run's output gets its own file, kept for the issue's log page."""
         stamp = self.api.clock.now().strftime("%Y%m%dT%H%M%S")
-        path = log_dir(self.state_path.parent, repository, issue) / f"{stamp}-{slot.name}.ndjson"
+        path = (
+            log_dir(self.state_path.parent, repository, issue)
+            / f"{stamp}-{slot.name}-{uuid4().hex}.ndjson"
+        )
         slot.log_path = path
         return path
 
@@ -272,27 +345,81 @@ class Runtime:
             log.info("worker %s runs on %s", slot.name, display_model(report.model))
         return report
 
+    def _release_repository(self, watch: RepositoryWatch, manager: Manager | None) -> None:
+        if manager is not None:
+            pending = manager.stop_repository(watch)
+            deadline = time.monotonic() + 60
+            for name, finished in pending:
+                while not finished.is_set():
+                    # Confirm the named process still belongs to the repository being removed.
+                    if any(
+                        s.name == name and s.current and s.current[0] == watch.name
+                        for s in manager.workers
+                    ):
+                        terminate(name)
+                    if time.monotonic() >= deadline:
+                        raise WorkspaceError(
+                            f"{watch.name}: runs did not stop; removal can be retried"
+                        )
+                    finished.wait(0.05)
+        settings = watch.settings
+        base = settings.base_branch if isinstance(settings, RepositoryRun) else None
+        base = base or watch.host.info().default_branch
+        release_repository(watch, self.manager_id, self.workspace, base)
+
+    def remove_repository(
+        self, repository: str, path: Path, manager: Manager | None = None
+    ) -> None:
+        """Acknowledge removal only after work is safe and claims are released (F1.4)."""
+        with self.configuration_lock:
+            current = load(path)
+            settings = next((r for r in current.repositories if r.repository == repository), None)
+            watch = self.watches.get(repository)
+            if settings is None and watch is None:
+                return
+            watch = watch or self.watch(settings or RepositorySettings(repository=repository))
+            self._release_repository(watch, manager)
+            # Re-read after draining work, preserving unrelated settings saved in the meantime.
+            current = load(path)
+            current.repositories = [r for r in current.repositories if r.repository != repository]
+            save(current, path)
+            if manager is not None:
+                manager.forget_repository(watch)
+            self.watches.pop(repository, None)
+            self.config = current
+
     def apply(self, config: Configuration, manager: Manager) -> None:
+        with self.configuration_lock:
+            self._apply(config, manager)
+
+    def _apply(self, config: Configuration, manager: Manager) -> None:
         """Apply a changed configuration without a restart (F0.7).
 
         Repositories and workers are added and removed, existing ones updated. A worker that is
         busy when it is removed finishes its current run first and then takes nothing new.
         """
+        wanted = {settings.repository: settings for settings in config.repositories}
+        for name, watch in list(self.watches.items()):
+            if name not in wanted:
+                self._release_repository(watch, manager)
+                manager.forget_repository(watch)
+                self.watches.pop(name, None)
         self.config = config
         manager.trusted_users = tuple(config.trusted_users)
         manager.manager_tags = frozenset(config.manager.tags)
 
-        wanted = {settings.repository: settings for settings in config.repositories}
-        for name in list(self.watches):
-            if name not in wanted:
-                watch = self.watches.pop(name)
-                if watch in manager.repositories:
-                    manager.repositories.remove(watch)
         for name, settings in wanted.items():
             if name in self.watches:
                 watch = self.watches[name]
                 watch.settings = repository_run(config, settings)
                 watch.mode = settings.mode or config.defaults.mode
+                policy = replace(watch.coordinator.policy, max_takeovers=config.fleet.max_takeovers)
+                watch.coordinator = replace(watch.coordinator, policy=policy)
+                watch.max_active_issues_per_repository = (
+                    settings.max_active_issues_per_repository
+                    if settings.max_active_issues_per_repository is not None
+                    else config.defaults.max_active_issues_per_repository
+                )
             else:
                 watch = self.watch(settings)
                 manager.repositories.append(watch)
