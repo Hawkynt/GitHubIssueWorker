@@ -168,6 +168,8 @@ class GitClaimStore:
             cwd=self._working_copy(),
             input=stdin.encode("utf-8") if stdin is not None else None,
             capture_output=True,
+            start_new_session=True,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             # Messages are parsed, so they must be git's English ones whatever the user's locale.
             env={
                 **tool_environment(self._home),

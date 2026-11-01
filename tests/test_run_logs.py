@@ -115,6 +115,45 @@ def test_token_only_usage_does_not_invent_a_cost(
     assert metadata(path)["cost_usd"] is None
 
 
+def test_model_changes_are_visible_before_the_invocation_returns(
+    runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    slot = WorkerSlot(name="worker", agent="claude", account="account")
+    first = (
+        json.dumps(
+            {
+                "type": "assistant",
+                "message": {
+                    "model": "claude-opus-5-5",
+                    "content": [{"type": "text", "text": "Working"}],
+                },
+            }
+        )
+        + "\n"
+    )
+    second = first.replace("claude-opus-5-5", "claude-sonnet-5-5")
+
+    def process(invocation: Invocation, timeout: float, **kwargs: object) -> ProcessResult:
+        callback = kwargs["on_output"]
+        assert callable(callback)
+        callback(first)
+        assert slot.observed_model == "claude-opus-5-5"
+        callback(second)
+        assert slot.observed_model == "claude-sonnet-5-5"
+        return ProcessResult(0, first + second + output(), "")
+
+    monkeypatch.setattr(wiring, "run_invocation", process)
+    report = wiring.execute(
+        ClaudeAdapter("unused"),
+        AgentRun(tmp_path, "work"),
+        10,
+        on_observation=lambda observation: runtime._observe_signal(slot, observation),
+    )
+    assert report.models == ("claude-opus-5-5", "claude-sonnet-5-5")
+    assert slot.models == ["claude-opus-5-5", "claude-sonnet-5-5"]
+    assert slot.worked
+
+
 def test_retries_and_continuations_within_one_second_keep_separate_records(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch
 ) -> None:

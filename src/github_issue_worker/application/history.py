@@ -38,6 +38,17 @@ class RunRecord:
     """When work on the issue began, for the time from first run to merge."""
     manager: str = ""
     """The manager that ran it; empty in records written before the history was shared."""
+    active: bool | None = None
+    """Evidence of actual work. Legacy quota pauses without evidence are excluded from stats."""
+    models: tuple[str, ...] = ()
+
+    @property
+    def is_work(self) -> bool:
+        return self.active if self.active is not None else self.verdict != "paused"
+
+    @property
+    def models_used(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(self.models or (self.model,)))
 
     def to_json(self) -> str:
         data = asdict(self)
@@ -49,6 +60,7 @@ class RunRecord:
     def from_json(line: str) -> RunRecord:
         data = json.loads(line)
         data.setdefault("manager", "")
+        data["models"] = tuple(data.get("models") or ())
         for key in ("started", "finished", "issue_started"):
             data[key] = datetime.fromisoformat(data[key])
         return RunRecord(**data)
@@ -69,6 +81,8 @@ class HistoryStore:
         """The start of the issue's first run since it was last merged, else ``default``."""
         start = default
         for record in self.load():
+            if not record.is_work:
+                continue
             if (record.repository, record.issue) != (repository, issue):
                 continue
             if record.verdict == "merged":
@@ -114,7 +128,7 @@ def daily_merged(
     series: dict[str, list[int]] = defaultdict(lambda: [0] * days)
     for record in records:
         day = record.finished.astimezone(UTC).date()
-        if record.verdict == "merged" and day in index:
+        if record.is_work and record.verdict == "merged" and day in index:
             series[_key(record, by)][index[day]] += 1
     return axis, _fold(dict(series))
 
@@ -129,10 +143,13 @@ def weekly_mix(
     index = {monday: position for position, monday in enumerate(axis)}
     series: dict[str, list[int]] = defaultdict(lambda: [0] * weeks)
     for record in records:
+        if not record.is_work:
+            continue
         day = record.finished.astimezone(UTC).date()
         monday = day - timedelta(days=day.weekday())
         if monday in index:
-            series[record.model][index[monday]] += 1
+            for model in record.models_used:
+                series[model][index[monday]] += 1
     return axis, _fold(dict(series))
 
 
@@ -148,7 +165,7 @@ def resolve_times(records: list[RunRecord], by: SplitBy = "model") -> list[Resol
     """From an issue's first run to its merge, per model, agent or repository; slowest first."""
     durations: dict[str, list[float]] = defaultdict(list)
     for record in records:
-        if record.verdict == "merged":
+        if record.is_work and record.verdict == "merged":
             seconds = (record.finished - record.issue_started).total_seconds()
             durations[_key(record, by)].append(max(seconds, 0.0))
     rows = [
@@ -175,6 +192,7 @@ class Kpis:
 
 
 def kpis(records: list[RunRecord], now: datetime) -> Kpis:
+    records = [record for record in records if record.is_work]
     today = now.astimezone(UTC).date()
     merged = [r for r in records if r.verdict == "merged"]
     days = [r.finished.astimezone(UTC).date() for r in merged]
@@ -208,10 +226,12 @@ def model_ledger(records: list[RunRecord]) -> list[LedgerRow]:
     """Every model ever used, with how often and how well; most runs first."""
     grouped: dict[str, list[RunRecord]] = defaultdict(list)
     for record in records:
-        grouped[record.model].append(record)
+        if record.is_work:
+            for model in record.models_used:
+                grouped[model].append(record)
     rows = []
     for model, runs in grouped.items():
-        merged = [r for r in runs if r.verdict == "merged"]
+        merged = [r for r in runs if r.verdict == "merged" and r.model == model]
         durations = [(r.finished - r.issue_started).total_seconds() for r in merged]
         latest = max(runs, key=lambda r: r.finished)
         rows.append(
@@ -232,7 +252,7 @@ def model_ledger(records: list[RunRecord]) -> list[LedgerRow]:
 
 def cumulative_merged(records: list[RunRecord]) -> list[tuple[datetime, int]]:
     """Every merge in time order with the running total after it."""
-    merged = sorted(r.finished for r in records if r.verdict == "merged")
+    merged = sorted(r.finished for r in records if r.is_work and r.verdict == "merged")
     return [(moment, count) for count, moment in enumerate(merged, start=1)]
 
 
@@ -242,7 +262,7 @@ def cumulative_by(
     """One running merge total per series, busiest series first; a ninth one folds into "Other"."""
     moments: dict[str, list[datetime]] = defaultdict(list)
     for record in records:
-        if record.verdict == "merged":
+        if record.is_work and record.verdict == "merged":
             moments[_key(record, by)].append(record.finished)
     ranked = sorted(moments.items(), key=lambda item: (-len(item[1]), item[0]))
     kept = dict(ranked[: MAX_SERIES - 1])
@@ -259,6 +279,8 @@ def activity(records: list[RunRecord]) -> list[list[int]]:
     """Runs finished per weekday (Monday first) and hour of the day, in UTC."""
     matrix = [[0] * 24 for _ in range(7)]
     for record in records:
+        if not record.is_work:
+            continue
         moment = record.finished.astimezone(UTC)
         matrix[moment.weekday()][moment.hour] += 1
     return matrix
@@ -274,7 +296,9 @@ def fleet_records(repository: str, claims: Iterable[Claim]) -> list[RunRecord]:
     for claim in claims:
         began: datetime | None = None
         for run in sorted(claim.runs, key=lambda run: run.started):
-            began = began or run.started
+            active = run.active if run.active is not None else run.verdict != "paused"
+            if active:
+                began = began or run.started
             records.append(
                 RunRecord(
                     repository=repository,
@@ -286,8 +310,10 @@ def fleet_records(repository: str, claims: Iterable[Claim]) -> list[RunRecord]:
                     verdict=run.verdict,
                     started=run.started,
                     finished=run.finished,
-                    issue_started=began,
+                    issue_started=began or run.started,
                     manager=run.manager,
+                    active=run.active,
+                    models=run.models,
                 )
             )
             if run.verdict == "merged":

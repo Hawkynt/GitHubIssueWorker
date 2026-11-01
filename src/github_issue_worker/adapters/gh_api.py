@@ -38,7 +38,16 @@ _DEFAULT_WAIT = timedelta(minutes=1)
 
 
 def run_gh(argv: list[str], stdin: str | None, env: dict[str, str]) -> tuple[int, str, str]:
-    result = subprocess.run(argv, input=stdin, capture_output=True, text=True, env=env, check=False)
+    result = subprocess.run(
+        argv,
+        input=stdin,
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+        start_new_session=True,
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+    )
     return result.returncode, result.stdout, result.stderr
 
 

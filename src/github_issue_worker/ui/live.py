@@ -277,6 +277,7 @@ class RuntimeBackend:
             else None
         )
         return WorkerView(
+            active=slot.worked is not False,
             name=slot.name,
             group=slot.group,
             blocker=slot.blocker.reason if slot.blocker else "",

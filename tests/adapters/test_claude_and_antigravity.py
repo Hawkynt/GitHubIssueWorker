@@ -223,7 +223,7 @@ def test_claudelocal_keeps_an_unknown_model_id(tmp_path: Path) -> None:
     assert adapter.report(run(tmp_path), 0, stdout, "").model == "mystery-7b"
 
 
-def test_antigravity_reads_the_model_from_its_newest_log(tmp_path: Path) -> None:
+def test_antigravity_reads_the_model_from_its_conversation_log(tmp_path: Path) -> None:
     profile = tmp_path / "profile"
     logs = profile / ".gemini" / "antigravity-cli" / "log"
     logs.mkdir(parents=True)
@@ -231,7 +231,8 @@ def test_antigravity_reads_the_model_from_its_newest_log(tmp_path: Path) -> None
     newest = logs / "cli-20261030_155825.log"
     newest.write_text(
         "I1030 15:58:28 model_config_manager.go:363] Propagating selected model override to "
-        'backend: label="Gemini 4 Argon (Medium)"\n',
+        'backend: label="Gemini 4 Argon (Medium)"\n'
+        "Print mode: resuming conversation 5e8a6cfe-a43d-442e-a71f-b2ebc5cd5cce\n",
         encoding="utf-8",
     )
     import os

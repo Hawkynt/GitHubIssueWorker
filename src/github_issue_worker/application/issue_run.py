@@ -17,6 +17,7 @@ from github_issue_worker.application.coordinator import ClaimHandle, ClaimLost, 
 from github_issue_worker.application.prompt import build_prompt
 from github_issue_worker.domain.commit_message import CommitGate, change_lines
 from github_issue_worker.domain.issue import Comment, Issue
+from github_issue_worker.domain.model_name import display_model
 from github_issue_worker.domain.outcome import Outcome
 from github_issue_worker.domain.run_limit import park_comment
 from github_issue_worker.domain.split import (
@@ -419,7 +420,9 @@ class IssueRun:
         self._check_cancelled()
         if report.session:
             self.sessions[key] = report.session
-        self._handle = self.coordinator.renew(self._handle)
+        self._handle = self.coordinator.renew(
+            self._handle, model=display_model(report.model) if report.model else None
+        )
         self._checkpoint()
         return report
 

@@ -99,3 +99,40 @@ def test_a_named_run_can_be_killed_from_outside(tmp_path: Path) -> None:
     runner.join(timeout=10)
     assert results and results[0].killed
     assert terminate("codex") is False  # nothing left to kill
+
+
+def test_output_observations_arrive_before_the_process_finishes(tmp_path: Path) -> None:
+    acknowledgement = tmp_path / "observed"
+    code = (
+        "import pathlib, time\n"
+        f"ack = pathlib.Path({str(acknowledgement)!r})\n"
+        "print('first', flush=True)\n"
+        "while not ack.exists(): time.sleep(0.01)\n"
+        "print('second', flush=True)\n"
+    )
+    seen: list[str] = []
+
+    def observe(text: str) -> None:
+        if text:
+            seen.append(text)
+        if "first\n" in text:
+            acknowledgement.touch()
+
+    result = run_invocation(
+        Invocation(argv=[PY, "-c", code], cwd=tmp_path), timeout=5, on_output=observe
+    )
+    assert not result.timed_out
+    assert "".join(seen) == result.stdout == "first\nsecond\n"
+
+
+def test_live_output_uses_the_same_universal_newlines_as_the_finished_log(tmp_path: Path) -> None:
+    seen: list[str] = []
+    result = run_invocation(
+        Invocation(
+            argv=[PY, "-c", "import sys; sys.stdout.buffer.write(b'first\\r\\nsecond\\r\\n')"],
+            cwd=tmp_path,
+        ),
+        timeout=5,
+        on_output=seen.append,
+    )
+    assert "".join(seen) == result.stdout == "first\nsecond\n"

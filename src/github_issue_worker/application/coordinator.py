@@ -79,8 +79,12 @@ class Coordinator:
             return None
         return current.claim
 
-    def renew(self, handle: ClaimHandle, step: str | None = None) -> ClaimHandle:
+    def renew(
+        self, handle: ClaimHandle, step: str | None = None, model: str | None = None
+    ) -> ClaimHandle:
         changes = {"step": step} if step is not None else {}
+        if model is not None:
+            changes["model"] = model
         return self._write(handle, self.policy.renewed(handle.claim, self.clock.now(), **changes))
 
     def fence(self, handle: ClaimHandle) -> ClaimHandle:

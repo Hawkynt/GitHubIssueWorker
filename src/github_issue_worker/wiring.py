@@ -51,7 +51,14 @@ from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.domain.model_name import display_model
 from github_issue_worker.domain.run_limit import RunCutOff, duration_text
 from github_issue_worker.domain.work import RunKind
-from github_issue_worker.ports.agents import AgentAdapter, AgentRun, Invocation, RunReport
+from github_issue_worker.ports.agents import (
+    AgentAdapter,
+    AgentRun,
+    Invocation,
+    ObservableAgent,
+    RunObservation,
+    RunReport,
+)
 
 log = logging.getLogger(__name__)
 
@@ -148,31 +155,66 @@ def execute(
     timeout: float,
     log: Path | None = None,
     name: str | None = None,
+    on_observation: Callable[[RunObservation], None] | None = None,
 ) -> RunReport:
     """One agent run. Its output streams to ``log``; ``name`` lets the UI stop it (F14.4)."""
     report: RunReport | None = None
     stderr = ""
+    observed_run = run
+    models: list[str] = []
+    worked = False
+    observation_failed = False
+
+    def observe(stdout: str) -> None:
+        nonlocal observed_run, worked, observation_failed
+        if not isinstance(adapter, ObservableAgent):
+            return
+        try:
+            signal = adapter.observe(observed_run, stdout)
+            if signal.session:
+                observed_run = replace(observed_run, session=signal.session)
+            worked = worked or signal.worked
+            if signal.worked:
+                models.extend(model for model in signal.models if model not in models)
+            if on_observation is not None:
+                on_observation(signal)
+        except (OSError, ValueError, KeyError, TypeError):
+            if not observation_failed:
+                logging.getLogger(__name__).warning(
+                    "could not read live run observations", exc_info=True
+                )
+                observation_failed = True
+
     if log is not None:
         log.parent.mkdir(parents=True, exist_ok=True)
         log.touch(exist_ok=False)
         _write_log_metadata(log, name, report, stderr)
     try:
         invocation = adapter.invocation(run)
-        result = run_invocation(
-            Invocation(invocation.argv, invocation.cwd, invocation.stdin, dict(invocation.env)),
-            timeout,
-            log=log,
-            name=name,
+        invocation = Invocation(
+            invocation.argv,
+            invocation.cwd,
+            invocation.stdin,
+            dict(invocation.env),
+            invocation.shell,
         )
+        if on_observation is not None and isinstance(adapter, ObservableAgent):
+            result = run_invocation(invocation, timeout, log=log, name=name, on_output=observe)
+        else:
+            result = run_invocation(invocation, timeout, log=log, name=name)
         stderr = result.stderr
         # Read reported usage even on timeout or stop, before deciding the workflow's outcome.
         report = adapter.report(run, result.exit_code, result.stdout, result.stderr)
+        models.extend(model for model in report.models if model not in models)
+        report = replace(report, models=tuple(models), worked=worked or report.did_work)
         if result.killed:
             raise RunStopped("stopped by the maintainer")
         if result.timed_out:
-            return RunReport(
+            return replace(
+                report,
                 session=report.session or run.session,
                 outcome=None,
+                limit=None,
                 usage=report.usage,
                 error=f"timed out after {timeout:.0f} s",
                 cut_off=RunCutOff("time", duration_text(timeout)),
@@ -282,6 +324,8 @@ class Runtime:
         run = watch.settings
         assert isinstance(run, RepositoryRun)
         adapter = self.adapters[slot.group]
+        if isinstance(adapter, ObservableAgent) and slot.worked is None:
+            slot.worked = False
         info = watch.host.info()
         method = (
             run.merge_method if run.merge_method in info.merge_methods else info.merge_methods[0]
@@ -302,6 +346,7 @@ class Runtime:
                     run.run_timeout,
                     log=self._new_log(slot, watch.name, issue.number),
                     name=slot.name,
+                    on_observation=lambda observation: self._observe_signal(slot, observation),
                 ),
             ),
             verify=Verifier(
@@ -339,11 +384,27 @@ class Runtime:
 
     def _observe(self, slot: WorkerSlot, report: RunReport) -> RunReport:
         """Remember which model the run reported, for status, the log and the UI."""
-        if report.model and report.model != slot.observed_model:
-            slot.observed_model = report.model
-            self.state.set_model(slot.group, report.model)
-            log.info("worker %s runs on %s", slot.name, display_model(report.model))
+        if report.did_work:
+            slot.models.extend(model for model in report.models if model not in slot.models)
+        self._observe_signal(
+            slot,
+            RunObservation(
+                report.session,
+                (report.model,) if report.model else (),
+                report.did_work,
+            ),
+        )
         return report
+
+    def _observe_signal(self, slot: WorkerSlot, observation: RunObservation) -> None:
+        slot.worked = slot.worked is True or observation.worked
+        if observation.worked:
+            slot.models.extend(model for model in observation.models if model not in slot.models)
+        model = observation.models[-1] if observation.models else None
+        if model and model != slot.observed_model:
+            slot.observed_model = model
+            self.state.set_model(slot.group, model)
+            log.info("worker %s runs on %s", slot.name, display_model(model))
 
     def _release_repository(self, watch: RepositoryWatch, manager: Manager | None) -> None:
         if manager is not None:
@@ -505,6 +566,8 @@ class Runtime:
         """
         known = set(watch.store.issues())
         for record in self.history.load():
+            if not record.is_work:
+                continue
             if record.repository != watch.name or record.issue not in known:
                 continue
             if record.manager not in ("", self.manager_id):
@@ -520,6 +583,8 @@ class Runtime:
                     record.verdict,
                     record.started,
                     record.finished,
+                    active=record.active,
+                    models=record.models,
                 ),
             )
 

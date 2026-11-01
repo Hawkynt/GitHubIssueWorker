@@ -21,6 +21,7 @@ from github_issue_worker.ports.agents import (
     PROMPT_FILE,
     AgentRun,
     Invocation,
+    RunObservation,
     RunReport,
     TokenUsage,
     UsageLimit,
@@ -63,37 +64,70 @@ class AntigravityAdapter:
         return Invocation(argv=argv, cwd=run.worktree, env=self._env)
 
     def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
-        return replace(self._report(run, exit_code, stdout, stderr), model=self._model())
-
-    def _model(self) -> str | None:
-        """agy names its model only in its own log: the newest ``cli-*.log`` of the profile."""
-        home = Path(self._env.get("HOME") or Path.home())
-        logs = sorted(
-            (home / ".gemini" / "antigravity-cli" / "log").glob("cli-*.log"),
-            key=lambda path: path.stat().st_mtime,
+        observed = self.observe(run, stdout)
+        report = self._report(run, exit_code, stdout, stderr)
+        return replace(
+            report,
+            model=observed.models[-1] if observed.models else None,
+            models=observed.models,
+            worked=observed.worked or (report.limit is None and report.outcome is not None),
+            usage=report.usage if observed.worked or report.limit is None else None,
         )
-        if not logs:
+
+    def observe(self, run: AgentRun, stdout: str) -> RunObservation:
+        session = run.session
+        worked = False
+        for event in _events(stdout):
+            session = event.get("conversation_id") or session
+            result = event.get("result") or {}
+            session = result.get("conversation_id") or session
+            step = event.get("step_update") or {}
+            if step.get("step_type") in ("agent_response", "tool"):
+                worked = True
+        model = self._model(session)
+        return RunObservation(session, (model,) if model else (), worked)
+
+    def _model(self, session: str | None) -> str | None:
+        """Only the log of this conversation can identify its model under concurrent runs."""
+        if not session:
             return None
-        found = _LABEL.findall(logs[-1].read_text(encoding="utf-8", errors="replace"))
-        return found[-1] if found else None
+        home = Path(self._env.get("HOME") or Path.home())
+        logs = sorted((home / ".gemini" / "antigravity-cli" / "log").glob("cli-*.log"))
+        for path in reversed(logs):
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if (
+                f"Print mode: resuming conversation {session}" in text
+                or f"Print mode: conversation={session}," in text
+            ):
+                found = _LABEL.findall(text)
+                return found[-1] if found else None
+        return None
 
     def _report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
         session: str | None = None
         result: dict[str, Any] = {}
-        for line in stdout.splitlines():
-            line = line.strip()
-            if not line.startswith("{"):
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        steps: dict[int, dict[str, Any]] = {}
+        for index, event in enumerate(_events(stdout)):
             session = event.get("conversation_id") or session
+            step = event.get("step_update") or {}
+            if step.get("usage"):
+                steps[step.get("step_index", index)] = step["usage"]
             if event.get("event") == "result":
                 result = event.get("result") or {}
                 session = result.get("conversation_id") or session
 
         tokens = result.get("usage") or {}
+        if steps:
+            tokens = {
+                name: sum(int(usage.get(name, 0)) for usage in steps.values())
+                for name in ("input_tokens", "output_tokens")
+            }
+        elif run.session:
+            # Continuation results report the whole conversation, even for an immediate 429.
+            tokens = {}
         usage = (
             TokenUsage(int(tokens.get("input_tokens", 0)), int(tokens.get("output_tokens", 0)))
             if tokens
@@ -127,3 +161,15 @@ class AntigravityAdapter:
             return self._now() + delay
         except (ValueError, OverflowError):
             return None
+
+
+def _events(stdout: str) -> list[dict[str, Any]]:
+    events = []
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events

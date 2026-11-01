@@ -155,6 +155,25 @@ def test_the_holders_model_and_the_finished_runs_travel_with_the_claim() -> None
     assert Claim.from_json(old).runs == () and Claim.from_json(old).model == ""  # older claims
 
 
+def test_work_evidence_and_models_survive_shared_claim_serialization() -> None:
+    entry = RunEntry(
+        "m1",
+        "claude",
+        "claude",
+        "Final Model",
+        "first",
+        "paused",
+        T0,
+        T0,
+        active=True,
+        models=("Initial Model", "Final Model"),
+    )
+    original = claim(runs=(entry,))
+    assert Claim.from_json(original.to_json()).runs == (entry,)
+    legacy = _run(0, "paused")
+    assert RunEntry.from_json(legacy.to_json()).active is None
+
+
 def test_a_takeover_keeps_the_issues_runs_but_wears_the_new_holders_model() -> None:
     claim = POLICY.new_claim(1, Holder("m1", "claude"), T0, "issue/1-x", model="Claude Opus 5.5")
     claim = claim.replace(runs=(_run(0),))

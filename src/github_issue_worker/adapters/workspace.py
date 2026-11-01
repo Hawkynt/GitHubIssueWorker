@@ -93,6 +93,8 @@ class Workspace:
                         capture_output=True,
                         text=True,
                         env=env,
+                        start_new_session=True,
+                        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
                     )
                     if result.returncode == 0 and result.stdout.strip():
                         found[key] = result.stdout.strip()
@@ -303,6 +305,8 @@ class Workspace:
             cwd=cwd,
             capture_output=True,
             text=True,
+            start_new_session=True,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             env={
                 **tool_environment(self._home),
                 "LC_ALL": "C",

@@ -10,7 +10,7 @@ import pytest
 from github_issue_worker.adapters.agents.antigravity import AntigravityAdapter
 from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.issue_run import Verdict
-from github_issue_worker.application.manager import Manager, RepositoryWatch, WorkerSlot
+from github_issue_worker.application.manager import Manager, RepositoryWatch, RunIssue, WorkerSlot
 from github_issue_worker.application.poller import PollResult, PollState
 from github_issue_worker.domain.claim import Claim, ClaimPolicy, ClaimState, Holder
 from github_issue_worker.domain.issue import Actor, Comment, Issue
@@ -124,6 +124,24 @@ def slot(
     return WorkerSlot(name=name, agent=agent, account=account, priority=priority, **kw)  # type: ignore[arg-type]
 
 
+def observed_run(f: Fixture, worked: bool, models: tuple[str, ...] = ()) -> RunIssue:
+    def run(
+        watch: RepositoryWatch,
+        worker: WorkerSlot,
+        handle: ClaimHandle,
+        item: Issue,
+        comments: tuple[Comment, ...],
+        kind: RunKind,
+    ) -> Verdict:
+        worker.worked = worked
+        worker.models[:] = models
+        if models:
+            worker.observed_model = models[-1]
+        return f.run_issue(watch, worker, handle, item, comments, kind)
+
+    return run
+
+
 def test_a_new_issue_goes_to_the_preferred_idle_worker() -> None:
     f = Fixture([slot("codex", "codex", priority=2), slot("claude", priority=1)])
     f.new_issues(issue(1))
@@ -131,6 +149,24 @@ def test_a_new_issue_goes_to_the_preferred_idle_worker() -> None:
     assert f.runs == [Recorded("claude", 1, RunKind.FIRST)]
     claim = f.store.current(1)
     assert claim is not None and claim.holder == Holder(ME, "claude")
+
+
+def test_shutdown_during_polling_does_not_start_or_claim_work() -> None:
+    f = Fixture([slot("claude")])
+    f.new_issues(issue(1))
+    stopped = False
+
+    def poll(repository: str, state: PollState, backlog: bool) -> tuple[PollResult, PollState]:
+        nonlocal stopped
+        result = f.poll(repository, state, backlog)
+        stopped = True
+        return result
+
+    f.manager.stopping = lambda: stopped
+    f.manager.poll = poll
+    f.manager.tick()
+    assert not f.runs
+    assert f.store.current(1) is None
 
 
 def test_each_worker_holds_one_issue_and_the_rest_queue() -> None:
@@ -215,6 +251,49 @@ def test_a_paused_claim_waits_for_a_later_account_reset() -> None:
     f.clock.advance(timedelta(hours=2))
     f.manager.tick()
     assert f.runs[-1] == Recorded("antigravity", 1, RunKind.CONTINUATION)
+
+
+@pytest.mark.parametrize("worked", [False, True])
+def test_quota_probe_keeps_its_pause_but_only_actual_work_enters_history(worked: bool) -> None:
+    reset = T0 + timedelta(hours=2)
+    f = Fixture([slot("antigravity", "antigravity")], verdicts=[Verdict("paused", until=reset)])
+    recorded = []
+    f.manager.on_finished = recorded.append
+
+    f.manager.run_issue = observed_run(f, worked)
+    f.new_issues(issue(1))
+    f.manager.tick()
+    claim = f.store.current(1)
+    assert claim is not None and claim.state is ClaimState.PAUSED
+    assert f.limits.limited_until("a") == reset
+    assert len(claim.runs) == len(recorded) == int(worked)
+
+
+def test_model_switches_survive_the_local_and_shared_work_history() -> None:
+    f = Fixture([slot("claude")])
+    recorded = []
+    f.manager.on_finished = recorded.append
+
+    f.manager.run_issue = observed_run(f, True, ("Initial Model", "Final Model"))
+    f.new_issues(issue(1))
+    f.manager.tick()
+    claim = f.store.current(1)
+    assert claim is not None
+    (entry,) = claim.runs
+    (local,) = recorded
+    assert local.models == entry.models == ("Initial Model", "Final Model")
+    assert local.model == entry.model == "Final Model"
+
+
+def test_finishing_an_existing_pull_counts_even_without_another_model_invocation() -> None:
+    f = Fixture([slot("claude")])
+    recorded = []
+    f.manager.on_finished = recorded.append
+
+    f.manager.run_issue = observed_run(f, False)
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert len(recorded) == 1 and recorded[0].verdict == "merged"
 
 
 def test_antigravity_resumes_at_the_captured_vendor_reset(tmp_path: Path) -> None:

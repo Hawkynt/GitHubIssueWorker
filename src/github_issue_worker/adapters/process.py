@@ -6,6 +6,8 @@ import os
 import subprocess
 import tempfile
 import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,7 +62,11 @@ def agent_environment(extra: dict[str, str], empty_gh_config: str) -> dict[str, 
 
 
 def run_invocation(
-    invocation: Invocation, timeout: float, log: Path | None = None, name: str | None = None
+    invocation: Invocation,
+    timeout: float,
+    log: Path | None = None,
+    name: str | None = None,
+    on_output: Callable[[str], None] | None = None,
 ) -> ProcessResult:
     """Run to completion or kill at ``timeout`` seconds. stdin always gets the prompt, then EOF.
 
@@ -73,7 +79,7 @@ def run_invocation(
     ):
         target = log or Path(scratch) / "stdout"
         target.parent.mkdir(parents=True, exist_ok=True)
-        return _run(invocation, timeout, empty_gh_config, target, name)
+        return _run(invocation, timeout, empty_gh_config, target, name, on_output)
 
 
 def terminate(name: str) -> bool:
@@ -88,7 +94,12 @@ def terminate(name: str) -> bool:
 
 
 def _run(
-    invocation: Invocation, timeout: float, empty_gh_config: str, log: Path, name: str | None
+    invocation: Invocation,
+    timeout: float,
+    empty_gh_config: str,
+    log: Path,
+    name: str | None,
+    on_output: Callable[[str], None] | None,
 ) -> ProcessResult:
     with log.open("w", encoding="utf-8") as output:
         process = subprocess.Popen(
@@ -103,6 +114,7 @@ def _run(
             errors="replace",
             env=agent_environment(dict(invocation.env), empty_gh_config),
             start_new_session=True,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
         )
         with _LIVE_LOCK:
             _LIVE.add(process)
@@ -111,11 +123,15 @@ def _run(
         timed_out = False
         try:
             try:
-                _, stderr = process.communicate(invocation.stdin, timeout=timeout)
+                stderr = _communicate(process, invocation.stdin, timeout, log, on_output)
             except subprocess.TimeoutExpired:
                 _kill_group(process)
                 _, stderr = process.communicate()
                 timed_out = True
+            except BaseException:
+                _kill_group(process)
+                process.communicate()
+                raise
         finally:
             with _LIVE_LOCK:
                 _LIVE.discard(process)
@@ -128,6 +144,49 @@ def _run(
     if timed_out:
         code = code or -9
     return ProcessResult(code, stdout, stderr, timed_out=timed_out, killed=killed)
+
+
+def _communicate(
+    process: subprocess.Popen[str],
+    stdin: str,
+    timeout: float,
+    log: Path,
+    on_output: Callable[[str], None] | None,
+) -> str:
+    if on_output is None:
+        return process.communicate(stdin, timeout=timeout)[1]
+    deadline = time.monotonic() + timeout
+    pending = b""
+    input_text: str | None = stdin
+    with log.open("rb") as reader:
+        while True:
+            remaining = max(deadline - time.monotonic(), 0)
+            done = False
+            try:
+                _, stderr = process.communicate(input_text, timeout=min(0.1, remaining))
+                done = True
+            except subprocess.TimeoutExpired:
+                input_text = None
+                if time.monotonic() >= deadline:
+                    raise
+            pending += reader.read()
+            if done:
+                on_output(
+                    pending.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
+                )
+                return stderr
+            complete, separator, pending_tail = pending.rpartition(b"\n")
+            if separator:
+                on_output(
+                    (complete + separator)
+                    .decode("utf-8", "replace")
+                    .replace("\r\n", "\n")
+                    .replace("\r", "\n")
+                )
+                pending = pending_tail
+            else:
+                # Native session logs can announce a switch while stdout is quiet.
+                on_output("")
 
 
 def _kill_group(process: subprocess.Popen[str]) -> None:

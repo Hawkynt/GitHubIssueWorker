@@ -249,6 +249,7 @@ def _watch(
         return 2
     manager.start()
     stop = threading.Event()
+    manager.stopping = stop.is_set
 
     def interrupt(signum: int, frame: object) -> None:
         if stop.is_set():
@@ -292,7 +293,8 @@ def _watch(
                     stop.set()
                     break
             while any(slot.busy for slot in manager.workers):
-                stop.wait(_DRAIN_WAIT_SECONDS)
+                # `stop` is already set: waiting on it would spin until the jobs finish.
+                threading.Event().wait(_DRAIN_WAIT_SECONDS)
             if server is not None:
                 server.stop()
             return 0

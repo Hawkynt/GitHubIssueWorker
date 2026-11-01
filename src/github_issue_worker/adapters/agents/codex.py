@@ -27,6 +27,7 @@ from github_issue_worker.adapters.agents import prepare, read_outcome
 from github_issue_worker.ports.agents import (
     AgentRun,
     Invocation,
+    RunObservation,
     RunReport,
     TokenUsage,
     UsageLimit,
@@ -35,7 +36,6 @@ from github_issue_worker.ports.agents import (
 _LIMIT = re.compile(r"(hit|reached) (your |the )?usage limit|usage limit reset", re.IGNORECASE)
 _RESET = re.compile(r"try again at (?P<when>.+?)\.?\s*$", re.IGNORECASE)
 _ORDINAL = re.compile(r"(\d+)(st|nd|rd|th)\b")
-_MODEL = re.compile(r'"model"\s*:\s*"([^"]+)"')
 _DATE_FORMATS = ("%b %d, %Y %I:%M %p", "%B %d, %Y %I:%M %p")
 _TIME_FORMATS = ("%I:%M %p", "%H:%M")
 
@@ -76,7 +76,33 @@ class CodexAdapter:
 
     def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
         report = self._report(run, exit_code, stdout, stderr)
-        return replace(report, model=self._session_model(report.session))
+        observed = self.observe(run, stdout)
+        return replace(
+            report,
+            model=observed.models[-1] if observed.models else None,
+            models=observed.models,
+            worked=observed.worked or (report.limit is None and report.outcome is not None),
+        )
+
+    def observe(self, run: AgentRun, stdout: str) -> RunObservation:
+        session = run.session
+        worked = False
+        for event in _events(stdout):
+            if event.get("type") == "thread.started":
+                session = event.get("thread_id") or session
+            if event.get("type") in ("item.started", "item.updated", "item.completed"):
+                item = event.get("item") or {}
+                if item.get("type") in (
+                    "agent_message",
+                    "reasoning",
+                    "command_execution",
+                    "file_change",
+                    "mcp_tool_call",
+                    "web_search",
+                ):
+                    worked = True
+        model = self._session_model(session)
+        return RunObservation(session, (model,) if model else (), worked)
 
     def _session_model(self, session: str | None) -> str | None:
         """``codex exec --json`` does not say which model ran; Codex's own session file does."""
@@ -84,9 +110,17 @@ class CodexAdapter:
             return None
         home = Path(self._env.get("CODEX_HOME") or Path.home() / ".codex")
         for path in sorted((home / "sessions").rglob(f"*{session}*.jsonl"), reverse=True):
-            match = _MODEL.search(path.read_text(encoding="utf-8", errors="replace"))
-            if match:
-                return match.group(1)
+            model: str | None = None
+            try:
+                events = _events(path.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+            for event in events:
+                payload = event.get("payload") or {}
+                if event.get("type") == "turn_context" and isinstance(payload.get("model"), str):
+                    model = payload["model"]
+            if model:
+                return model
         return None
 
     def _report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
@@ -98,6 +132,7 @@ class CodexAdapter:
             if kind == "thread.started":
                 session = event.get("thread_id") or session
             elif kind == "turn.completed":
+                failures.clear()  # A later successful turn supersedes a recovered quota error.
                 tokens = event.get("usage") or {}
                 previous = usage or TokenUsage(0, 0)
                 usage = TokenUsage(

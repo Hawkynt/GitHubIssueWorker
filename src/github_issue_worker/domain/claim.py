@@ -67,6 +67,8 @@ class RunEntry:
     verdict: str
     started: datetime
     finished: datetime
+    active: bool | None = None
+    models: tuple[str, ...] = ()
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -78,6 +80,8 @@ class RunEntry:
             "verdict": self.verdict,
             "started": _timestamp(self.started),
             "finished": _timestamp(self.finished),
+            **({"active": self.active} if self.active is not None else {}),
+            **({"models": list(self.models)} if self.models else {}),
         }
 
     @staticmethod
@@ -91,6 +95,8 @@ class RunEntry:
             verdict=str(data["verdict"]),
             started=_parse_timestamp(data["started"]),
             finished=_parse_timestamp(data["finished"]),
+            active=data.get("active") if isinstance(data.get("active"), bool) else None,
+            models=tuple(str(model) for model in data.get("models") or ()),
         )
 
     @property
