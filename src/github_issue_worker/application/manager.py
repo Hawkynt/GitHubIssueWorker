@@ -441,6 +441,8 @@ class Manager:
             if slot is None or not slot.available or slot.busy:
                 return
             if claim.state is ClaimState.PAUSED:
+                if self._limited(slot, self.clock.now()):
+                    return
                 if claim.paused_until and claim.paused_until > self.clock.now():
                     return
                 handle = watch.coordinator.resume(handle)

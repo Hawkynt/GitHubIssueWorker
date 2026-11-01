@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +28,11 @@ from github_issue_worker.ports.agents import (
 
 _LABEL = re.compile(r'model override to backend: label="([^"]+)"')
 _LIMIT = re.compile(r"quota|rate.?limit|resource.?exhausted|usage limit|\b429\b", re.IGNORECASE)
+_RESET = re.compile(
+    r"\bResets in (?:(?P<hours>\d+)h)?(?:(?P<minutes>\d+)m)?(?:(?P<seconds>\d+)s)?"
+    r"(?=[.\s\"\'}]|$)",
+    re.IGNORECASE,
+)
 _POINTER = (
     f"Read the file {PROMPT_FILE.as_posix()} in the current directory and carry out every "
     "instruction in it."
@@ -35,9 +42,15 @@ _POINTER = (
 class AntigravityAdapter:
     kind = "antigravity"
 
-    def __init__(self, executable: str, env: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        executable: str,
+        env: dict[str, str] | None = None,
+        now: Callable[[], datetime] | None = None,
+    ) -> None:
         self._executable = executable
         self._env = env or {}
+        self._now = now or (lambda: datetime.now(UTC))
 
     def invocation(self, run: AgentRun) -> Invocation:
         prepare(run)
@@ -87,10 +100,30 @@ class AntigravityAdapter:
             else None
         )
         if result.get("status") != "SUCCESS" or exit_code != 0:
-            message = str(result.get("response") or stderr.strip() or f"exit {exit_code}")
+            message = str(
+                result.get("error")
+                or result.get("response")
+                or stderr.strip()
+                or f"exit {exit_code}"
+            )
             if _LIMIT.search(message):
-                return RunReport(session, None, limit=UsageLimit(message, None), usage=usage)
+                return RunReport(
+                    session, None, limit=UsageLimit(message, self._reset_at(message)), usage=usage
+                )
             return RunReport(session, None, usage=usage, error=message)
 
         outcome, problem = read_outcome(run.worktree)
         return RunReport(session, outcome, usage=usage, error=problem)
+
+    def _reset_at(self, message: str) -> datetime | None:
+        """Decode the h/m/s countdown captured in ``fixtures/antigravity/usage-limit.ndjson``."""
+        match = _RESET.search(message)
+        if match is None or not any(match.groups()):
+            return None
+        try:
+            delay = timedelta(
+                **{unit: int(value or 0) for unit, value in match.groupdict().items()}
+            )
+            return self._now() + delay
+        except (ValueError, OverflowError):
+            return None

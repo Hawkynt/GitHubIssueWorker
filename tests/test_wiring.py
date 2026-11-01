@@ -550,7 +550,7 @@ def test_a_worker_whose_runs_never_reported_a_model_uses_its_agents_default(
     # A local run that crashed before reporting was recorded as "unknown model".
     import github_issue_worker.wiring as wiring
 
-    monkeypatch.setattr(wiring, "make_adapter", lambda worker, home: _Named())
+    monkeypatch.setattr(wiring, "make_adapter", lambda worker, home, **kwargs: _Named())
     runtime = Runtime(
         config=_instances_config(executable(tmp_path / "bin" / "claude"), 2),
         home=tmp_path,

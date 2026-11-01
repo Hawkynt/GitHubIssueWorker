@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 from github_issue_worker.adapters.agents.antigravity import AntigravityAdapter
 from github_issue_worker.adapters.agents.claude import ClaudeAdapter, ClaudeLocalAdapter
@@ -138,6 +140,45 @@ def test_antigravity_failure_status_is_an_error(tmp_path: Path) -> None:
 def test_antigravity_quota_messages_are_usage_limits(tmp_path: Path) -> None:
     stdout = json.dumps(
         {"event": "result", "result": {"status": "ERROR", "response": "Quota exceeded (429)."}}
+    )
+    report = AntigravityAdapter("agy").report(run(tmp_path), 1, stdout, "")
+    assert report.limit is not None and report.limit.reset_at is None
+
+
+def test_antigravity_captured_quota_error_carries_its_actual_reset(tmp_path: Path) -> None:
+    now = datetime(2026, 11, 1, 7, 56, 38, tzinfo=UTC)
+    adapter = AntigravityAdapter("agy", now=lambda: now)
+    report = adapter.report(run(tmp_path), 1, fixture("antigravity/usage-limit.ndjson"), "")
+    assert report.session == "7bf231d4-7811-4eb7-978d-a1c1ff0b3286"
+    assert report.limit is not None
+    assert report.limit.message.endswith("Resets in 126h12m53s.")
+    assert report.limit.reset_at == now + timedelta(hours=126, minutes=12, seconds=53)
+
+
+@pytest.mark.parametrize(
+    ("countdown", "delay"),
+    [("2h3m4s", 7384), ("3m4s", 184), ("4s", 4), ("0s", 0), ("2h", 7200)],
+)
+def test_antigravity_reset_countdown(tmp_path: Path, countdown: str, delay: int) -> None:
+    now = datetime(2026, 11, 1, tzinfo=UTC)
+    stdout = json.dumps(
+        {
+            "event": "result",
+            "result": {"status": "ERROR", "error": f"Quota reached. Resets in {countdown}."},
+        }
+    )
+    report = AntigravityAdapter("agy", now=lambda: now).report(run(tmp_path), 1, stdout, "")
+    assert report.limit is not None
+    assert report.limit.reset_at == now + timedelta(seconds=delay)
+
+
+@pytest.mark.parametrize("countdown", ["soon", "", "2hours", "-3s", "2h30x", "999999999999999999h"])
+def test_antigravity_unknown_reset_still_detects_the_limit(tmp_path: Path, countdown: str) -> None:
+    stdout = json.dumps(
+        {
+            "event": "result",
+            "result": {"status": "ERROR", "error": f"Quota reached. Resets in {countdown}."},
+        }
     )
     report = AntigravityAdapter("agy").report(run(tmp_path), 1, stdout, "")
     assert report.limit is not None and report.limit.reset_at is None
