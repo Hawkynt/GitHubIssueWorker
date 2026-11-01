@@ -111,6 +111,20 @@ def test_the_checkpoint_remembers_the_model_actually_reported_by_the_run(tmp_pat
     assert current is not None and current.model == "GPT 6.1 Terra"
 
 
+def test_an_expired_login_keeps_the_issue_for_continuation_instead_of_failing_it(
+    tmp_path: Path,
+) -> None:
+    h = Harness(
+        tmp_path, [lambda run: RunReport("s1", None, authentication="Claude login required")]
+    )
+    assert h.run().kind == "auth-blocked"
+    current = h.store.current(42)
+    assert current is not None and current.state is ClaimState.PAUSED
+    assert current.paused_until is None and "login" in current.wait_reason.lower()
+    assert not h.host.posted  # no misleading "gave up" comment on an otherwise healthy issue
+    assert len(h.agent.runs) == 1
+
+
 def test_the_happy_path_ends_merged_closed_and_clean(tmp_path: Path) -> None:
     h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
     verdict = h.run()

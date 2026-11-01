@@ -19,6 +19,7 @@ from github_issue_worker.adapters.agents.codex import CodexAdapter
 from github_issue_worker.adapters.agents.command import CommandAdapter
 from github_issue_worker.adapters.gh_api import GhApi
 from github_issue_worker.adapters.git_claims import GitClaimStore
+from github_issue_worker.adapters.history_evidence import HistoryEvidence
 from github_issue_worker.adapters.home import account_home
 from github_issue_worker.adapters.installations import Unavailable, resolve
 from github_issue_worker.adapters.process import run_invocation, terminate
@@ -54,6 +55,7 @@ from github_issue_worker.domain.work import RunKind
 from github_issue_worker.ports.agents import (
     AgentAdapter,
     AgentRun,
+    AuthenticatedAgent,
     Invocation,
     ObservableAgent,
     RunObservation,
@@ -274,6 +276,8 @@ class Runtime:
     adapters: dict[str, AgentAdapter] = field(default_factory=dict)
     slots: list[WorkerSlot] = field(default_factory=list)
     configuration_lock: threading.RLock = field(default_factory=threading.RLock)
+    _history_evidence: HistoryEvidence | None = field(default=None, init=False, repr=False)
+    _auth_checked: dict[str, float] = field(default_factory=dict, init=False, repr=False)
 
     def watch(self, settings: RepositorySettings) -> RepositoryWatch:
         name = settings.repository
@@ -384,6 +388,9 @@ class Runtime:
 
     def _observe(self, slot: WorkerSlot, report: RunReport) -> RunReport:
         """Remember which model the run reported, for status, the log and the UI."""
+        if report.authentication:
+            self._set_auth(slot.group, report.authentication)
+            self._auth_checked[slot.group] = time.monotonic()
         if report.did_work:
             slot.models.extend(model for model in report.models if model not in slot.models)
         self._observe_signal(
@@ -405,6 +412,31 @@ class Runtime:
             slot.observed_model = model
             self.state.set_model(slot.group, model)
             log.info("worker %s runs on %s", slot.name, display_model(model))
+
+    def _set_auth(self, worker: str, detail: str | None) -> None:
+        for slot in self.slots:
+            if slot.group == worker:
+                if slot.auth_error != detail:
+                    log.info(
+                        "worker %s: %s", slot.name, detail or "login restored; processing resumed"
+                    )
+                slot.auth_error = detail
+
+    def refresh_auth(self) -> None:
+        """Probe local sign-in state at most once a minute; never send a model prompt."""
+        now = time.monotonic()
+        for worker, adapter in list(self.adapters.items()):
+            if not isinstance(adapter, AuthenticatedAgent):
+                continue
+            last = self._auth_checked.get(worker)
+            if last is not None and now - last < 60:
+                continue
+            self._auth_checked[worker] = now
+            status = adapter.authentication()
+            if status.authenticated is False:
+                self._set_auth(worker, status.detail or "Sign-in required")
+            elif status.authenticated is True:
+                self._set_auth(worker, None)
 
     def _release_repository(self, watch: RepositoryWatch, manager: Manager | None) -> None:
         if manager is not None:
@@ -565,15 +597,18 @@ class Runtime:
         the claims, a manager on any machine counts them too.
         """
         known = set(watch.store.issues())
+        busy = {
+            slot.current[1]
+            for slot in self.slots
+            if slot.busy and slot.current and slot.current[0] == watch.name
+        }
+        entries: dict[int, list[RunEntry]] = {}
         for record in self.history.load():
-            if not record.is_work:
-                continue
-            if record.repository != watch.name or record.issue not in known:
+            if record.repository != watch.name or record.issue not in known or record.issue in busy:
                 continue
             if record.manager not in ("", self.manager_id):
                 continue
-            watch.coordinator.record_run(
-                record.issue,
+            entries.setdefault(record.issue, []).append(
                 RunEntry(
                     self.manager_id,
                     record.worker,
@@ -587,10 +622,18 @@ class Runtime:
                     models=record.models,
                 ),
             )
+        for issue, runs in entries.items():
+            watch.coordinator.record_runs(issue, tuple(runs))
 
     @property
     def history(self) -> HistoryStore:
-        return HistoryStore(self.state_path.parent / "history.jsonl")
+        if self._history_evidence is None:
+            self._history_evidence = HistoryEvidence(
+                self.state_path.parent / "logs", self.manager_id
+            )
+        return HistoryStore(
+            self.state_path.parent / "history.jsonl", enrich=self._history_evidence.restore
+        )
 
     def record(self, run: RunRecord) -> None:
         """Keep a finished run, dated from the issue's first run since its last merge."""
@@ -616,6 +659,7 @@ class Runtime:
             on_finished=self.record,
             max_runs=self.max_runs,
             sweep=self._sweep,
+            refresh_workers=self.refresh_auth,
         )
 
 

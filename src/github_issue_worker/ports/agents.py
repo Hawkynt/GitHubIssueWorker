@@ -69,10 +69,29 @@ class RunReport:
     """Actual response/tool activity; None means the adapter cannot distinguish a quota probe."""
     models: tuple[str, ...] = ()
     """Distinct models observed during this invocation, in first-observed order."""
+    authentication: str | None = None
+    """Sign-in or credential failure, distinct from an issue failure or exhausted quota."""
 
     @property
     def did_work(self) -> bool:
-        return self.worked if self.worked is not None else self.limit is None
+        return (
+            self.worked
+            if self.worked is not None
+            else self.limit is None and self.authentication is None
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AuthenticationStatus:
+    authenticated: bool | None
+    detail: str = ""
+
+
+@runtime_checkable
+class AuthenticatedAgent(Protocol):
+    def authentication(self) -> AuthenticationStatus:
+        """Read the installation's sign-in status without submitting a model prompt."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)

@@ -10,8 +10,8 @@ import json
 import statistics
 import threading
 from collections import defaultdict
-from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -39,12 +39,12 @@ class RunRecord:
     manager: str = ""
     """The manager that ran it; empty in records written before the history was shared."""
     active: bool | None = None
-    """Evidence of actual work. Legacy quota pauses without evidence are excluded from stats."""
+    """Evidence of actual work; unknown legacy activity is retained until a probe is proven."""
     models: tuple[str, ...] = ()
 
     @property
     def is_work(self) -> bool:
-        return self.active if self.active is not None else self.verdict != "paused"
+        return self.active is not False
 
     @property
     def models_used(self) -> tuple[str, ...]:
@@ -67,8 +67,11 @@ class RunRecord:
 
 
 class HistoryStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self, path: Path, enrich: Callable[[list[RunRecord]], list[RunRecord]] | None = None
+    ) -> None:
         self.path = path
+        self._enrich = enrich
         self._lock = threading.Lock()
 
     def append(self, record: RunRecord) -> None:
@@ -100,7 +103,7 @@ class HistoryStore:
                 records.append(RunRecord.from_json(line))
             except (ValueError, TypeError, KeyError):
                 continue
-        return records
+        return self._enrich(records) if self._enrich is not None else records
 
 
 def _key(record: RunRecord, by: SplitBy) -> str:
@@ -296,7 +299,7 @@ def fleet_records(repository: str, claims: Iterable[Claim]) -> list[RunRecord]:
     for claim in claims:
         began: datetime | None = None
         for run in sorted(claim.runs, key=lambda run: run.started):
-            active = run.active if run.active is not None else run.verdict != "paused"
+            active = run.active is not False
             if active:
                 began = began or run.started
             records.append(
@@ -331,6 +334,11 @@ def merged_history(local: Iterable[RunRecord], fleet: Iterable[RunRecord]) -> li
 
     A run in both is taken from the claims, so every manager counts it the same way.
     """
+    local = list(local)
     shared = {_identity(record): record for record in fleet}
+    for record in local:
+        key = _identity(record)
+        if key in shared and shared[key].active is None and record.active is not None:
+            shared[key] = replace(shared[key], active=record.active)
     only_here = [record for record in local if _identity(record) not in shared]
     return sorted([*shared.values(), *only_here], key=lambda record: record.finished)

@@ -106,6 +106,8 @@ class Fixture:
         verdict = self.verdicts.pop(0) if self.verdicts else Verdict("merged")
         if verdict.kind == "paused":
             self.coordinator.pause(handle, until=verdict.until or T0)
+        elif verdict.kind == "auth-blocked":
+            self.coordinator.pause(handle, until=None, reason=verdict.detail)
         elif verdict.kind == "merged":
             self.coordinator.complete(handle)
         else:
@@ -294,6 +296,41 @@ def test_finishing_an_existing_pull_counts_even_without_another_model_invocation
     f.new_issues(issue(1))
     f.manager.tick()
     assert len(recorded) == 1 and recorded[0].verdict == "merged"
+
+
+def test_missing_login_queues_work_until_health_recovers() -> None:
+    f = Fixture([slot("claude")])
+    healthy = False
+
+    def refresh() -> None:
+        f.manager.workers[0].auth_error = None if healthy else "Claude login required"
+
+    f.manager.refresh_workers = refresh
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert not f.runs and f.store.current(1) is None
+    assert f.host.worker_label[1] == "worker:queued"
+    healthy = True
+    f.manager.tick()
+    assert len(f.runs) == 1
+
+
+def test_login_failure_keeps_the_claim_without_becoming_a_quota_or_history_entry() -> None:
+    f = Fixture(
+        [slot("claude")], verdicts=[Verdict("auth-blocked", detail="Claude login required")]
+    )
+    recorded = []
+    f.manager.on_finished = recorded.append
+    f.new_issues(issue(1))
+    f.manager.tick()
+    f.manager.tick()
+    assert len(f.runs) == 1 and not recorded
+    claim = f.store.current(1)
+    assert claim is not None and claim.state is ClaimState.PAUSED
+    assert not f.limits.until
+    f.manager.workers[0].auth_error = None
+    f.manager.tick()
+    assert f.runs[-1].kind == RunKind.CONTINUATION and len(f.runs) == 2
 
 
 def test_antigravity_resumes_at_the_captured_vendor_reset(tmp_path: Path) -> None:
