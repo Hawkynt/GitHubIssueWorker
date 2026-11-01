@@ -171,11 +171,18 @@ def _communicate(
                     raise
             pending += reader.read()
             if done:
-                on_output(pending.decode("utf-8", "replace"))
+                on_output(
+                    pending.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
+                )
                 return stderr
             complete, separator, pending_tail = pending.rpartition(b"\n")
             if separator:
-                on_output((complete + separator).decode("utf-8", "replace"))
+                on_output(
+                    (complete + separator)
+                    .decode("utf-8", "replace")
+                    .replace("\r\n", "\n")
+                    .replace("\r", "\n")
+                )
                 pending = pending_tail
             else:
                 # Native session logs can announce a switch while stdout is quiet.
