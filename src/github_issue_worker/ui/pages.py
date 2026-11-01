@@ -1100,6 +1100,7 @@ def _worker_actions(worker: WorkerView, with_log: bool = True) -> str:
 
 TotalView = Literal["lines", "stacked"]
 """How the running total of merges is drawn: a line per model, or the models stacked."""
+FlightView = Literal["day", "week", "month", "all"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1110,6 +1111,7 @@ class CockpitView:
     days: int = 30
     time: SplitBy = "model"
     total: TotalView = "lines"
+    flight: FlightView = "day"
 
     def link(self, **change: object) -> str:
         values: dict[str, object] = {
@@ -1117,10 +1119,13 @@ class CockpitView:
             "days": self.days,
             "time": self.time,
             "total": self.total,
+            "flight": self.flight,
             **change,
         }
         if values["total"] == "lines":
             del values["total"]  # the default view keeps the links it always had
+        if values["flight"] == "day":
+            del values["flight"]
         return "?" + "&amp;".join(f"{key}={value}" for key, value in values.items())
 
 
@@ -1247,10 +1252,26 @@ def _readouts(history: list[RunRecord], now: datetime) -> str:
     return _readout_row(cells)
 
 
-def _flight_log(snapshot: Snapshot, history: list[RunRecord], palette: Palette) -> str:
-    """The last day as a timeline: every run per worker, the running ones still growing."""
+def _flight_log(
+    snapshot: Snapshot, history: list[RunRecord], palette: Palette, view: CockpitView = DEFAULT_VIEW
+) -> str:
+    """Retained work over the chosen window, with an empty lane kept for every worker."""
     end = snapshot.now
-    start = end - timedelta(hours=24)
+    choices = (
+        ("day", "24 hours"),
+        ("week", "7 days"),
+        ("month", "30 days"),
+        ("all", "All history"),
+    )
+    if view.flight == "all":
+        starts = [r.started for r in history] + [w.since for w in snapshot.workers if w.since]
+        start = min(starts, default=end - timedelta(days=1))
+        start = min(start, end - timedelta(hours=1))
+        label = "all retained history"
+    else:
+        days = {"day": 1, "week": 7, "month": 30}[view.flight]
+        start = end - timedelta(days=days)
+        label = "the last 24 hours" if days == 1 else f"the last {days} days"
     spans = [
         Span(
             record.worker,
@@ -1281,12 +1302,12 @@ def _flight_log(snapshot: Snapshot, history: list[RunRecord], palette: Palette) 
                     live=True,
                 )
             )
-    lanes = [w.name for w in snapshot.workers if any(s.lane == w.name for s in spans)]
+    lanes = [w.name for w in snapshot.workers]
     lanes += sorted({s.lane for s in spans} - set(lanes))
     return (
         '<section class="panel wide" id="flight" aria-label="Flight log">'
-        "<header><h2>Flight log</h2></header>"
-        f"<p class=sub>Every run of the last 24 hours, per worker, coloured by model; "
+        f"<header><h2>Flight log</h2>{_switch('Window', view, 'flight', choices)}</header>"
+        f"<p class=sub>Work runs from {label}, per worker, coloured by model; "
         f"{sum(1 for s in spans if s.live)} still running.</p>"
         f"{timeline(spans, lanes, start, end)}</section>"
     )
@@ -1318,6 +1339,8 @@ def _total(history: list[RunRecord], now: datetime, view: CockpitView, palette: 
         f"<input type=hidden name={name} value={value}>"
         for name, value in (("by", view.by), ("days", view.days), ("time", view.time))
     )
+    if view.flight != "day":
+        keep += f"<input type=hidden name=flight value={view.flight}>"
     toggle = (
         f'<form class=toggle method=get action="/workers">{keep}<label>'
         f"<input type=checkbox name=total value=stacked{' checked' if stacked else ''}> "
@@ -1519,7 +1542,7 @@ def cockpit_fragment(
         + "<div class=deck-grid>"
         + _crew(snapshot, _crew_palette(snapshot, models.models, settings))
         + _usage(snapshot)
-        + _flight_log(snapshot, history, models)
+        + _flight_log(snapshot, history, models, view)
         + _throughput(history, snapshot.now, view, _palette(history, view.by, settings))
         + _share(history, models)
         + _total(history, snapshot.now, view, models)

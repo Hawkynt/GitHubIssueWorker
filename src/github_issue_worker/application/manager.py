@@ -89,6 +89,8 @@ class WorkerSlot:
     worked: bool | None = None
     """Actual activity in this issue run; False while an observable invocation is only probing."""
     models: list[str] = field(default_factory=list)
+    auth_error: str | None = None
+    """An installation needing sign-in keeps its issues and takes no new work."""
 
     @property
     def group(self) -> str:
@@ -155,6 +157,7 @@ class Manager:
     """An account's ``maxConcurrentRuns`` on this manager (F12.11); None leaves it uncapped."""
     stopping: Callable[[], bool] = lambda: False
     """A graceful shutdown stops scheduling, while existing jobs keep their claims and finish."""
+    refresh_workers: Callable[[], None] | None = None
     _lock: threading.RLock = field(default_factory=threading.RLock)
     _known: dict[tuple[str, int], Issue] = field(default_factory=dict)
     _pending: dict[str, set[int]] = field(default_factory=dict)
@@ -189,6 +192,8 @@ class Manager:
 
     def start(self) -> None:
         """Check every watch before startup writes, including ``watch --once`` (F1.5)."""
+        if self.refresh_workers is not None:
+            self.refresh_workers()
         for watch in self.repositories:
             try:
                 self.prepare(watch)
@@ -227,6 +232,10 @@ class Manager:
         return True
 
     def tick(self) -> None:
+        if self.stopping():
+            return
+        if self.refresh_workers is not None:
+            self.refresh_workers()
         for watch in list(self.repositories):
             if self.stopping():
                 return
@@ -394,6 +403,7 @@ class Manager:
                 slot
                 for slot in eligible
                 if slot.enabled
+                and not slot.auth_error
                 and self._idle(slot)
                 and not self._limited(slot, now)
                 and self._has_room(slot)
@@ -450,7 +460,7 @@ class Manager:
             if issue.state != "open":
                 return
             self._own[(watch.name, issue.number)] = claim.holder.worker
-            if slot is None or not slot.available or slot.busy:
+            if slot is None or not slot.available or slot.busy or slot.auth_error:
                 return
             if claim.state is ClaimState.PAUSED:
                 if self._limited(slot, self.clock.now()):
@@ -576,6 +586,10 @@ class Manager:
                             pass
                         elif verdict.kind == "paused":
                             self.limits.set_limited(slot.account, verdict.until)
+                        elif verdict.kind == "auth-blocked":
+                            for other in self.workers:
+                                if other.group == slot.group:
+                                    other.auth_error = verdict.detail
                         else:
                             self._own.pop((watch.name, issue.number), None)
                         slot.busy = False
@@ -611,7 +625,8 @@ class Manager:
         started: datetime,
     ) -> None:
         if verdict != "merged" and (
-            slot.worked is False or (verdict == "paused" and slot.worked is not True)
+            slot.worked is False
+            or (verdict in ("paused", "auth-blocked") and slot.worked is not True)
         ):
             return  # A quota-only probe keeps its transcript, not a work-history entry.
         model = _model_of(slot) or "unknown model"
@@ -678,8 +693,8 @@ class Manager:
                     "worker": slot.name,
                     "agent": slot.agent,
                     "account": slot.account,
-                    "available": slot.available,
-                    "reason": slot.reason,
+                    "available": slot.available and not slot.auth_error,
+                    "reason": slot.auth_error or slot.reason,
                     "busy": slot.busy,
                     "current": f"{slot.current[0]}#{slot.current[1]}" if slot.current else None,
                     "limitedUntil": self.limits.limited_until(slot.account),

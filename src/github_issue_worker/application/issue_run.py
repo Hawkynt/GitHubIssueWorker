@@ -48,6 +48,7 @@ VerdictKind = Literal[
     "needs-input",
     "awaiting-review",
     "paused",
+    "auth-blocked",
     "failed",
     "lost",
     "stopped",
@@ -424,6 +425,12 @@ class IssueRun:
             self._handle, model=display_model(report.model) if report.model else None
         )
         self._checkpoint()
+        if report.authentication:
+            self._handle = self.coordinator.pause(
+                self._handle, until=None, reason=report.authentication
+            )
+            self.host.set_worker_label(issue.number, "worker:paused")
+            raise _Stop(Verdict("auth-blocked", detail=report.authentication))
         return report
 
     def _check(self, tree: Path, base: str) -> str | None:

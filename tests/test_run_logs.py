@@ -16,7 +16,13 @@ from github_issue_worker.adapters.state_store import JsonStateStore
 from github_issue_worker.application.issue_run import RunStopped
 from github_issue_worker.application.manager import WorkerSlot
 from github_issue_worker.configuration import Configuration
-from github_issue_worker.ports.agents import AgentAdapter, AgentRun, Invocation, RunReport
+from github_issue_worker.ports.agents import (
+    AgentAdapter,
+    AgentRun,
+    AuthenticationStatus,
+    Invocation,
+    RunReport,
+)
 from github_issue_worker.wiring import Runtime, log_dir
 from tests.application.run_fakes import FakeWorkspace
 from tests.fakes import FakeClock
@@ -152,6 +158,35 @@ def test_model_changes_are_visible_before_the_invocation_returns(
     assert report.models == ("claude-opus-5-5", "claude-sonnet-5-5")
     assert slot.models == ["claude-opus-5-5", "claude-sonnet-5-5"]
     assert slot.worked
+
+
+def test_login_health_blocks_every_instance_and_recovers_without_a_model_run(
+    runtime: Runtime,
+) -> None:
+    class Login(ClaudeAdapter):
+        ready = False
+        checks = 0
+
+        def authentication(self) -> AuthenticationStatus:
+            self.checks += 1
+            return AuthenticationStatus(self.ready, "Claude login required")
+
+    login = Login("unused")
+    runtime.adapters["claude"] = login
+    runtime.slots[:] = [
+        WorkerSlot("claude", "claude", "a"),
+        WorkerSlot("claude.2", "claude", "a", worker="claude"),
+        WorkerSlot("local", "claude", "local"),
+    ]
+    runtime.refresh_auth()
+    assert all(s.auth_error for s in runtime.slots[:2])
+    assert runtime.slots[2].auth_error is None
+    runtime.refresh_auth()
+    assert login.checks == 1
+    login.ready = True
+    runtime._auth_checked.clear()
+    runtime.refresh_auth()
+    assert all(s.auth_error is None for s in runtime.slots)
 
 
 def test_retries_and_continuations_within_one_second_keep_separate_records(

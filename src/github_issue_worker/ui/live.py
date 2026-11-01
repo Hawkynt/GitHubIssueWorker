@@ -254,7 +254,7 @@ class RuntimeBackend:
             None,
         )
         state: WorkerState
-        if not slot.available:
+        if not slot.available or (slot.auth_error and not slot.busy):
             state = "unavailable"
         elif slot.busy and slot.current:
             state = "working"
@@ -280,13 +280,18 @@ class RuntimeBackend:
             active=slot.worked is not False,
             name=slot.name,
             group=slot.group,
-            blocker=slot.blocker.reason if slot.blocker else "",
+            blocker=slot.blocker.reason
+            if slot.blocker
+            else (slot.auth_error or "")
+            if claim
+            else "",
             blocker_url=slot.blocker.url if slot.blocker else "",
             agent=agent,
             account=slot.account,
             model=model,
             state=state,
-            reason=claim.wait_reason if claim and not slot.busy else slot.reason,
+            reason=slot.auth_error
+            or (claim.wait_reason if claim and not slot.busy else slot.reason),
             limited_until=claim.paused_until if claim and claim.paused_until else limited,
             repository=repository,
             issue=issue,

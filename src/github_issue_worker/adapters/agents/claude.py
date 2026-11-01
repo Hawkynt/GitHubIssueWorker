@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import tempfile
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
@@ -20,11 +21,13 @@ from pathlib import Path
 from typing import Any
 
 from github_issue_worker.adapters.agents import prepare, read_outcome
+from github_issue_worker.adapters.process import agent_environment
 from github_issue_worker.domain.outcome import OUTCOME_SCHEMA
 from github_issue_worker.domain.run_limit import RunCutOff
 from github_issue_worker.ports.agents import (
     OUTCOME_FILE,
     AgentRun,
+    AuthenticationStatus,
     Invocation,
     RunObservation,
     RunReport,
@@ -43,6 +46,12 @@ _SETTINGS = json.dumps(
 _BUDGET_STOP = "error_max_budget_usd"
 """The ``result`` subtype of a run that ``--max-budget-usd`` stopped (captured, 2.1.316)."""
 _DOLLARS = re.compile(r"\$\d+(?:\.\d+)?")
+_AUTH = re.compile(
+    r"not logged in|please (?:run|use) /login|oauth token (?:has )?expired|"
+    r"authentication (?:failed|error)|invalid (?:authentication|api key)|"
+    r"could not authenticate|refresh token.*(?:expired|invalid)",
+    re.IGNORECASE,
+)
 
 
 def _events(stdout: str) -> list[dict[str, Any]]:
@@ -89,8 +98,11 @@ def _interpret_events(
     limited = False
     failure: str | None = None
     cut_off: RunCutOff | None = None
+    api_failure: str | None = None
 
     for event in events:
+        if event.get("api_error"):
+            api_failure = str(event["api_error"])
         session = event.get("session_id") or session
         kind = event.get("type")
         if kind == "rate_limit_event":
@@ -105,6 +117,7 @@ def _interpret_events(
             limited = True
         if kind == "result":
             if event.get("subtype") == "success" and not event.get("is_error"):
+                api_failure = None
                 limited = False
                 rejected_reset = None
                 failure = None
@@ -121,6 +134,17 @@ def _interpret_events(
                 failure = str(event.get("result") or event.get("subtype") or "error")
             if event.get("subtype") == _BUDGET_STOP:
                 cut_off = RunCutOff("budget", _budget_text(event, budget_usd))
+
+    if api_failure in ("authentication_error", "invalid_api_key", "not_logged_in") or (
+        (exit_code != 0 or failure) and _AUTH.search(failure or stderr)
+    ):
+        return RunReport(
+            session,
+            None,
+            usage=usage,
+            error=failure or stderr.strip(),
+            authentication="Claude authentication required",
+        )
 
     if limited:
         message = "usage limit reached"
@@ -198,6 +222,33 @@ class ClaudeAdapter:
     def observe(self, run: AgentRun, stdout: str) -> RunObservation:
         return _observe_events(_events(stdout))
 
+    def _login_help(self) -> str:
+        profile = self._env.get("CLAUDE_CONFIG_DIR")
+        where = f" for {profile}" if profile else " for this installation"
+        return f"Claude login required{where}. Open this installation and run 'claude auth login'."
+
+    def authentication(self) -> AuthenticationStatus:
+        try:
+            with tempfile.TemporaryDirectory(prefix="ghiw-auth-") as empty_gh:
+                result = subprocess.run(
+                    [self._executable, "auth", "status"],
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    env=agent_environment(self._env, empty_gh),
+                    start_new_session=True,
+                    creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+                )
+            data = json.loads(result.stdout)
+            if isinstance(data, dict) and data.get("loggedIn") is False:
+                return AuthenticationStatus(False, self._login_help())
+            if isinstance(data, dict) and data.get("loggedIn") is True and result.returncode == 0:
+                return AuthenticationStatus(True)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+        return AuthenticationStatus(None, "Could not determine Claude login status")
+
     def __init__(
         self, executable: str, env: dict[str, str] | None = None, budget_usd: float | None = None
     ) -> None:
@@ -227,7 +278,10 @@ class ClaudeAdapter:
         return Invocation(argv=argv, cwd=run.worktree, stdin=run.prompt, env=self._env)
 
     def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
-        return _interpret(run, _events(stdout), exit_code, stderr, self._budget_usd)
+        report = _interpret(run, _events(stdout), exit_code, stderr, self._budget_usd)
+        return (
+            replace(report, authentication=self._login_help()) if report.authentication else report
+        )
 
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")

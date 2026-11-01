@@ -67,6 +67,8 @@ def model_of(slot: WorkerSlot | None) -> str:
 
 
 def _worker_state(slot: WorkerSlot, limited_until: datetime | None, now: datetime) -> str:
+    if slot.auth_error:
+        return f"login required: {slot.auth_error}"
     if not slot.available:
         return f"unavailable: {slot.reason}"
     if limited_until:

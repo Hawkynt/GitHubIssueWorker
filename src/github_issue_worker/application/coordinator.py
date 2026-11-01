@@ -4,7 +4,7 @@ and gives up on issues that keep losing their holders (F11.12)."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from github_issue_worker.domain.claim import (
@@ -108,7 +108,7 @@ class Coordinator:
             return handle
         return self._write(handle, handle.claim.replace(merge_conflict=conflict))
 
-    def pause(self, handle: ClaimHandle, until: datetime, reason: str = "") -> ClaimHandle:
+    def pause(self, handle: ClaimHandle, until: datetime | None, reason: str = "") -> ClaimHandle:
         now = self.clock.now()
         paused = self.policy.renewed(
             handle.claim,
@@ -133,16 +133,31 @@ class Coordinator:
         A compare-and-swap like every claim write, retried when somebody wrote in between; a run
         already recorded is not recorded twice.
         """
+        self.record_runs(issue, (entry,), attempts)
+
+    def record_runs(self, issue: int, entries: tuple[RunEntry, ...], attempts: int = 5) -> None:
+        """Append work and enrich old evidence in one compare-and-swap per issue."""
         self.before_write()
         for _ in range(attempts):
             current = self.store.read(issue)
-            if current is None or any(run.key == entry.key for run in current.claim.runs):
+            if current is None:
+                return
+            runs = list(current.claim.runs)
+            positions = {run.key: index for index, run in enumerate(runs)}
+            for entry in entries:
+                index = positions.get(entry.key)
+                if index is not None:
+                    old = runs[index]
+                    if old.active is None and entry.active is not None:
+                        runs[index] = replace(old, active=entry.active)
+                elif entry.active is not False:
+                    positions[entry.key] = len(runs)
+                    runs.append(entry)
+            if tuple(runs) == current.claim.runs:
                 return
             try:
                 self.before_write()
-                self.store.replace(
-                    current.version, current.claim.replace(runs=(*current.claim.runs, entry))
-                )
+                self.store.replace(current.version, current.claim.replace(runs=tuple(runs)))
                 return
             except ClaimConflict:
                 continue

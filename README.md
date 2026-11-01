@@ -930,7 +930,10 @@ untrusted until proven otherwise:
 - **No secrets in the worktree.** The run's environment is scrubbed of `GH_TOKEN`, `GITHUB_TOKEN`,
   `GH_CONFIG_DIR` and the manager's own credentials, so an agent cannot reach `gh`'s login either. No
   token is ever written to disk, logs, checkpoints or claims.
-  Agent credentials stay with the agent installations.
+  Agent credentials stay with the agent installations. Claude installations are checked with their
+  native authentication status before scheduling and periodically thereafter. A logged-out profile
+  pauses its workers without inventing a quota reset or failing its issues; signing in through that
+  installation allows scheduling to resume automatically.
 - **The UI is local.** It binds to loopback unless you configure a token, and it can do nothing the
   CLI cannot.
 - **Claims are readable by anyone who can read the repository.** They carry manager names, worker
@@ -1316,8 +1319,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟧 **F14.13** Cockpit: every finished work run is appended to its issue's claim (`runs`) and to
   `history.jsonl` in the state directory, and survives restarts and damaged lines. Quota-only
   replies and probes keep their diagnostic transcripts but do not enter work history or charts.
-  Older quota pauses without evidence of work are excluded from statistics; a run with observed
-  response or tool activity before a quota pause still counts. Model switches retain all observed
+  Older pauses are checked against their retained transcripts: only proven quota-only replies
+  are excluded; missing evidence preserves the run. Response or tool activity before a quota
+  pause still counts. Model switches retain all observed
   models in local and shared history; model-use charts count a run once for each model it used,
   while a merge belongs to its final model once. The statistics
   come from the claims of the watched repositories, merged with local runs they do not carry, so
@@ -1326,7 +1330,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
   30-day trace, all time, median time from first run to merge, merge rate), issues merged per day
   split by model, agent or repository over 30/90/180 days, runs per model per week over 26 weeks,
   time to merge by model, agent or repository, a model ledger (runs, merged, median time, first
-  and last use), a 24-hour flight log of runs per worker with the running ones live, the model share
+  and last use), a flight log of runs per worker with the running ones live (24 hours by default,
+  selectable 7 days, 30 days or all retained history), the model share
   as a ring, the running total of merges as one line per model or, with a checkbox, as the per-model
   totals stacked into one area whose top edge is all merges, and finished runs per weekday and hour. Colour follows the entity across views, a ninth series folds into "Other", every
   chart has a per-mark tooltip and a table view, the grid reflows down to phone width, and it

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -178,6 +179,53 @@ def test_a_finished_run_is_appended_to_the_claim_even_after_a_concurrent_write(
     coordinator.record_run(5, entry)  # recorded once, whoever repeats it
     current = store.current(5)
     assert current is not None and current.runs == (entry,) and current.step == "renamed"
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_transcript_evidence_enriches_a_legacy_run_without_duplicating_it(
+    store: InMemoryClaimStore, clock: FakeClock, active: bool
+) -> None:
+    from github_issue_worker.domain.claim import RunEntry
+
+    coord = Coordinator(store, clock, POLICY)
+    coord.claim(5, CODEX, "issue/5")
+    entry = RunEntry("m", "codex", "codex", "Model", "first", "paused", T0, T0)
+    coord.record_run(5, entry)
+    coord.record_run(5, replace(entry, active=active))
+    current = store.current(5)
+    assert current is not None and current.runs == (replace(entry, active=active),)
+    coord.record_run(5, replace(entry, active=not active))
+    assert store.current(5) == current  # explicit evidence is never replaced by a later guess
+
+
+def test_publishing_old_probe_evidence_does_not_create_a_new_work_record(
+    store: InMemoryClaimStore, clock: FakeClock
+) -> None:
+    from github_issue_worker.domain.claim import RunEntry
+
+    coord = Coordinator(store, clock, POLICY)
+    coord.claim(5, CODEX, "issue/5")
+    coord.record_run(
+        5, RunEntry("m", "codex", "codex", "Model", "first", "paused", T0, T0, active=False)
+    )
+    current = store.current(5)
+    assert current is not None and not current.runs
+
+
+def test_old_work_and_probe_evidence_can_be_published_in_one_claim_update(
+    store: InMemoryClaimStore, clock: FakeClock
+) -> None:
+    from github_issue_worker.domain.claim import RunEntry
+
+    coord = Coordinator(store, clock, POLICY)
+    coord.claim(5, CODEX, "issue/5")
+    first = RunEntry("m", "codex", "codex", "Model", "first", "paused", T0, T0)
+    second = replace(first, started=T0 + timedelta(minutes=5))
+    coord.record_run(5, first)
+    coord.record_run(5, second)
+    coord.record_runs(5, (replace(first, active=True), replace(second, active=False)))
+    current = store.current(5)
+    assert current is not None and [run.active for run in current.runs] == [True, False]
 
 
 def test_given_a_stalled_claim_when_given_up_then_it_is_released_as_failed(

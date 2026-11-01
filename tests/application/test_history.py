@@ -101,16 +101,16 @@ def test_weekly_mix_counts_every_run_per_model_per_week() -> None:
     assert series["GPT 6.1 Sol"][-2] == 1 and series["Claude Opus 5.5"][-2] == 1
 
 
-def test_quota_only_retries_do_not_count_as_work_even_in_legacy_history() -> None:
-    ping = record(1, 0, verdict="paused", model="Quota-only model")
+def test_proven_quota_only_retries_do_not_count_as_work() -> None:
+    ping = replace(record(1, 0, verdict="paused", model="Quota-only model"), active=False)
     real = record(2, 0.1)
     runs = [ping, real, replace(ping, issue=3, active=False)]
     assert sum(map(sum, activity(runs))) == 1
     assert set(weekly_mix(runs, NOW)[1]) == {real.model}
     assert [row.model for row in model_ledger(runs)] == [real.model]
-    # Existing lines have no evidence field. Keep the diagnostic, but don't assume work.
-    legacy = ping.to_json()
-    assert not RunRecord.from_json(legacy).is_work
+    # An unclassified old pause must survive until evidence proves it was only a probe.
+    legacy = replace(ping, active=None).to_json()
+    assert RunRecord.from_json(legacy).is_work
 
 
 def test_a_run_that_did_work_before_its_quota_pause_still_counts() -> None:
