@@ -6,9 +6,9 @@ import logging
 import socket
 import threading
 import time
-from collections.abc import Iterator, MutableMapping
+from collections.abc import Callable, Iterator, MutableMapping
 from dataclasses import dataclass, field, replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from github_issue_worker.adapters.agents.antigravity import AntigravityAdapter
@@ -105,7 +105,9 @@ def repository_run(config: Configuration, repository: RepositorySettings) -> Rep
     )
 
 
-def make_adapter(worker: WorkerSettings, home: Path) -> AgentAdapter:
+def make_adapter(
+    worker: WorkerSettings, home: Path, now: Callable[[], datetime] | None = None
+) -> AgentAdapter:
     resolved = resolve(worker, home)
     executable = str(resolved.executable)
     if resolved.local:
@@ -115,7 +117,7 @@ def make_adapter(worker: WorkerSettings, home: Path) -> AgentAdapter:
     if worker.agent == "codex":
         return CodexAdapter(executable, env=resolved.env)
     if worker.agent == "antigravity":
-        return AntigravityAdapter(executable, env=resolved.env)
+        return AntigravityAdapter(executable, env=resolved.env, now=now)
     raise Unavailable(f"{worker.name}: the {worker.agent} adapter is not implemented yet")
 
 
@@ -324,7 +326,9 @@ class Runtime:
                     self.slots.remove(slot)
         for worker in self.config.workers:
             try:
-                self.adapters[worker.name] = make_adapter(worker, self.home)
+                self.adapters[worker.name] = make_adapter(
+                    worker, self.home, now=lambda: self.api.clock.now()
+                )
                 available, reason = True, ""
                 if worker.model is None and self.state.model(worker.name) is None:
                     default = getattr(self.adapters[worker.name], "default_model", None)

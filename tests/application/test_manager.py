@@ -3,9 +3,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
+from github_issue_worker.adapters.agents.antigravity import AntigravityAdapter
 from github_issue_worker.application.coordinator import ClaimHandle, Coordinator
 from github_issue_worker.application.issue_run import Verdict
 from github_issue_worker.application.manager import Manager, RepositoryWatch, WorkerSlot
@@ -15,6 +17,7 @@ from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.outcome import SubIssue
 from github_issue_worker.domain.split import sub_issue_body
 from github_issue_worker.domain.work import RunKind
+from github_issue_worker.ports.agents import AgentRun
 from github_issue_worker.ports.repository import Blocker
 from github_issue_worker.product import MARKER_PREFIX
 from tests.application.run_fakes import FakeHost
@@ -197,6 +200,41 @@ def test_own_claims_are_adopted_after_a_restart() -> None:
     f.store.force_create(POLICY.new_claim(5, Holder(ME, "claude"), T0, "issue/5-x"))
     f.manager.tick()
     assert f.runs == [Recorded("claude", 5, RunKind.CONTINUATION)]
+
+
+def test_a_paused_claim_waits_for_a_later_account_reset() -> None:
+    reset = T0 + timedelta(minutes=5)
+    f = Fixture([slot("antigravity", "antigravity")], verdicts=[Verdict("paused", until=reset)])
+    f.new_issues(issue(1))
+    f.manager.tick()
+    # Another run on the same account learns a later reset while this issue waits.
+    f.limits.set_limited("a", T0 + timedelta(hours=2))
+    f.clock.advance(timedelta(minutes=6))
+    f.manager.tick()
+    assert len(f.runs) == 1
+    f.clock.advance(timedelta(hours=2))
+    f.manager.tick()
+    assert f.runs[-1] == Recorded("antigravity", 1, RunKind.CONTINUATION)
+
+
+def test_antigravity_resumes_at_the_captured_vendor_reset(tmp_path: Path) -> None:
+    f = Fixture([slot("antigravity", "antigravity")])
+    output = (Path(__file__).parents[1] / "fixtures/antigravity/usage-limit.ndjson").read_text()
+    report = AntigravityAdapter("agy", now=f.clock.now).report(
+        AgentRun(tmp_path, "continue"), 1, output, ""
+    )
+    assert report.limit is not None and report.limit.reset_at is not None
+    f.verdicts.append(Verdict("paused", until=report.limit.reset_at))
+    f.new_issues(issue(1))
+    f.manager.tick()
+    f.clock.advance(timedelta(minutes=5))
+    f.manager.tick()
+    assert len(f.runs) == 1
+    f.clock.advance(report.limit.reset_at - f.clock.now())
+    f.manager.tick()
+    assert f.runs[-1] == Recorded("antigravity", 1, RunKind.CONTINUATION)
+    claim = f.store.current(1)
+    assert claim is not None and claim.state is ClaimState.DONE
 
 
 def test_another_managers_claim_is_left_alone() -> None:
