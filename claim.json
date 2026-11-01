@@ -17,6 +17,7 @@
   "renewedAt": "2026-11-01T08:28:44Z",
   "runs": [
     {
+      "active": true,
       "agent": "antigravity",
       "finished": "2026-10-31T11:17:35Z",
       "kind": "first",
@@ -27,6 +28,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": true,
       "agent": "antigravity",
       "finished": "2026-10-31T11:24:10Z",
       "kind": "continuation",
@@ -37,6 +39,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T11:29:49Z",
       "kind": "continuation",
@@ -47,6 +50,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T11:35:30Z",
       "kind": "continuation",
@@ -57,6 +61,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T11:40:53Z",
       "kind": "continuation",
@@ -67,6 +72,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T11:46:30Z",
       "kind": "continuation",
@@ -77,6 +83,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T11:51:55Z",
       "kind": "continuation",
@@ -87,6 +94,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T11:58:24Z",
       "kind": "continuation",
@@ -97,6 +105,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T12:04:35Z",
       "kind": "continuation",
@@ -107,6 +116,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T12:10:33Z",
       "kind": "continuation",
@@ -117,6 +127,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T12:16:23Z",
       "kind": "continuation",
@@ -127,6 +138,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T12:22:24Z",
       "kind": "continuation",
@@ -137,6 +149,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T12:28:27Z",
       "kind": "continuation",
@@ -147,6 +160,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T12:34:19Z",
       "kind": "continuation",
@@ -157,6 +171,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T12:40:05Z",
       "kind": "continuation",
@@ -167,6 +182,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T12:45:46Z",
       "kind": "continuation",
@@ -177,6 +193,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T12:53:31Z",
       "kind": "continuation",
@@ -187,6 +204,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T12:59:08Z",
       "kind": "continuation",
@@ -197,6 +215,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T13:04:46Z",
       "kind": "continuation",
@@ -207,6 +226,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T13:10:20Z",
       "kind": "continuation",
@@ -217,6 +237,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T13:15:53Z",
       "kind": "continuation",
@@ -227,6 +248,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T13:21:29Z",
       "kind": "continuation",
@@ -237,6 +259,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T13:27:04Z",
       "kind": "continuation",
@@ -247,6 +270,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T13:32:40Z",
       "kind": "continuation",
@@ -257,6 +281,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T13:38:14Z",
       "kind": "continuation",
@@ -267,6 +292,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T13:43:49Z",
       "kind": "continuation",
@@ -277,6 +303,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T13:49:25Z",
       "kind": "continuation",
@@ -287,6 +314,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T13:55:20Z",
       "kind": "continuation",
@@ -297,6 +325,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T14:00:57Z",
       "kind": "continuation",
@@ -307,6 +336,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T14:06:34Z",
       "kind": "continuation",
@@ -317,6 +347,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T14:12:05Z",
       "kind": "continuation",
@@ -327,6 +358,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T14:17:45Z",
       "kind": "continuation",
@@ -337,6 +369,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T14:23:23Z",
       "kind": "continuation",
@@ -347,6 +380,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T14:28:57Z",
       "kind": "continuation",
@@ -357,6 +391,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T14:34:19Z",
       "kind": "continuation",
@@ -367,6 +402,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T14:39:50Z",
       "kind": "continuation",
@@ -377,6 +413,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T14:45:12Z",
       "kind": "continuation",
@@ -387,6 +424,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T14:54:53Z",
       "kind": "continuation",
@@ -397,6 +435,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T15:00:20Z",
       "kind": "continuation",
@@ -407,6 +446,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T15:05:51Z",
       "kind": "continuation",
@@ -417,6 +457,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T15:11:22Z",
       "kind": "continuation",
@@ -427,6 +468,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T15:16:44Z",
       "kind": "continuation",
@@ -437,6 +479,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T15:22:13Z",
       "kind": "continuation",
@@ -447,6 +490,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T15:27:38Z",
       "kind": "continuation",
@@ -457,6 +501,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T15:33:02Z",
       "kind": "continuation",
@@ -467,6 +512,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T15:38:29Z",
       "kind": "continuation",
@@ -477,6 +523,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T15:43:56Z",
       "kind": "continuation",
@@ -487,6 +534,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T15:49:23Z",
       "kind": "continuation",
@@ -497,6 +545,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T15:56:20Z",
       "kind": "continuation",
@@ -507,6 +556,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T16:01:49Z",
       "kind": "continuation",
@@ -517,6 +567,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T16:07:18Z",
       "kind": "continuation",
@@ -527,6 +578,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T16:12:48Z",
       "kind": "continuation",
@@ -537,6 +589,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T16:18:08Z",
       "kind": "continuation",
@@ -547,6 +600,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T16:23:36Z",
       "kind": "continuation",
@@ -557,6 +611,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T16:29:01Z",
       "kind": "continuation",
@@ -567,6 +622,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T16:34:27Z",
       "kind": "continuation",
@@ -577,6 +633,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T16:39:54Z",
       "kind": "continuation",
@@ -587,6 +644,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T16:45:21Z",
       "kind": "continuation",
@@ -597,6 +655,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T16:50:47Z",
       "kind": "continuation",
@@ -607,6 +666,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T16:57:05Z",
       "kind": "continuation",
@@ -617,6 +677,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T17:02:32Z",
       "kind": "continuation",
@@ -627,6 +688,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T17:07:59Z",
       "kind": "continuation",
@@ -637,6 +699,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T17:13:29Z",
       "kind": "continuation",
@@ -647,6 +710,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T17:18:52Z",
       "kind": "continuation",
@@ -657,6 +721,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T17:24:20Z",
       "kind": "continuation",
@@ -667,6 +732,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T17:29:45Z",
       "kind": "continuation",
@@ -677,6 +743,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T17:35:12Z",
       "kind": "continuation",
@@ -687,6 +754,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T17:40:40Z",
       "kind": "continuation",
@@ -697,6 +765,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T17:46:07Z",
       "kind": "continuation",
@@ -707,6 +776,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T17:51:34Z",
       "kind": "continuation",
@@ -717,6 +787,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T17:58:25Z",
       "kind": "continuation",
@@ -727,6 +798,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T18:03:52Z",
       "kind": "continuation",
@@ -737,6 +809,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T18:09:20Z",
       "kind": "continuation",
@@ -747,6 +820,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T18:14:50Z",
       "kind": "continuation",
@@ -757,6 +831,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T18:20:12Z",
       "kind": "continuation",
@@ -767,6 +842,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T18:25:41Z",
       "kind": "continuation",
@@ -777,6 +853,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T18:31:15Z",
       "kind": "continuation",
@@ -787,6 +864,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T18:36:32Z",
       "kind": "continuation",
@@ -797,6 +875,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T18:42:00Z",
       "kind": "continuation",
@@ -807,6 +886,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T18:47:25Z",
       "kind": "continuation",
@@ -817,6 +897,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T18:59:05Z",
       "kind": "continuation",
@@ -827,6 +908,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T19:04:32Z",
       "kind": "continuation",
@@ -837,6 +919,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T19:09:59Z",
       "kind": "continuation",
@@ -847,6 +930,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T19:15:31Z",
       "kind": "continuation",
@@ -857,6 +941,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T19:20:51Z",
       "kind": "continuation",
@@ -867,6 +952,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T19:26:19Z",
       "kind": "continuation",
@@ -877,6 +963,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T19:31:46Z",
       "kind": "continuation",
@@ -887,6 +974,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T19:37:12Z",
       "kind": "continuation",
@@ -897,6 +985,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T19:42:40Z",
       "kind": "continuation",
@@ -907,6 +996,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T19:48:07Z",
       "kind": "continuation",
@@ -917,6 +1007,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T20:00:12Z",
       "kind": "continuation",
@@ -927,6 +1018,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T20:05:40Z",
       "kind": "continuation",
@@ -937,6 +1029,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T20:11:07Z",
       "kind": "continuation",
@@ -947,6 +1040,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T20:16:40Z",
       "kind": "continuation",
@@ -957,6 +1051,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T20:21:58Z",
       "kind": "continuation",
@@ -967,6 +1062,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T20:27:25Z",
       "kind": "continuation",
@@ -977,6 +1073,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T20:32:50Z",
       "kind": "continuation",
@@ -987,6 +1084,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T20:38:16Z",
       "kind": "continuation",
@@ -997,6 +1095,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T20:43:44Z",
       "kind": "continuation",
@@ -1007,6 +1106,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T20:49:10Z",
       "kind": "continuation",
@@ -1017,6 +1117,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T21:01:40Z",
       "kind": "continuation",
@@ -1027,6 +1128,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T21:07:06Z",
       "kind": "continuation",
@@ -1037,6 +1139,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T21:12:31Z",
       "kind": "continuation",
@@ -1047,6 +1150,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T21:18:03Z",
       "kind": "continuation",
@@ -1057,6 +1161,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T21:23:26Z",
       "kind": "continuation",
@@ -1067,6 +1172,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T21:28:56Z",
       "kind": "continuation",
@@ -1077,6 +1183,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T21:34:23Z",
       "kind": "continuation",
@@ -1087,6 +1194,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T21:39:52Z",
       "kind": "continuation",
@@ -1097,6 +1205,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T21:45:21Z",
       "kind": "continuation",
@@ -1107,6 +1216,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T21:50:48Z",
       "kind": "continuation",
@@ -1117,6 +1227,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T22:03:07Z",
       "kind": "continuation",
@@ -1127,6 +1238,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T22:08:34Z",
       "kind": "continuation",
@@ -1137,6 +1249,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T22:14:02Z",
       "kind": "continuation",
@@ -1147,6 +1260,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T22:19:35Z",
       "kind": "continuation",
@@ -1157,6 +1271,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T22:24:57Z",
       "kind": "continuation",
@@ -1167,6 +1282,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T22:30:29Z",
       "kind": "continuation",
@@ -1177,6 +1293,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T22:35:54Z",
       "kind": "continuation",
@@ -1187,6 +1304,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T22:41:21Z",
       "kind": "continuation",
@@ -1197,6 +1315,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T22:46:50Z",
       "kind": "continuation",
@@ -1207,6 +1326,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T22:52:19Z",
       "kind": "continuation",
@@ -1217,6 +1337,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T23:03:54Z",
       "kind": "continuation",
@@ -1227,6 +1348,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T23:09:22Z",
       "kind": "continuation",
@@ -1237,6 +1359,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T23:14:49Z",
       "kind": "continuation",
@@ -1247,6 +1370,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T23:20:22Z",
       "kind": "continuation",
@@ -1257,6 +1381,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T23:25:45Z",
       "kind": "continuation",
@@ -1267,6 +1392,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T23:31:13Z",
       "kind": "continuation",
@@ -1277,6 +1403,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T23:36:40Z",
       "kind": "continuation",
@@ -1287,6 +1414,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T23:42:08Z",
       "kind": "continuation",
@@ -1297,6 +1425,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T23:47:35Z",
       "kind": "continuation",
@@ -1307,6 +1436,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-10-31T23:53:05Z",
       "kind": "continuation",
@@ -1317,6 +1447,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T00:05:08Z",
       "kind": "continuation",
@@ -1327,6 +1458,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T00:10:37Z",
       "kind": "continuation",
@@ -1337,6 +1469,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T00:16:04Z",
       "kind": "continuation",
@@ -1347,6 +1480,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T00:21:37Z",
       "kind": "continuation",
@@ -1357,6 +1491,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T00:27:00Z",
       "kind": "continuation",
@@ -1367,6 +1502,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T00:32:27Z",
       "kind": "continuation",
@@ -1377,6 +1513,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T00:37:56Z",
       "kind": "continuation",
@@ -1387,6 +1524,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T00:43:24Z",
       "kind": "continuation",
@@ -1397,6 +1535,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T00:48:52Z",
       "kind": "continuation",
@@ -1407,6 +1546,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T00:54:21Z",
       "kind": "continuation",
@@ -1417,6 +1557,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T01:05:47Z",
       "kind": "continuation",
@@ -1427,6 +1568,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T01:11:13Z",
       "kind": "continuation",
@@ -1437,6 +1579,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T01:16:40Z",
       "kind": "continuation",
@@ -1447,6 +1590,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T01:22:14Z",
       "kind": "continuation",
@@ -1457,6 +1601,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T01:27:35Z",
       "kind": "continuation",
@@ -1467,6 +1612,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T01:33:02Z",
       "kind": "continuation",
@@ -1477,6 +1623,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T01:38:30Z",
       "kind": "continuation",
@@ -1487,6 +1634,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T01:43:59Z",
       "kind": "continuation",
@@ -1497,6 +1645,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T01:49:27Z",
       "kind": "continuation",
@@ -1507,6 +1656,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T01:54:54Z",
       "kind": "continuation",
@@ -1517,6 +1667,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T02:06:44Z",
       "kind": "continuation",
@@ -1527,6 +1678,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T02:12:10Z",
       "kind": "continuation",
@@ -1537,6 +1689,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T02:17:39Z",
       "kind": "continuation",
@@ -1547,6 +1700,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T02:23:11Z",
       "kind": "continuation",
@@ -1557,6 +1711,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T02:28:35Z",
       "kind": "continuation",
@@ -1567,6 +1722,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T02:34:02Z",
       "kind": "continuation",
@@ -1577,6 +1733,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T02:39:30Z",
       "kind": "continuation",
@@ -1587,6 +1744,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T02:44:58Z",
       "kind": "continuation",
@@ -1597,6 +1755,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T02:50:27Z",
       "kind": "continuation",
@@ -1607,6 +1766,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T02:55:57Z",
       "kind": "continuation",
@@ -1617,6 +1777,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T03:08:23Z",
       "kind": "continuation",
@@ -1627,6 +1788,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T03:13:49Z",
       "kind": "continuation",
@@ -1637,6 +1799,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T03:19:17Z",
       "kind": "continuation",
@@ -1647,6 +1810,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T03:24:51Z",
       "kind": "continuation",
@@ -1657,6 +1821,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T03:30:13Z",
       "kind": "continuation",
@@ -1667,6 +1832,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T03:35:42Z",
       "kind": "continuation",
@@ -1677,6 +1843,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T03:41:09Z",
       "kind": "continuation",
@@ -1687,6 +1854,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T03:46:38Z",
       "kind": "continuation",
@@ -1697,6 +1865,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T03:52:04Z",
       "kind": "continuation",
@@ -1707,6 +1876,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T03:57:32Z",
       "kind": "continuation",
@@ -1717,6 +1887,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T04:09:24Z",
       "kind": "continuation",
@@ -1727,6 +1898,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T04:14:54Z",
       "kind": "continuation",
@@ -1737,6 +1909,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T04:20:22Z",
       "kind": "continuation",
@@ -1747,6 +1920,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T04:25:57Z",
       "kind": "continuation",
@@ -1757,6 +1931,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T04:31:19Z",
       "kind": "continuation",
@@ -1767,6 +1942,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T04:36:46Z",
       "kind": "continuation",
@@ -1777,6 +1953,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T04:42:16Z",
       "kind": "continuation",
@@ -1787,6 +1964,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T04:47:42Z",
       "kind": "continuation",
@@ -1797,6 +1975,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T04:53:10Z",
       "kind": "continuation",
@@ -1807,6 +1986,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T04:58:39Z",
       "kind": "continuation",
@@ -1817,6 +1997,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T05:11:04Z",
       "kind": "continuation",
@@ -1827,6 +2008,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T05:16:31Z",
       "kind": "continuation",
@@ -1837,6 +2019,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T05:21:58Z",
       "kind": "continuation",
@@ -1847,6 +2030,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T05:27:32Z",
       "kind": "continuation",
@@ -1857,6 +2041,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T05:32:53Z",
       "kind": "continuation",
@@ -1867,6 +2052,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T05:38:21Z",
       "kind": "continuation",
@@ -1877,6 +2063,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T05:43:48Z",
       "kind": "continuation",
@@ -1887,6 +2074,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T05:49:16Z",
       "kind": "continuation",
@@ -1897,6 +2085,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T05:54:46Z",
       "kind": "continuation",
@@ -1907,6 +2096,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T06:11:42Z",
       "kind": "continuation",
@@ -1917,6 +2107,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T06:17:09Z",
       "kind": "continuation",
@@ -1927,6 +2118,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T06:22:36Z",
       "kind": "continuation",
@@ -1937,6 +2129,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T06:28:10Z",
       "kind": "continuation",
@@ -1947,6 +2140,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T06:33:33Z",
       "kind": "continuation",
@@ -1957,6 +2151,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T06:39:00Z",
       "kind": "continuation",
@@ -1967,6 +2162,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T06:44:28Z",
       "kind": "continuation",
@@ -1977,6 +2173,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T06:49:55Z",
       "kind": "continuation",
@@ -1987,6 +2184,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T06:55:22Z",
       "kind": "continuation",
@@ -1997,6 +2195,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T07:12:58Z",
       "kind": "continuation",
@@ -2007,6 +2206,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T07:18:26Z",
       "kind": "continuation",
@@ -2017,6 +2217,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T07:23:54Z",
       "kind": "continuation",
@@ -2027,6 +2228,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T07:29:29Z",
       "kind": "continuation",
@@ -2037,6 +2239,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T07:34:50Z",
       "kind": "continuation",
@@ -2047,6 +2250,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T07:40:17Z",
       "kind": "continuation",
@@ -2057,6 +2261,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T07:45:46Z",
       "kind": "continuation",
@@ -2067,6 +2272,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T07:51:14Z",
       "kind": "continuation",
@@ -2077,6 +2283,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T07:56:41Z",
       "kind": "continuation",
@@ -2087,6 +2294,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T08:12:51Z",
       "kind": "continuation",
@@ -2097,6 +2305,7 @@
       "worker": "antigravity.2"
     },
     {
+      "active": false,
       "agent": "antigravity",
       "finished": "2026-11-01T08:28:49Z",
       "kind": "continuation",
