@@ -102,6 +102,15 @@ def ok(outcome: Outcome | None = None, session: str = "s1") -> RunReport:
     return RunReport(session=session, outcome=outcome or done())
 
 
+def test_the_checkpoint_remembers_the_model_actually_reported_by_the_run(tmp_path: Path) -> None:
+    h = Harness(
+        tmp_path, lambda h: [step(h.workspace, RunReport("s1", done(), model="gpt-6.1-terra"))]
+    )
+    assert h.run().kind == "merged"
+    current = h.store.current(42)
+    assert current is not None and current.model == "GPT 6.1 Terra"
+
+
 def test_the_happy_path_ends_merged_closed_and_clean(tmp_path: Path) -> None:
     h = Harness(tmp_path, lambda h: [step(h.workspace, ok())])
     verdict = h.run()

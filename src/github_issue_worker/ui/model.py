@@ -48,6 +48,8 @@ class WorkerView:
     agent_kind: str = ""
     """The configured kind of this worker — ``claude``, ``codex``, … — which says whose colour its
     lane wears while no model is known yet (F14.19)."""
+    active: bool = True
+    """Response/tool activity was observed; quota-only invocations do not enter the flight log."""
 
     @property
     def worker(self) -> str:

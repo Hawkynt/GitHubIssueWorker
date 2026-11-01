@@ -86,6 +86,9 @@ class WorkerSlot:
     """The configured worker this slot is an instance of; empty means the slot's own name."""
     blocker: Blocker | None = None
     """What the current run waits on that only a person can do, such as approving CI."""
+    worked: bool | None = None
+    """Actual activity in this issue run; False while an observable invocation is only probing."""
+    models: list[str] = field(default_factory=list)
 
     @property
     def group(self) -> str:
@@ -523,6 +526,8 @@ class Manager:
         if self.stopping():
             return
         slot.busy = True
+        slot.worked = None
+        slot.models.clear()
         slot.current = (watch.name, issue.number)
         slot.issue_title = issue.title
         slot.started_at = self.clock.now()
@@ -605,7 +610,12 @@ class Manager:
         verdict: str,
         started: datetime,
     ) -> None:
+        if verdict != "merged" and (
+            slot.worked is False or (verdict == "paused" and slot.worked is not True)
+        ):
+            return  # A quota-only probe keeps its transcript, not a work-history entry.
         model = _model_of(slot) or "unknown model"
+        models = tuple(dict.fromkeys(display_model(name) for name in slot.models))
         finished = self.clock.now()
         try:
             # In the claim, so every manager of the fleet counts the run the same way.
@@ -621,6 +631,8 @@ class Manager:
                     verdict,
                     started,
                     finished,
+                    active=True,
+                    models=models,
                 ),
             )
         except RepositorySuspended:
@@ -645,6 +657,8 @@ class Manager:
                     finished=finished,
                     issue_started=started,
                     manager=self.manager_id,
+                    active=True,
+                    models=models,
                 )
             )
         except Exception:

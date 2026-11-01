@@ -1141,7 +1141,11 @@ def _palette(
     history: Sequence[RunRecord], by: SplitBy, model_colors: ModelColorsSettings
 ) -> Palette:
     """The colours of one split, worked out over the whole history so no view repaints an entity."""
-    names = [_key_of(record, by) for record in history] + [OTHER]
+    names = (
+        [model for record in history for model in record.models_used]
+        if by == "model"
+        else [_key_of(record, by) for record in history]
+    ) + [OTHER]
     entities = model_series(names, model_colors) if by == "model" else entity_series(names)
     entities[OTHER] = GREY
     return Palette(entities=entities, models=entities, model_colors=model_colors)
@@ -1254,13 +1258,18 @@ def _flight_log(snapshot: Snapshot, history: list[RunRecord], palette: Palette) 
             record.finished,
             palette.models.get(record.model, GREY),
             f"{record.repository}#{record.issue}: {record.kind} run, {record.verdict}, "
-            f"{record.model}, {span(record.finished - record.started)}",
+            f"{', '.join(record.models_used)}, {span(record.finished - record.started)}",
         )
         for record in history
         if record.finished >= start
     ]
     for worker in snapshot.workers:
-        if worker.state == "working" and worker.since and worker.issue is not None:
+        if (
+            worker.state == "working"
+            and worker.active
+            and worker.since
+            and worker.issue is not None
+        ):
             spans.append(
                 Span(
                     worker.name,
@@ -1293,7 +1302,7 @@ def _share(history: list[RunRecord], palette: Palette) -> str:
     return (
         '<section class=panel id="share" aria-label="Model share">'
         "<header><h2>Model share</h2></header>"
-        "<p class=sub>All runs ever, per model.</p>"
+        "<p class=sub>Runs in which each model did work.</p>"
         f"<div class=share>"
         f"{donut([(row.model, row.runs) for row in rows], palette.models, 'runs')}"
         f'<ul class="legend tall">{legend}</ul></div></section>'
@@ -1434,7 +1443,8 @@ def _mix(history: list[RunRecord], now: datetime, palette: Palette) -> str:
     return (
         '<section class="panel wide" id="mix" aria-label="Model mix per week">'
         "<header><h2>Model mix per week</h2></header>"
-        "<p class=sub>Runs per model per week over half a year, whatever their outcome.</p>"
+        "<p class=sub>Work runs per model per week over half a year. A run using several "
+        "models counts once for each.</p>"
         f"{_legend(series, palette.models)}"
         f"{stacked_columns(axis, series, palette.models, unit='runs', width=960, height=240, prefix='week of ')}"
         f"{_series_table(axis, series, 'Week of', '%Y-%m-%d')}</section>"
@@ -1497,6 +1507,7 @@ def cockpit_fragment(
     model_colors: ModelColorsSettings | None = None,
 ) -> str:
     settings = model_colors or ModelColorsSettings()
+    history = [record for record in history if record.is_work]
     models = _palette(history, "model", settings)
     return (
         _clock(snapshot.now)
@@ -2223,7 +2234,7 @@ def _runs_panel(detail: IssueDetail) -> str:
             f"<tr><td class=nowrap>{run.started:%Y-%m-%d %H:%M}</td>"
             f"<td class=nowrap>{span(run.finished - run.started)}</td>"
             f"<td>{_holder(f'{run.manager or "?"}/{run.worker}', False)}</td>"
-            f"<td>{e(run.agent)}</td><td>{e(run.model)}</td><td>{e(run.kind)}</td>"
+            f"<td>{e(run.agent)}</td><td>{e(', '.join(run.models_used))}</td><td>{e(run.kind)}</td>"
             f"<td>{e(run.verdict)}</td></tr>"
             for run in detail.runs
         )

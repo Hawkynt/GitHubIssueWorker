@@ -485,11 +485,14 @@ an error otherwise. Exit code 0 with a valid outcome file is a finished run.
   "limitPatterns": ["rate limit", "quota exceeded"], "limitExitCodes": [75] }
 ```
 
-**Which model ran** is read from where each agent reveals it: Claude's init event, Codex's own
-session file in its home, Antigravity's log in its profile, and for ClaudeLocal the gateway's model
+**Which model ran** is read while the run is active: Claude's response events, Codex's latest turn
+context in its own session file, Antigravity's own conversation log in its profile, and for ClaudeLocal the gateway's model
 id matched against `claude.sh --list` for its human name (e.g. "Qwen3.8-Flash-Next IQ3_S"). The
 manager logs it with every run, remembers each worker's last one, and `status` and the UI show it
-next to the worker and on the issue it works.
+next to the worker and on the issue it works. A switch in flight updates the worker immediately;
+work history retains every observed model used, and credits a merge to the final model once.
+Only activity the vendor reports can be attributed; an undisclosed internal fallback stays unknown.
+A quota error recovered by a later successful turn does not pause the finished run.
 
 A conversation is continued natively only when the same worker resumes its own issue. Everywhere
 else (another worker, another machine, a cloud agent) the next run starts a fresh conversation primed
@@ -1310,8 +1313,13 @@ operational items, demonstrated on a real repository. Commits that implement an 
   page loaded has a background of its own, distinct from errors and notices, in light and dark; it
   clears when the value is edited back, and a save refused by validation keeps the typed values
   marked. Tested in a real browser.
-- [x] 🟧 **F14.13** Cockpit: every finished run is appended to its issue's claim (`runs`) and to
-  `history.jsonl` in the state directory, and survives restarts and damaged lines. The statistics
+- [x] 🟧 **F14.13** Cockpit: every finished work run is appended to its issue's claim (`runs`) and to
+  `history.jsonl` in the state directory, and survives restarts and damaged lines. Quota-only
+  replies and probes keep their diagnostic transcripts but do not enter work history or charts.
+  Older quota pauses without evidence of work are excluded from statistics; a run with observed
+  response or tool activity before a quota pause still counts. Model switches retain all observed
+  models in local and shared history; model-use charts count a run once for each model it used,
+  while a merge belongs to its final model once. The statistics
   come from the claims of the watched repositories, merged with local runs they do not carry, so
   every manager computes the same numbers; a manager publishes its older local runs into the
   claims during the hourly sweep. Claims carry their holder's model for remote rows. Readouts (merged today, last 7 days with a

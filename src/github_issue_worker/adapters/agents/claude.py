@@ -26,6 +26,7 @@ from github_issue_worker.ports.agents import (
     OUTCOME_FILE,
     AgentRun,
     Invocation,
+    RunObservation,
     RunReport,
     TokenUsage,
     UsageLimit,
@@ -103,6 +104,11 @@ def _interpret_events(
         elif event.get("api_error") == "usage_limit_reached":
             limited = True
         if kind == "result":
+            if event.get("subtype") == "success" and not event.get("is_error"):
+                limited = False
+                rejected_reset = None
+                failure = None
+                cut_off = None
             _write_structured_outcome(run, event.get("structured_output"))
             cost = event.get("total_cost_usd")
             tokens = event.get("usage") or {}
@@ -145,20 +151,52 @@ def _interpret(
     stderr: str,
     budget_usd: float | None = None,
 ) -> RunReport:
-    model = next(
-        (
-            event["model"]
-            for event in events
-            if event.get("type") == "system" and isinstance(event.get("model"), str)
-        ),
-        None,
-    )
+    observed = _observe_events(events)
     report = _interpret_events(run, events, exit_code, stderr, budget_usd)
-    return replace(report, model=model)
+    return replace(
+        report,
+        model=observed.models[-1] if observed.models else None,
+        models=tuple(dict.fromkeys(observed.models)),
+        worked=observed.worked or (report.limit is None and report.outcome is not None),
+    )
+
+
+def _observe_events(events: list[dict[str, Any]]) -> RunObservation:
+    selected: str | None = None
+    models: list[str] = []
+    session: str | None = None
+    worked = False
+    for event in events:
+        session = event.get("session_id") or session
+        kind = event.get("type")
+        if kind == "system" and isinstance(event.get("model"), str):
+            selected = event["model"]
+        elif kind == "assistant" and not (
+            event.get("isApiErrorMessage") or event.get("api_error") or event.get("error")
+        ):
+            message = event.get("message") or {}
+            model = message.get("model") or selected
+            if message.get("content") and model != "<synthetic>":
+                worked = True
+                if isinstance(model, str) and (not models or models[-1] != model):
+                    models.append(model)
+        elif kind == "stream_event":
+            info = event.get("event") or {}
+            message = info.get("message") or {}
+            if info.get("type") == "message_start" and isinstance(message.get("model"), str):
+                selected = message["model"]
+            if info.get("type") in ("content_block_start", "content_block_delta"):
+                worked = True
+                if selected and (not models or models[-1] != selected):
+                    models.append(selected)
+    return RunObservation(session, tuple(models or ([selected] if selected else [])), worked)
 
 
 class ClaudeAdapter:
     kind = "claude"
+
+    def observe(self, run: AgentRun, stdout: str) -> RunObservation:
+        return _observe_events(_events(stdout))
 
     def __init__(
         self, executable: str, env: dict[str, str] | None = None, budget_usd: float | None = None
@@ -276,4 +314,12 @@ class ClaudeLocalAdapter:
 
     def report(self, run: AgentRun, exit_code: int, stdout: str, stderr: str) -> RunReport:
         report = _interpret(run, _events(stdout), exit_code, stderr)
-        return replace(report, model=self._describe(report.model)) if report.model else report
+        return replace(
+            report,
+            model=self._describe(report.model) if report.model else None,
+            models=tuple(self._describe(model) for model in report.models),
+        )
+
+    def observe(self, run: AgentRun, stdout: str) -> RunObservation:
+        observed = _observe_events(_events(stdout))
+        return replace(observed, models=tuple(self._describe(model) for model in observed.models))

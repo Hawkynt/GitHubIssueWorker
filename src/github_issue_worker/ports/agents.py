@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from github_issue_worker.domain.outcome import Outcome
 from github_issue_worker.domain.run_limit import RunCutOff
@@ -65,6 +65,28 @@ class RunReport:
     """The model the run actually used, as far as the agent reveals it."""
     cut_off: RunCutOff | None = None
     """The run was stopped by `runTimeout` or its budget (F6.7): park the issue, do not retry."""
+    worked: bool | None = None
+    """Actual response/tool activity; None means the adapter cannot distinguish a quota probe."""
+    models: tuple[str, ...] = ()
+    """Distinct models observed during this invocation, in first-observed order."""
+
+    @property
+    def did_work(self) -> bool:
+        return self.worked if self.worked is not None else self.limit is None
+
+
+@dataclass(frozen=True, slots=True)
+class RunObservation:
+    session: str | None = None
+    models: tuple[str, ...] = ()
+    worked: bool = False
+
+
+@runtime_checkable
+class ObservableAgent(Protocol):
+    def observe(self, run: AgentRun, stdout: str) -> RunObservation:
+        """Read complete new output lines and the session's native model metadata."""
+        ...
 
 
 class AgentAdapter(Protocol):
