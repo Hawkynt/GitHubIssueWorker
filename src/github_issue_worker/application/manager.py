@@ -150,6 +150,8 @@ class Manager:
     sweep_every: timedelta = timedelta(hours=1)
     max_runs: Callable[[str], int] | None = None
     """An account's ``maxConcurrentRuns`` on this manager (F12.11); None leaves it uncapped."""
+    stopping: Callable[[], bool] = lambda: False
+    """A graceful shutdown stops scheduling, while existing jobs keep their claims and finish."""
     _lock: threading.RLock = field(default_factory=threading.RLock)
     _known: dict[tuple[str, int], Issue] = field(default_factory=dict)
     _pending: dict[str, set[int]] = field(default_factory=dict)
@@ -223,6 +225,8 @@ class Manager:
 
     def tick(self) -> None:
         for watch in list(self.repositories):
+            if self.stopping():
+                return
             try:
                 with self._lock:
                     if not watch.stopping.is_set():
@@ -250,11 +254,14 @@ class Manager:
         candidates = touched | self._pending.setdefault(watch.name, set()) | own
         since = state.watched_since or self.clock.now()
         for number in sorted(candidates, key=lambda n: self._queue_key(watch, n)):
+            if self.stopping():
+                return
             try:
                 self._consider(watch, number, since)
             except Exception:
                 log.exception("%s#%d: could not be considered", watch.name, number)
-        self._housekeeping(watch)
+        if not self.stopping():
+            self._housekeeping(watch)
 
     def _housekeeping(self, watch: RepositoryWatch) -> None:
         """Every ``sweep_every``, finished issues lose their branch and worktree (F5.5)."""
@@ -402,6 +409,8 @@ class Manager:
                 self._label(watch, number, "worker:queued")
                 return
             slot = min(free, key=lambda candidate: candidate.priority)
+            if self.stopping():
+                return
             branch = claim.branch if claim else branch_name(issue)
             handle = watch.coordinator.claim(
                 number, Holder(self.manager_id, slot.name), branch, model=_model_of(slot)
@@ -511,6 +520,8 @@ class Manager:
         comments: tuple[Comment, ...],
         kind: RunKind,
     ) -> None:
+        if self.stopping():
+            return
         slot.busy = True
         slot.current = (watch.name, issue.number)
         slot.issue_title = issue.title

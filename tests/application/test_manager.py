@@ -133,6 +133,24 @@ def test_a_new_issue_goes_to_the_preferred_idle_worker() -> None:
     assert claim is not None and claim.holder == Holder(ME, "claude")
 
 
+def test_shutdown_during_polling_does_not_start_or_claim_work() -> None:
+    f = Fixture([slot("claude")])
+    f.new_issues(issue(1))
+    stopped = False
+
+    def poll(repository: str, state: PollState, backlog: bool) -> tuple[PollResult, PollState]:
+        nonlocal stopped
+        result = f.poll(repository, state, backlog)
+        stopped = True
+        return result
+
+    f.manager.stopping = lambda: stopped
+    f.manager.poll = poll
+    f.manager.tick()
+    assert not f.runs
+    assert f.store.current(1) is None
+
+
 def test_each_worker_holds_one_issue_and_the_rest_queue() -> None:
     f = Fixture([slot("claude")], verdicts=[Verdict("paused", until=T0 + timedelta(hours=1))])
     f.new_issues(issue(1), issue(2, minutes=1))
