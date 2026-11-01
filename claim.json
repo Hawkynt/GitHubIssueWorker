@@ -27,6 +27,7 @@
       "worker": "codex"
     },
     {
+      "active": true,
       "agent": "codex",
       "finished": "2026-10-31T12:23:21Z",
       "kind": "rework",
