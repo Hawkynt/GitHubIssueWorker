@@ -93,7 +93,7 @@ def create_app(backend: Backend) -> FastAPI:
         days: Annotated[int, Query(ge=7, le=366)] = 30,
         time: SplitBy = "model",
         total: pages.TotalView = "lines",
-        flight: pages.FlightView = "day",
+        flight: pages.FlightView = "compressed",
     ) -> str:
         snapshot = backend.snapshot()
         view = pages.CockpitView(by=by, days=days, time=time, total=total, flight=flight)

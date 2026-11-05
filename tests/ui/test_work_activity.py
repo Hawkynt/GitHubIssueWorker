@@ -67,7 +67,7 @@ def test_older_real_work_is_accessible_without_erasing_a_workers_lane() -> None:
     backend._history = [older]
     client = TestClient(create_app(backend))
     day = (
-        client.get("/workers?fragment=1")
+        client.get("/workers?flight=day&fragment=1")
         .text.partition('id="flight"')[2]
         .partition("</section>")[0]
     )
@@ -79,3 +79,52 @@ def test_older_real_work_is_accessible_without_erasing_a_workers_lane() -> None:
         assert "o/r#4242" in flight
         assert f"flight={window}" in html  # other chart switches preserve the selected window
     assert client.get("/workers?flight=invalid").status_code == 422
+
+
+def test_compressed_is_the_default_and_keeps_old_work_and_exact_times() -> None:
+    backend = DemoBackend()
+    snap = backend.snapshot()
+    old = snap.now - timedelta(days=100)
+    backend._history = [
+        RunRecord("o/r", 9876, "codex", "codex", "Old Model", "first", "merged", old, old, old),
+        RunRecord(
+            "o/r",
+            9877,
+            "codex",
+            "codex",
+            "Ping Model",
+            "first",
+            "paused",
+            old,
+            old,
+            old,
+            active=False,
+        ),
+    ]
+    client = TestClient(create_app(backend))
+    html = client.get("/workers?fragment=1").text
+    flight = html.partition('id="flight"')[2].partition("</section>")[0]
+    assert "Compressed</a>" in flight and "o/r#9876" in flight
+    assert "o/r#9877" not in flight and "Ping Model" not in flight
+    assert 'id="flight-runs"' in flight and old.strftime("%Y-%m-%d %H:%M:%S UTC") in flight
+    assert 'data-scale="compressed"' in flight
+    assert "name=flight value=day" in client.get("/workers?flight=day").text
+    assert "flight=day" in client.get("/workers?flight=day").text
+
+
+def test_dense_old_history_retains_every_run_in_the_flight_table() -> None:
+    backend = DemoBackend()
+    old = backend.snapshot().now - timedelta(days=365)
+    backend._history = [
+        RunRecord("o/r", i, "codex", "codex", "Model", "first", "merged", old, old, old)
+        for i in range(120)
+    ]
+    flight = (
+        TestClient(create_app(backend))
+        .get("/workers?fragment=1")
+        .text.partition('id="flight"')[2]
+        .partition("</section>")[0]
+    )
+    assert 'data-runs="120"' in flight and "114 more" in flight
+    table = flight.partition('id="flight-runs"')[2]
+    assert all(f"o/r#{i}:" in table for i in range(120))

@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from html import escape
 
 FALLBACK = "#66758a"
@@ -383,7 +383,13 @@ class Span:
 
 
 def timeline(
-    spans: Sequence[Span], lanes: Sequence[str], start: datetime, end: datetime, width: int = 960
+    spans: Sequence[Span],
+    lanes: Sequence[str],
+    start: datetime,
+    end: datetime,
+    width: int = 960,
+    *,
+    compressed: bool = False,
 ) -> str:
     """Runs as bars on one lane per worker, with the present as a line on the right."""
     if not lanes:
@@ -394,19 +400,35 @@ def timeline(
     seconds = max((end - start).total_seconds(), 1.0)
 
     def x(moment: datetime) -> float:
+        if compressed:
+            age = max((end - moment).total_seconds(), 0) / (12 * 3600)
+            band = math.floor(age)
+            remaining = math.ldexp(1 - (age - band) / 2, -min(band, 1074))
+            return label_w + plot_w * remaining
         clamped = min(max(moment, start), end)
         return label_w + plot_w * (clamped - start).total_seconds() / seconds
 
     parts = [
-        f'<svg class="chart timeline" viewBox="0 0 {width} {height}" role="img" aria-label="runs per worker">'
+        f'<svg class="chart timeline" viewBox="0 0 {width} {height}" role="img" '
+        f'data-scale="{"compressed" if compressed else "linear"}" aria-label="runs per worker">'
     ]
-    for moment in _time_ticks(start, end, 8):
+    if compressed:
+        ticks = [(float(label_w), "Older")]
+        for hours in (48, 36, 24, 12, 6, 0):
+            position = x(end - timedelta(hours=hours))
+            if position - ticks[-1][0] >= 48:
+                ticks.append((position, f"-{hours}h" if hours else "Now"))
+    else:
+        ticks = [
+            (x(moment), _time_label(moment, start, end)) for moment in _time_ticks(start, end, 8)
+        ]
+    for position, label in ticks:
         parts.append(
-            f'<line class="grid" x1="{x(moment):.1f}" x2="{x(moment):.1f}" y1="{top}" y2="{height - 22}"/>'
+            f'<line class="grid" x1="{position:.1f}" x2="{position:.1f}" y1="{top}" y2="{height - 22}"/>'
         )
         parts.append(
-            f'<text class="tick" x="{x(moment):.1f}" y="{height - 6}" text-anchor="middle">'
-            f"{_time_label(moment, start, end)}</text>"
+            f'<text class="tick" x="{position:.1f}" y="{height - 6}" text-anchor="middle">'
+            f"{label}</text>"
         )
     row = {lane: index for index, lane in enumerate(lanes)}
     for index, lane in enumerate(lanes):
@@ -417,17 +439,48 @@ def timeline(
         parts.append(
             f'<line class="lane-rule" x1="{label_w}" x2="{width - right}" y1="{ly + 15}" y2="{ly + 15}"/>'
         )
-    for order, span in enumerate(spans):
-        if span.end < start or span.start > end:
+    marks: list[list[Span]] = []
+    buckets: dict[tuple[str, int], list[Span]] = {}
+    for span in spans:
+        if span.end < start or span.start > end or span.end < span.start:
             continue
+        if compressed and not span.live and x(span.end) - x(span.start) < 4:
+            key = (span.lane, int((x(span.start) - label_w) // 8))
+            if key not in buckets:
+                buckets[key] = []
+                marks.append(buckets[key])
+            buckets[key].append(span)
+        else:
+            marks.append([span])
+    for order, group in enumerate(marks):
+        span = group[0]
         ly = top + row[span.lane] * lane_h
-        x0, x1 = x(span.start), x(span.end)
-        tip = escape(span.tip, quote=True)
+        x0 = min(x(s.start) for s in group)
+        x1 = max(x(s.end) for s in group)
+        if compressed and not span.live and x(span.end) - x(span.start) < 4:
+            # Give neighbouring small-run buckets separate hit targets, including singletons.
+            x0 = label_w + int((x(span.start) - label_w) // 8) * 8 + 1
+            x1 = x0 + 6
+        x0 = min(x0, width - right - 4)
+        mark_width = min(max(x1 - x0, 4), width - right - x0)
+        summaries = [
+            f"{s.tip}: {s.start.astimezone(UTC):%Y-%m-%d %H:%M:%S} - "
+            f"{s.end.astimezone(UTC):%Y-%m-%d %H:%M:%S} UTC"
+            for s in group[:6]
+        ]
+        if len(group) > 6:
+            summaries.append(f"and {len(group) - 6} more; see Show as table for every run")
+        summary = "; ".join(summaries)
+        if len(group) > 1:
+            summary = f"{len(group)} work runs · {span.lane}: {summary}"
+        tip = escape(summary, quote=True)
+        colors = {s.color for s in group}
+        color = next(iter(colors)) if len(colors) == 1 else FALLBACK
+        classes = "run-bar" + (" live" if span.live else " grouped" if len(group) > 1 else "")
         parts.append(
-            f'<rect class="run-bar{" live" if span.live else ""}" '
-            f'style="--c:{span.color};--i:{order}" '
-            f'x="{x0:.1f}" y="{ly + 7}" width="{max(x1 - x0, 4):.1f}" height="16" rx="4" '
-            f'tabindex="0" data-tip="{tip}" aria-label="{tip}"/>'
+            f'<rect class="{classes}" style="--c:{color};--i:{order}" '
+            f'x="{x0:.1f}" y="{ly + 7}" width="{mark_width:.1f}" height="16" rx="4" '
+            f'tabindex="0" data-runs="{len(group)}" data-tip="{tip}" aria-label="{tip}"/>'
         )
     parts.append(
         f'<line class="now" x1="{label_w + plot_w}" x2="{label_w + plot_w}" y1="{top - 4}" y2="{height - 22}"/>'
