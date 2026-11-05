@@ -42,6 +42,32 @@ def test_a_switch_redraws_only_its_own_chart(browser: Browser, server: UiServer)
     assert "Claude Opus 5.5" in page.inner_text("#time")  # the other chart kept its split
 
 
+def test_compressed_flight_log_switches_in_place_and_exposes_grouped_runs(
+    browser: Browser, server: UiServer
+) -> None:
+    page = browser.new_page(reduced_motion="reduce", viewport={"width": 1200, "height": 900})
+    page.goto(server.url + "/workers")
+    assert page.locator('#flight svg[data-scale="compressed"]').count() == 1
+    group = page.locator("#flight .run-bar.grouped").first
+    group.focus()
+    assert "work runs" in page.inner_text("#tip")
+    page.click("#flight-runs summary")
+    assert page.locator("#flight-runs table tr").count() > 2
+    page.evaluate("window.untouched = true")
+    page.click("#flight .switch a:text-is('24 hours')")
+    page.wait_for_selector('#flight svg[data-scale="linear"]')
+    assert "flight=day" in page.url and page.evaluate("window.untouched") is True
+    page.click("#throughput .switch a:text-is('Agent')")
+    page.wait_for_selector("#throughput .switch a[aria-current]:text-is('Agent')")
+    assert "flight=day" in page.url
+    page.click("#flight .switch a:text-is('Compressed')")
+    page.wait_for_selector('#flight svg[data-scale="compressed"]')
+    assert "flight=" not in page.url and "by=agent" in page.url
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.locator("#flight .switch").evaluate("e => e.getBoundingClientRect().right") <= 390
+    page.close()
+
+
 def test_the_stacked_total_box_redraws_only_its_own_chart(
     browser: Browser, server: UiServer
 ) -> None:

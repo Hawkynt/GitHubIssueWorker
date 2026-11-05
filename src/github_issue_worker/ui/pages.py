@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from html import escape
 from typing import Any, Literal
 
@@ -360,6 +360,7 @@ svg.chart { display: block; width: 100%; height: auto; overflow: visible; }
 .timeline .lane-rule { stroke: #16233a; stroke-width: 16; stroke-linecap: round; }
 .timeline .now { stroke: #b39bff; stroke-width: 1.5; stroke-dasharray: 3 4; }
 .run-bar { filter: drop-shadow(0 0 5px currentColor); }
+.run-bar.grouped { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 2 2; }
 .heat .cell { fill: #1a2638; }
 .heat .cell.on { fill: #4aa3ff; fill-opacity: var(--level); }
 .empty-plot .empty-text { fill: var(--muted); font-size: 14px; letter-spacing: .02em; }
@@ -635,19 +636,31 @@ TIPS = """
     panel.replaceWith(fresh);
     setTimeout(() => fresh.classList.remove("boot"), 2400);
   };
+  const viewQuery = (field, target) => {
+    const query = new URLSearchParams(location.search);
+    // Keep other panels' current choices; their links/forms may predate an in-place swap.
+    for (const key of ["by", "days", "time"]) {
+      if (!query.has(key)) query.set(key, target.get(key));
+    }
+    const value = target.get(field);
+    if (value === null) query.delete(field); else query.set(field, value);
+    query.delete("fragment");
+    return query;
+  };
   document.addEventListener("click", (event) => {
     const link = event.target.closest && event.target.closest(".switch a");
     if (!link || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const panel = link.closest("section[id]");
     if (!panel) return;
     event.preventDefault();
-    swap(panel, new URLSearchParams(link.search), link.href);
+    const query = viewQuery(link.closest(".switch").dataset.field, new URLSearchParams(link.search));
+    swap(panel, query, location.pathname + "?" + query);
   });
   document.addEventListener("change", (event) => {
     const form = event.target.closest && event.target.closest("form.toggle");
     const panel = form && form.closest("section[id]");
     if (!panel) return;
-    const query = new URLSearchParams(new FormData(form));
+    const query = viewQuery("total", new URLSearchParams(new FormData(form)));
     swap(panel, query, form.action + "?" + query);
   });
 })();
@@ -1100,7 +1113,7 @@ def _worker_actions(worker: WorkerView, with_log: bool = True) -> str:
 
 TotalView = Literal["lines", "stacked"]
 """How the running total of merges is drawn: a line per model, or the models stacked."""
-FlightView = Literal["day", "week", "month", "all"]
+FlightView = Literal["compressed", "day", "week", "month", "all"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1111,7 +1124,7 @@ class CockpitView:
     days: int = 30
     time: SplitBy = "model"
     total: TotalView = "lines"
-    flight: FlightView = "day"
+    flight: FlightView = "compressed"
 
     def link(self, **change: object) -> str:
         values: dict[str, object] = {
@@ -1124,7 +1137,7 @@ class CockpitView:
         }
         if values["total"] == "lines":
             del values["total"]  # the default view keeps the links it always had
-        if values["flight"] == "day":
+        if values["flight"] == "compressed":
             del values["flight"]
         return "?" + "&amp;".join(f"{key}={value}" for key, value in values.items())
 
@@ -1176,7 +1189,7 @@ def _switch(
         f"{' aria-current=true' if value == current else ''}>{e(name)}</a>"
         for value, name in choices
     )
-    return f'<div class=switch role=group aria-label="{e(label)}">{links}</div>'
+    return f'<div class=switch role=group data-field="{e(field)}" aria-label="{e(label)}">{links}</div>'
 
 
 def _legend(series: Mapping[str, Sequence[int]], colors: Mapping[str, str]) -> str:
@@ -1258,12 +1271,14 @@ def _flight_log(
     """Retained work over the chosen window, with an empty lane kept for every worker."""
     end = snapshot.now
     choices = (
+        ("compressed", "Compressed"),
         ("day", "24 hours"),
         ("week", "7 days"),
         ("month", "30 days"),
         ("all", "All history"),
     )
-    if view.flight == "all":
+    compressed = view.flight == "compressed"
+    if view.flight in ("all", "compressed"):
         starts = [r.started for r in history] + [w.since for w in snapshot.workers if w.since]
         start = min(starts, default=end - timedelta(days=1))
         start = min(start, end - timedelta(hours=1))
@@ -1304,12 +1319,27 @@ def _flight_log(
             )
     lanes = [w.name for w in snapshot.workers]
     lanes += sorted({s.lane for s in spans} - set(lanes))
+    scale = (
+        " Latest 12 hours take half the chart; each older 12-hour band takes half as much space."
+        " Small marks group runs; hover or focus for details. Mixed-model groups are grey."
+        if compressed
+        else ""
+    )
+    rows = "".join(
+        f"<tr><td>{e(s.lane)}</td><td>{e(s.tip)}</td>"
+        f"<td>{s.start.astimezone(UTC):%Y-%m-%d %H:%M:%S UTC}</td>"
+        f"<td>{s.end.astimezone(UTC):%Y-%m-%d %H:%M:%S UTC}</td></tr>"
+        for s in sorted(spans, key=lambda s: s.start, reverse=True)
+    )
     return (
         '<section class="panel wide" id="flight" aria-label="Flight log">'
         f"<header><h2>Flight log</h2>{_switch('Window', view, 'flight', choices)}</header>"
-        f"<p class=sub>Work runs from {label}, per worker, coloured by model; "
-        f"{sum(1 for s in spans if s.live)} still running.</p>"
-        f"{timeline(spans, lanes, start, end)}</section>"
+        f"<p class=sub>{len(spans)} work runs from {label}, per worker, coloured by model; "
+        f"{sum(1 for s in spans if s.live)} still running.{scale}</p>"
+        f"{timeline(spans, lanes, start, end, compressed=compressed)}"
+        '<details id="flight-runs"><summary>Show as table</summary><div class=scroll><table>'
+        "<tr><th>Worker</th><th>Work run</th><th>Started</th><th>Finished / now</th></tr>"
+        f"{rows}</table></div></details></section>"
     )
 
 
@@ -1339,7 +1369,7 @@ def _total(history: list[RunRecord], now: datetime, view: CockpitView, palette: 
         f"<input type=hidden name={name} value={value}>"
         for name, value in (("by", view.by), ("days", view.days), ("time", view.time))
     )
-    if view.flight != "day":
+    if view.flight != "compressed":
         keep += f"<input type=hidden name=flight value={view.flight}>"
     toggle = (
         f'<form class=toggle method=get action="/workers">{keep}<label>'

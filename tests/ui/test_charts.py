@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
+from xml.etree import ElementTree
 
 from github_issue_worker.ui.charts import (
     FALLBACK,
@@ -18,6 +19,70 @@ from github_issue_worker.ui.charts import (
 )
 
 BLUE, ORANGE = "#3987e5", "#d95926"
+
+
+def test_compressed_timeline_halves_the_space_of_each_older_twelve_hours() -> None:
+    end = datetime(2026, 11, 5, 12, tzinfo=UTC)
+    spans = [
+        Span(
+            "worker",
+            end - timedelta(hours=hours),
+            min(end, end - timedelta(hours=hours - 1)),
+            BLUE,
+            str(hours),
+        )
+        for hours in (0, 12, 24, 36, 48)
+    ]
+    svg = timeline(spans, ["worker"], end - timedelta(days=365), end, compressed=True)
+    root = ElementTree.fromstring(svg)
+    marks = [node for node in root if node.tag == "rect"]
+    positions = {
+        node.attrib["data-tip"].split(":", 1)[0]: float(node.attrib["x"]) for node in marks
+    }
+    # 836 pixels of plot: 12h, 24h and 36h are exactly half, quarter and eighth remaining.
+    assert abs(positions["12"] - (110 + 836 / 2)) < 0.1
+    assert abs(positions["24"] - (110 + 836 / 4)) < 0.1
+    assert abs(positions["36"] - (110 + 836 / 8)) < 0.1
+    assert "Now" in svg and "-12h" in svg and "Older" in svg
+    assert all(float(m.attrib["x"]) + float(m.attrib["width"]) <= 946 for m in marks)
+
+
+def test_compressed_groups_preserve_counts_workers_and_live_runs() -> None:
+    end = datetime(2026, 11, 5, 12, tzinfo=UTC)
+    old = end - timedelta(days=1000)
+    spans = [
+        Span("one", old, old + timedelta(minutes=1), BLUE, "o/r#1 <tool>"),
+        Span("one", old, old + timedelta(minutes=2), ORANGE, "o/r#2"),
+        Span("two", old, old + timedelta(minutes=1), BLUE, "o/r#3"),
+        Span("one", old, end, BLUE, "o/r#4", live=True),
+    ]
+    svg = timeline(spans, ["one", "two"], old, end, compressed=True)
+    root = ElementTree.fromstring(svg)
+    marks = [node for node in root if node.tag == "rect"]
+    assert len(marks) == 3
+    grouped = next(m for m in marks if m.attrib.get("data-runs") == "2")
+    assert "2 work runs" in grouped.attrib["data-tip"]
+    assert "o/r#1 <tool>" in grouped.attrib["data-tip"] and "o/r#2" in grouped.attrib["data-tip"]
+    assert "2024-02-09" in grouped.attrib["data-tip"] and "UTC" in grouped.attrib["data-tip"]
+    assert FALLBACK in grouped.attrib["style"]  # a mixed-model group gets no false model colour
+    assert sum(int(m.attrib["data-runs"]) for m in marks) == 4
+    assert any(m.attrib["class"] == "run-bar live" for m in marks)
+
+
+def test_compressed_axis_does_not_move_when_history_starts_recently() -> None:
+    end = datetime(2026, 11, 5, 12, tzinfo=UTC)
+    roots = [
+        ElementTree.fromstring(timeline([], ["one"], end - delta, end, compressed=True))
+        for delta in (timedelta(hours=1), timedelta(days=100))
+    ]
+    ticks = [[(n.attrib["x"], n.text) for n in r if n.tag == "text"] for r in roots]
+    assert ticks[0] == ticks[1]
+
+
+def test_timeline_converts_offset_timestamps_to_utc() -> None:
+    start = datetime(2026, 11, 5, 12, tzinfo=timezone(timedelta(hours=2)))
+    svg = timeline([Span("one", start, start, BLUE, "issue")], ["one"], start, start)
+    assert "2026-11-05 10:00:00" in svg and "UTC" in svg
 
 
 def test_every_mark_wears_the_colour_it_was_handed() -> None:

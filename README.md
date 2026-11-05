@@ -1330,8 +1330,12 @@ operational items, demonstrated on a real repository. Commits that implement an 
   30-day trace, all time, median time from first run to merge, merge rate), issues merged per day
   split by model, agent or repository over 30/90/180 days, runs per model per week over 26 weeks,
   time to merge by model, agent or repository, a model ledger (runs, merged, median time, first
-  and last use), a flight log of runs per worker with the running ones live (24 hours by default,
-  selectable 7 days, 30 days or all retained history), the model share
+  and last use), a flight log of runs per worker with the running ones live. Its default compressed
+  scale gives the latest 12 hours half the width and halves the space of each older 12-hour band;
+  older work stays visible. Marks too narrow to distinguish are grouped per worker, with counts
+  and run details on hover or keyboard focus; mixed-model groups are grey. A table retains every
+  issue and exact UTC timestamps. Linear 24-hour, 7-day, 30-day and all-history views remain
+  selectable. The model share
   as a ring, the running total of merges as one line per model or, with a checkbox, as the per-model
   totals stacked into one area whose top edge is all merges, and finished runs per weekday and hour. Colour follows the entity across views, a ninth series folds into "Other", every
   chart has a per-mark tooltip and a table view, the grid reflows down to phone width, and it
