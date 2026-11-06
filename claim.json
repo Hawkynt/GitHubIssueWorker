@@ -2303,6 +2303,20 @@
       "started": "2026-11-01T08:28:33Z",
       "verdict": "paused",
       "worker": "antigravity"
+    },
+    {
+      "active": true,
+      "agent": "antigravity",
+      "finished": "2026-11-06T14:11:50Z",
+      "kind": "continuation",
+      "manager": "hawky-desktop-96a3",
+      "model": "Gemini 4 Argon (Medium)",
+      "models": [
+        "Gemini 4 Argon (Medium)"
+      ],
+      "started": "2026-11-06T14:10:30Z",
+      "verdict": "paused",
+      "worker": "antigravity"
     }
   ],
   "state": "paused",
