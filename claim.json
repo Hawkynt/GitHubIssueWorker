@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-18T19:54:09Z",
+  "expiresAt": "2026-11-24T01:36:38Z",
   "generation": 1,
   "holder": {
     "manager": "hawky-desktop-96a3",
@@ -13,8 +13,8 @@
   },
   "issue": 77,
   "model": "Gemini 4 Argon (Medium)",
-  "pausedUntil": "2026-11-17T01:34:56Z",
-  "renewedAt": "2026-11-11T19:54:09Z",
+  "pausedUntil": null,
+  "renewedAt": "2026-11-17T01:36:38Z",
   "runs": [
     {
       "active": true,
@@ -2344,8 +2344,7 @@
       "worker": "antigravity.2"
     }
   ],
-  "state": "paused",
+  "state": "working",
   "step": "implement",
-  "takeovers": 0,
-  "waitReason": "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 125h40m50s."
+  "takeovers": 0
 }
