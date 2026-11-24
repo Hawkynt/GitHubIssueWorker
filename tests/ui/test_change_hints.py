@@ -86,12 +86,12 @@ def test_typing_a_token_marks_it_and_emptying_it_clears_it(
 
 def test_edited_accounts_and_a_new_account_are_marked(browser: Browser, server: UiServer) -> None:
     page = _settings(browser, server)
-    page.fill('[name="accounts[3].maxConcurrentRuns"]', "2")
+    page.fill('[name="accounts[3].name"]', "local-gpu-2")
     page.click('[name="accounts[0].remove"]')
     page.fill('[name="accounts[4].name"]', "spare")
     assert sorted(_marked(page)) == [
         "accounts[0].remove",
-        "accounts[3].maxConcurrentRuns",
+        "accounts[3].name",
         "accounts[4].name",
     ]
 
