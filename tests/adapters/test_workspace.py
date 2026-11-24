@@ -303,3 +303,14 @@ def test_checkpoint_includes_force_staged_ignored_source_without_changing_the_in
     restored = other.worktree(REPO, 9, "issue/9", "main")
     assert (restored / "ignored-source.txt").read_text(encoding="utf-8") == "intentionally staged"
     assert git("diff", "--cached", cwd=tree) == before
+
+
+def test_a_cached_clone_follows_a_changed_remote_url(tmp_path: Path, remote: Path) -> None:
+    moved = tmp_path / "moved.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(remote), str(moved)], check=True)
+    old = Workspace(tmp_path / "cache", lambda repo: str(remote), Path.home())
+    clone = old.clone(REPO)
+
+    new = Workspace(tmp_path / "cache", lambda repo: str(moved), Path.home())
+    assert new.clone(REPO) == clone
+    assert git("config", "remote.origin.url", cwd=clone) == str(moved)

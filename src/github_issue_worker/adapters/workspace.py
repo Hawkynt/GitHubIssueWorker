@@ -75,6 +75,9 @@ class Workspace:
             exclude.parent.mkdir(parents=True, exist_ok=True)
             with exclude.open("a", encoding="utf-8") as stream:
                 stream.write("\n.ghiw/\n")
+        elif self._try(clone, "config", "remote.origin.url").stdout.strip() != url:
+            # A clone made with an earlier remote URL, e.g. over SSH, follows the current one.
+            self._git(clone, "config", "remote.origin.url", url)
         self._git(clone, "fetch", "--quiet", "--prune", "origin")
         return clone
 

@@ -841,3 +841,9 @@ def test_live_removal_waits_for_stopped_run_before_checkpointing_and_acknowledgi
     assert not manager.repositories and not runtime.watches
     assert not load(path).repositories
     assert store.current(1).state.value == "released"
+
+
+def test_the_remote_is_github_over_https() -> None:
+    from github_issue_worker.wiring import remote_url
+
+    assert remote_url("Hawkynt/ShiftDiff") == "https://github.com/Hawkynt/ShiftDiff.git"
