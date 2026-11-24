@@ -71,6 +71,13 @@ def create_app(backend: Backend) -> FastAPI:
         target = f"{path}?notice={quote(notice)}" if notice else path
         return RedirectResponse(target, status_code=303)
 
+    @app.exception_handler(ActionError)
+    async def refused(request: Request, error: ActionError) -> RedirectResponse:
+        """A refused action returns to the page it came from with the reason, never a 500."""
+        referer = request.headers.get("referer", "")
+        path = referer.split("://", 1)[-1].partition("/")[2].split("?", 1)[0]
+        return back("/" + path, str(error))
+
     def save(data: dict[str, Any]) -> Configuration:
         config = validate(data)
         backend.save_config(config)

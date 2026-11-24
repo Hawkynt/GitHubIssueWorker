@@ -370,3 +370,39 @@ def test_given_portable_roots_in_the_config_when_the_ui_detects_then_they_are_pa
     backend = RuntimeBackend(runtime, SimpleNamespace(), Path("config.json"), detect)  # type: ignore[arg-type]
     assert backend.detect_workers() == []
     assert seen == [(Path("home"), ["D:/Agents/ClaudePortable"])]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        "workspace",
+        "github",
+        "claims",
+        "gh",
+    ],
+)
+def test_given_applying_fails_when_saving_then_it_is_an_action_error_and_nothing_is_saved(
+    tmp_path: Path, error: str
+) -> None:
+    from github_issue_worker.adapters.workspace import WorkspaceError
+    from github_issue_worker.configuration import Configuration
+    from github_issue_worker.ports.claims import ClaimStoreError
+    from github_issue_worker.ports.github import GhUnavailable, GitHubError
+    from github_issue_worker.ui.model import ActionError
+
+    raised = {
+        "workspace": WorkspaceError("git clone failed: denied"),
+        "github": GitHubError(502, "bad gateway"),
+        "claims": ClaimStoreError("ls-remote failed"),
+        "gh": GhUnavailable("gh is not installed"),
+    }[error]
+
+    def apply(config: object, manager: object) -> None:
+        raise raised
+
+    runtime = SimpleNamespace(apply=apply)
+    path = tmp_path / "config.json"
+    backend = RuntimeBackend(runtime, SimpleNamespace(), path, lambda *_: [])  # type: ignore[arg-type]
+    with pytest.raises(ActionError, match=str(raised).split(":")[0]):
+        backend.save_config(Configuration())
+    assert not path.exists()

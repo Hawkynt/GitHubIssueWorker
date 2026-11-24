@@ -712,3 +712,44 @@ def test_a_notice_naming_an_issue_reaches_the_page_whole(client: TestClient) -> 
         data={"repository": "acme/billing-cli", "issue": "91", "confirm": "acme/billing-cli#91"},
     )
     assert "Released acme/billing-cli#91." in response.text
+
+
+class RefusingBackend(DemoBackend):
+    def save_config(self, config: Configuration) -> None:
+        from github_issue_worker.ui.model import ActionError
+
+        raise ActionError("git clone failed: Permission denied (publickey)")
+
+
+def test_given_the_backend_refuses_when_removing_then_the_reason_is_shown_and_it_stays() -> None:
+    backend = RefusingBackend()
+    client = TestClient(create_app(backend))
+    before = {r.repository for r in backend.config().repositories}
+    name = sorted(before)[0]
+
+    response = client.post(
+        "/repositories/remove",
+        data={"repository": name},
+        headers={"referer": "http://testserver/repositories"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/repositories?notice=")
+    assert "Permission%20denied" in response.headers["location"]
+    assert {r.repository for r in backend.config().repositories} == before
+
+
+@pytest.mark.parametrize("path", ["/settings", "/repositories/add"])
+def test_given_the_backend_refuses_when_saving_anywhere_then_no_server_error(path: str) -> None:
+    client = TestClient(create_app(RefusingBackend()), raise_server_exceptions=False)
+    data = (
+        {**_settings_form(client), "pollInterval": "00:02:00"}
+        if path == "/settings"
+        else {"repository": "acme/new-thing"}
+    )
+    response = client.post(
+        path, data=data, headers={"referer": "http://testserver/settings"}, follow_redirects=False
+    )
+    assert response.status_code == 303
+    assert "Permission%20denied" in response.headers["location"]

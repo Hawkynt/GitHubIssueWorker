@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from github_issue_worker.adapters.process import terminate
+from github_issue_worker.adapters.workspace import WorkspaceError
 from github_issue_worker.application.accounts import AccountUsage, account_usage
 from github_issue_worker.application.coordinator import ClaimHandle
 from github_issue_worker.application.github_host import GitHubHost
@@ -370,7 +371,10 @@ class RuntimeBackend:
     # --- changing --------------------------------------------------------------------------------
 
     def save_config(self, config: Configuration) -> None:
-        self._runtime.apply(config, self._manager)
+        try:
+            self._runtime.apply(config, self._manager)
+        except (WorkspaceError, GitHubError, ClaimStoreError, GhUnavailable) as error:
+            raise ActionError(f"Not applied: {error}") from None
         save(config, self._path)
 
     def check_repository(self, repository: str) -> None:
