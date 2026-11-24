@@ -560,6 +560,7 @@ def test_a_worker_whose_runs_never_reported_a_model_uses_its_agents_default(
         state=JsonStateStore(tmp_path / "state.json"),
         manager_id="m",
         workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+        probe=lambda worker, home: "2.1.331 (Claude Code)",
     )
     runtime.sync_slots()
     assert [slot.observed_model for slot in runtime.slots] == ["Qwen3.8-Flash-Next IQ3_S"] * 2
@@ -911,3 +912,56 @@ def test_given_a_disabled_worker_when_slots_sync_then_it_takes_nothing_until_ena
     runtime.config = enabled
     runtime.sync_slots()
     assert [s.enabled for s in runtime.slots] == [True, True]
+
+
+def test_given_installations_when_slots_sync_then_each_shows_the_version_it_answered(
+    tmp_path: Path,
+) -> None:
+    from github_issue_worker.adapters.installations import Unavailable
+
+    answers = {"claude": "2.1.331 (Claude Code)"}
+
+    def probe(worker: object, home: Path) -> str:
+        name = worker.name  # type: ignore[attr-defined]
+        if name not in answers:
+            raise Unavailable(f"{name} --version failed: not signed in")
+        return answers[name]
+
+    claude = executable(tmp_path / "bin" / "claude")
+    runtime = Runtime(
+        config=_instances_config(claude, 2),
+        home=tmp_path,
+        api=None,  # type: ignore[arg-type]
+        state=JsonStateStore(tmp_path / "state.json"),
+        manager_id="m",
+        workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+        probe=probe,
+    )
+    runtime.sync_slots()
+    slots = {slot.name: slot for slot in runtime.slots}
+    assert slots["claude"].available and slots["claude"].version == "2.1.331 (Claude Code)"
+    assert not slots["claude-2"].available and slots["claude-2"].version == ""
+    assert "not signed in" in slots["claude-2"].reason
+
+    answers["claude"] = "2.1.332 (Claude Code)"  # it updated itself
+    runtime.sync_slots()
+    assert slots["claude"].version == "2.1.332 (Claude Code)"
+
+
+def test_given_an_agent_that_updated_itself_when_workers_refresh_then_its_new_version_shows(
+    tmp_path: Path,
+) -> None:
+    answer = ["2.1.331 (Claude Code)"]
+    runtime = Runtime(
+        config=_instances_config(executable(tmp_path / "bin" / "claude"), 1),
+        home=tmp_path,
+        api=None,  # type: ignore[arg-type]
+        state=JsonStateStore(tmp_path / "state.json"),
+        manager_id="m",
+        workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+        probe=lambda worker, home: answer[0],
+    )
+    runtime.sync_slots()
+    answer[0] = "2.1.332 (Claude Code)"
+    runtime.refresh_auth()
+    assert runtime.slots[0].version == "2.1.332 (Claude Code)"

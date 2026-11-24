@@ -13,7 +13,12 @@ from datetime import UTC, datetime, timedelta
 
 from github_issue_worker.application.accounts import account_usage
 from github_issue_worker.application.history import RunRecord
-from github_issue_worker.configuration import Configuration, validate
+from github_issue_worker.configuration import (
+    Configuration,
+    ExecutableInstallation,
+    WorkerSettings,
+    validate,
+)
 from github_issue_worker.domain.claim import (
     Claim,
     ClaimPolicy,
@@ -117,7 +122,7 @@ CONFIG = {
 GOOGLE_RESET = NOW + timedelta(hours=2, minutes=40)
 """When the demo's google-pro account comes back from its usage limit."""
 
-WORKERS = (
+_WORKERS = (
     WorkerView(
         "claude",
         "Claude Code",
@@ -232,6 +237,25 @@ WORKERS = (
         reason="opencode is not on PATH",
         agent_kind="opencode",
     ),
+)
+
+VERSIONS = {
+    "claude": "2.1.331 (Claude Code)",
+    "codex": "codex-cli 0.169.0",
+    "antigravity": "1.1.1",
+}
+"""What the demo's installations answer ``--version`` with, as real ones did (F15.9)."""
+
+WORKERS: tuple[WorkerView, ...] = tuple(
+    replace(
+        worker,
+        version="gateway up: Qwen3.8 Flash Next"
+        if worker.worker == "local"
+        else VERSIONS.get(worker.agent_kind, "")
+        if worker.state != "unavailable"
+        else "",
+    )
+    for worker in _WORKERS
 )
 
 CLAIMS = (
@@ -767,6 +791,7 @@ class DemoBackend:
                 "account": "openai-plus",
                 "priority": 2,
                 "installation": {"type": "claudecodeportable", "profile": "ChatGPTCodex"},
+                "version": VERSIONS["codex"],
             },
             {
                 "name": "local",
@@ -774,6 +799,15 @@ class DemoBackend:
                 "account": "local-gpu",
                 "priority": 9,
                 "installation": {"type": "claudelocal"},
+                "version": "gateway up: Qwen3.8 Flash Next",
+            },
+            {
+                "name": "antigravity",
+                "agent": "antigravity",
+                "account": "antigravity",
+                "priority": 3,
+                "installation": {"type": "path"},
+                "problem": "agy --version failed: not signed in",
             },
         ]
 
@@ -782,6 +816,12 @@ class DemoBackend:
 
     def set_paused(self, paused: bool) -> None:
         self._paused = paused
+
+    def check_worker(self, worker: WorkerSettings) -> str:
+        installation = worker.installation
+        if isinstance(installation, ExecutableInstallation) and "missing" in installation.path:
+            raise ActionError(f"{installation.path} does not exist")
+        return VERSIONS.get(worker.agent, "1.0.0")
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None:
         group = next((w.worker for w in self._workers if name in (w.name, w.worker)), name)

@@ -779,3 +779,87 @@ def test_given_pause_when_resumed_then_every_page_says_so_and_offers_resume(
     client.post("/resume")
     assert backend.paused() is False
     assert 'action="/pause"' in client.get("/").text
+
+
+def test_given_found_installations_when_adding_then_each_shows_its_version_or_why_not(
+    client: TestClient,
+) -> None:
+    html = client.get("/workers/new").text
+    found = html.split("Found on this machine", 1)[1].split("</table>", 1)[0]
+    assert "codex-cli 0.169.0" in found
+    assert "agy --version failed: not signed in" in found
+    unproven = found.split("agy --version failed", 1)[1].split("</tr>", 1)[0]
+    assert "<button disabled" in unproven
+
+
+def test_given_an_unproven_installation_when_added_then_it_is_refused(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    detected = backend.detect_workers()
+    index = next(i for i, d in enumerate(detected) if "problem" in d)
+    before = [w.name for w in backend.config().workers]
+    response = client.post(
+        "/workers/add-detected",
+        data={"index": str(index)},
+        headers={"referer": "http://testserver/workers/new"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303 and "not%20signed%20in" in response.headers["location"]
+    assert [w.name for w in backend.config().workers] == before
+
+
+def test_given_a_proven_installation_when_added_twice_then_two_workers_run(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    detected = backend.detect_workers()
+    index = next(i for i, d in enumerate(detected) if d["name"] == "codex")
+    client.post("/workers/add-detected", data={"index": str(index)})
+    client.post("/workers/add-detected", data={"index": str(index)})
+    names = [w.name for w in backend.config().workers]
+    assert "codex-3" in names and "codex-4" in names  # codex and codex-2 were there already
+
+
+def test_given_a_worker_described_by_hand_when_it_does_not_answer_then_it_is_refused(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    response = client.post(
+        "/workers/new",
+        data={
+            "name": "mine",
+            "agent": "claude",
+            "account": "anthropic-max",
+            "installation.type": "executable",
+            "installation.path": "/opt/missing/claude",
+        },
+    )
+    assert response.status_code == 422
+    assert "does not exist" in response.text
+    assert "mine" not in {w.name for w in backend.config().workers}
+
+
+def test_given_the_cockpit_when_shown_then_every_lane_names_its_harness_version(
+    client: TestClient,
+) -> None:
+    crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
+    assert "2.1.331 (Claude Code)" in crew and "codex-cli 0.169.0" in crew
+
+
+def test_given_a_worker_described_by_hand_when_it_answers_then_it_is_added(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    response = client.post(
+        "/workers/new",
+        data={
+            "name": "mine",
+            "agent": "claude",
+            "account": "anthropic-max",
+            "installation.type": "executable",
+            "installation.path": "/opt/claude/bin/claude",
+            "installation.env": "CLAUDE_CONFIG_DIR=/opt/claude/config",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    mine = next(w for w in backend.config().workers if w.name == "mine")
+    assert mine.installation.type == "executable"
+    assert mine.installation.env == {"CLAUDE_CONFIG_DIR": "/opt/claude/config"}  # type: ignore[union-attr]

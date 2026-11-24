@@ -556,9 +556,17 @@ and the presets exist for setups that keep agents out of the system:
 `github-issue-worker workers --detect` looks in all of these places and proposes one worker per agent
 it finds, with the installation that found it. ClaudeCodePortable profiles are searched under
 `~/ClaudeCodePortable`, under every folder in `manager.portableRoots`, and under the root of the
-portable session the manager runs in (from its `CLAUDE_CONFIG_DIR` or `CODEX_HOME`). A worker
-whose installation is missing or not logged in is shown as *unavailable* with the reason, and claims
-nothing.
+portable session the manager runs in (from its `CLAUDE_CONFIG_DIR` or `CODEX_HOME`); agents on
+`PATH` are listed as well, next to any portable profile of the same kind.
+
+**An installation counts only once it answers.** Every found installation, and every worker described
+by hand, is asked `--version` (ClaudeLocal's launcher: `--status`) in the environment a run would
+get, and the first line it prints is its version: `2.1.331 (Claude Code)`, `codex-cli 0.169.0`,
+`1.1.1`. Only one that answered can be added; one that did not is listed with the reason and cannot
+be added. The version shows on every worker's lane in the cockpit, is asked again on every start and
+whenever the executable changes (an agent that updated itself), and a change is logged. A worker whose
+installation is missing, does not answer or is not logged in is shown as *unavailable* with the
+reason, and claims nothing. Each click on **Add** adds one more worker of that installation.
 
 ### Accounts
 
@@ -1495,6 +1503,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
   (shortened in the test configuration).
 - [ ] 🟦 **F15.8** An OpenCode worker from a normal OpenCode installation works an issue to a merged
   PR, and its captured output replaces the fixtures of F12.6.
+- [x] 🟥 **F15.9** Proven installations: detection, the first start and a worker described by hand
+  accept an installation only when it answers `--version` (ClaudeLocal: `--status`) with its own
+  environment within 20 s; the first line is its version, shown on the add page and the cockpit,
+  re-asked on start and whenever the executable's time or size changes, a change logged. One that
+  does not answer is listed with the reason and cannot be added.
 
 ### F16 — Pull requests
 

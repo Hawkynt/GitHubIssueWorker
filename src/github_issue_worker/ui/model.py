@@ -12,7 +12,7 @@ from typing import Literal, Protocol
 
 from github_issue_worker.application.accounts import AccountUsage
 from github_issue_worker.application.history import RunRecord
-from github_issue_worker.configuration import Configuration
+from github_issue_worker.configuration import Configuration, WorkerSettings
 from github_issue_worker.domain.claim import ClaimChange
 from github_issue_worker.domain.outcome import Outcome
 
@@ -50,6 +50,8 @@ class WorkerView:
     lane wears while no model is known yet (F14.19)."""
     active: bool = True
     """Response/tool activity was observed; quota-only invocations do not enter the flight log."""
+    version: str = ""
+    """What its installation answered ``--version`` with (F15.9); empty when not known."""
 
     @property
     def worker(self) -> str:
@@ -184,6 +186,13 @@ class Backend(Protocol):
         ...
 
     def set_paused(self, paused: bool) -> None: ...
+
+    def check_worker(self, worker: WorkerSettings) -> str:
+        """The version the worker's installation answers with (F15.9).
+
+        Raises `ActionError` saying why when it cannot be proven to exist.
+        """
+        ...
 
     def approve_ci(self, name: str) -> None:
         """Approve the CI runs the worker's pull request waits for.
