@@ -156,6 +156,9 @@ class Manager:
     max_runs: Callable[[str], int] | None = None
     """An account's ``maxConcurrentRuns`` on this manager (F12.11); None leaves it uncapped."""
     stopping: Callable[[], bool] = lambda: False
+    paused: Callable[[], bool] = lambda: False
+    """While paused the manager polls and shows, but claims, labels and starts nothing; what it
+    saw waits until it is resumed (F10.10). A run already going finishes."""
     """A graceful shutdown stops scheduling, while existing jobs keep their claims and finish."""
     refresh_workers: Callable[[], None] | None = None
     _lock: threading.RLock = field(default_factory=threading.RLock)
@@ -226,7 +229,7 @@ class Manager:
                 watch.suspension_reason = ""
         if watch.suspension_reason:
             return False
-        if watch.name not in self._initialized:
+        if watch.name not in self._initialized and not self.paused():
             watch.host.ensure_worker_labels()
             self._initialized.add(watch.name)
         return True
@@ -249,7 +252,7 @@ class Manager:
     def _tick(self, watch: RepositoryWatch) -> None:
         if not self.prepare(watch):
             return
-        if watch.name not in self._adopted:
+        if watch.name not in self._adopted and not self.paused():
             self._adopt(watch)
         state = self.poll_states.get(watch.name, PollState())
         result, state = self.poll(watch.name, state, watch.process_backlog)
@@ -261,9 +264,13 @@ class Manager:
             self._known[(watch.name, issue.number)] = issue
 
         touched = {issue.number for issue in result.issues} | {c.issue for c in result.comments}
+        pending = self._pending.setdefault(watch.name, set())
+        if self.paused():
+            pending |= touched
+            return
         with self._lock:
             own = {number for (repo, number) in self._own if repo == watch.name}
-        candidates = touched | self._pending.setdefault(watch.name, set()) | own
+        candidates = touched | pending | own
         since = state.watched_since or self.clock.now()
         for number in sorted(candidates, key=lambda n: self._queue_key(watch, n)):
             if self.stopping():

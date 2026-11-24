@@ -71,12 +71,15 @@ def create_app(backend: Backend) -> FastAPI:
         target = f"{path}?notice={quote(notice)}" if notice else path
         return RedirectResponse(target, status_code=303)
 
+    def referred(request: Request) -> str:
+        """The page a request came from, so an action returns there."""
+        referer = request.headers.get("referer", "")
+        return "/" + referer.split("://", 1)[-1].partition("/")[2].split("?", 1)[0]
+
     @app.exception_handler(ActionError)
     async def refused(request: Request, error: ActionError) -> RedirectResponse:
         """A refused action returns to the page it came from with the reason, never a 500."""
-        referer = request.headers.get("referer", "")
-        path = referer.split("://", 1)[-1].partition("/")[2].split("?", 1)[0]
-        return back("/" + path, str(error))
+        return back(referred(request), str(error))
 
     def save(data: dict[str, Any]) -> Configuration:
         config = validate(data)
@@ -120,7 +123,9 @@ def create_app(backend: Backend) -> FastAPI:
 
     @app.get("/settings", response_class=HTMLResponse)
     def settings(notice: str = "") -> str:
-        return pages.settings_page(backend.snapshot().manager_id, backend.config(), notice)
+        return pages.settings_page(
+            backend.snapshot().manager_id, backend.config(), notice, paused=backend.paused()
+        )
 
     @app.get("/events", response_class=PlainTextResponse)
     def events() -> str:
@@ -163,6 +168,7 @@ def create_app(backend: Backend) -> FastAPI:
                     problems=problems,
                     error_paths=paths,
                     submitted=submitted,
+                    paused=backend.paused(),
                 ),
                 status_code=422,
             )
@@ -268,7 +274,11 @@ def create_app(backend: Backend) -> FastAPI:
     def new_worker() -> str:
         config = backend.config()
         return pages.worker_page(
-            backend.snapshot().manager_id, config, None, backend.detect_workers()
+            backend.snapshot().manager_id,
+            config,
+            None,
+            backend.detect_workers(),
+            paused=backend.paused(),
         )
 
     @app.post("/workers/add-detected")
@@ -308,6 +318,7 @@ def create_app(backend: Backend) -> FastAPI:
                     None,
                     backend.detect_workers(),
                     problems,
+                    paused=backend.paused(),
                 ),
                 422,
             )
@@ -319,7 +330,9 @@ def create_app(backend: Backend) -> FastAPI:
         worker = next((w for w in config.workers if w.name == name), None)
         if worker is None:
             return back("/")
-        return pages.worker_page(backend.snapshot().manager_id, config, worker)
+        return pages.worker_page(
+            backend.snapshot().manager_id, config, worker, paused=backend.paused()
+        )
 
     @app.post("/workers/{name}", response_class=HTMLResponse, response_model=None)
     async def update_worker(name: str, request: Request) -> Any:
@@ -335,7 +348,14 @@ def create_app(backend: Backend) -> FastAPI:
             problems, _ = _problems(error)
             worker = next(w for w in config.workers if w.name == name)
             return HTMLResponse(
-                pages.worker_page(backend.snapshot().manager_id, config, worker, None, problems),
+                pages.worker_page(
+                    backend.snapshot().manager_id,
+                    config,
+                    worker,
+                    None,
+                    problems,
+                    paused=backend.paused(),
+                ),
                 422,
             )
         return back("/", f"Worker {submitted.get('name', name)} saved.")
@@ -353,6 +373,16 @@ def create_app(backend: Backend) -> FastAPI:
         path = "/" + referer.split("://", 1)[-1].split("/", 1)[-1] if "://" in referer else ""
         path = path.split("?", 1)[0]
         return path if path in ("/", "/workers") or path.endswith("/log") else "/workers"
+
+    @app.post("/pause")
+    def pause_all(request: Request) -> RedirectResponse:
+        backend.set_paused(True)
+        return back(referred(request), "Paused: nothing new is claimed, labelled or started.")
+
+    @app.post("/resume")
+    def resume_all(request: Request) -> RedirectResponse:
+        backend.set_paused(False)
+        return back(referred(request), "Resumed: issues are claimed and worked again.")
 
     @app.post("/workers/{name}/pause")
     def pause_worker(name: str, request: Request) -> RedirectResponse:
@@ -416,6 +446,7 @@ def create_app(backend: Backend) -> FastAPI:
                 snapshot.now,
                 backend.pull_request(repository, number),
                 problems=problems,
+                paused=snapshot.paused,
             ),
             status,
         )
@@ -435,6 +466,7 @@ def create_app(backend: Backend) -> FastAPI:
             snapshot.now,
             backend.pull_request(repository, number),
             notice,
+            paused=snapshot.paused,
         )
 
     @app.post("/issues/{owner}/{name}/{number}/skip", response_model=None)

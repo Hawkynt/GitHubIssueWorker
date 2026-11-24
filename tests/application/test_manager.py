@@ -882,3 +882,41 @@ def test_removal_keeps_worker_busy_until_claim_history_recording_has_finished() 
     f.manager.tick()
     assert observed == [True]
     assert not f.manager.workers[0].busy
+
+
+def test_given_a_paused_manager_when_issues_arrive_then_nothing_is_claimed_labelled_or_run() -> (
+    None
+):
+    f = Fixture([slot("claude")])
+    ensured: list[bool] = []
+    f.host.ensure_worker_labels = lambda: ensured.append(True)  # type: ignore[method-assign]
+    paused = True
+    f.manager.paused = lambda: paused
+    f.new_issues(issue(1))
+
+    f.manager.tick()
+
+    assert not f.runs
+    assert f.store.current(1) is None
+    assert f.host.worker_label == {}
+    assert ensured == []
+
+    paused = False
+    f.manager.tick()  # nothing new is polled: the issue seen while paused is still pending
+    assert f.runs == [Recorded("claude", 1, RunKind.FIRST)]
+    assert ensured == [True]
+
+
+def test_given_a_paused_manager_when_it_holds_a_claim_then_the_work_does_not_continue() -> None:
+    f = Fixture([slot("claude")], verdicts=[Verdict("paused")])
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert len(f.runs) == 1 and f.store.current(1).state.holds
+    paused = True
+    f.manager.paused = lambda: paused
+    f.polls.append(PollResult(issues=(issue(1),)))
+    f.manager.tick()
+    assert len(f.runs) == 1
+    paused = False
+    f.manager.tick()
+    assert len(f.runs) == 2

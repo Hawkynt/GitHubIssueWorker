@@ -167,11 +167,23 @@ class Manager:
         self.ticks += 1
 
 
+class State:
+    def __init__(self, paused: bool = False) -> None:
+        self._paused = paused
+
+    def paused(self) -> bool:
+        return self._paused
+
+    def set_paused(self, paused: bool) -> None:
+        self._paused = paused
+
+
 class Runtime:
-    def __init__(self, api: Api, manager: Manager) -> None:
+    def __init__(self, api: Api, manager: Manager, state: State | None = None) -> None:
         self.api = api
         self.manager_id = "manager@host"
         self._manager = manager
+        self.state = state or State()
 
     def manager(self) -> Manager:
         return self._manager
@@ -546,6 +558,45 @@ def test_given_no_config_when_watch_starts_then_it_detects_workers_of_one_and_sa
     assert len(observed[0].workers) == 3  # type: ignore[attr-defined]
     # Found, not chosen: nothing runs until the user switches a worker on.
     assert {w.enabled for w in saved.workers} == {False}
+
+
+def test_given_no_config_when_watch_starts_then_it_starts_paused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    state = State()
+    code = main(
+        ["--config", str(tmp_path / "config.json"), "watch", "--once"],
+        home=tmp_path,
+        runtime_factory=lambda *a: Runtime(Api(), Manager(), state),
+    )
+    assert code == 0 and state.paused() is True
+    assert "paused" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("flag", "expected"), [([], False), (["--paused"], True)])
+def test_given_a_config_when_watch_starts_then_only_the_flag_pauses_it(
+    tmp_path: Path, flag: list[str], expected: bool
+) -> None:
+    state = State()
+    code = main(
+        ["--config", str(watched_config(tmp_path)), "watch", "--once", *flag],
+        home=tmp_path,
+        runtime_factory=lambda *a: Runtime(Api(), Manager(), state),
+    )
+    assert code == 0 and state.paused() is expected
+
+
+def test_given_a_paused_state_when_watch_starts_without_the_flag_then_it_stays_paused(
+    tmp_path: Path,
+) -> None:
+    state = State(paused=True)
+    main(
+        ["--config", str(watched_config(tmp_path)), "watch", "--once"],
+        home=tmp_path,
+        runtime_factory=lambda *a: Runtime(Api(), Manager(), state),
+    )
+    assert state.paused() is True
 
 
 def test_given_no_config_when_watch_starts_with_ui_then_it_opens_web_interface(

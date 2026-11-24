@@ -95,6 +95,9 @@ nav .id { color: var(--muted); font-size: 13px; margin-bottom: 1.75rem; overflow
 nav a { display: block; padding: .4rem .6rem; border-radius: 4px; color: var(--ink);
   text-decoration: none; }
 nav a[aria-current="page"] { background: var(--steel-soft); color: var(--steel); font-weight: 600; }
+nav .pause-all { margin: -1rem 0 1.25rem; }
+.paused-all { background: var(--amber-soft); color: var(--amber);
+  border: 1px solid currentColor; padding: .6rem 1rem; border-radius: 4px; margin: 0 0 1rem; }
 main { padding: 1.75rem 2.25rem 3rem; max-width: 70rem; }
 h1 { font-size: 1.6rem; font-weight: 650; margin: 0 0 .25rem; letter-spacing: -.01em; }
 .lede { color: var(--muted); margin: 0 0 1.75rem; max-width: 42rem; }
@@ -810,18 +813,35 @@ def _out(href: str, text: str, attributes: str = "") -> str:
     return f'<a href="{e(href)}" target="_blank" rel="noopener noreferrer"{attributes}>{text}</a>'
 
 
-def page(title: str, path: str, snapshot_id: str, body: str, live: bool = False) -> str:
+def page(
+    title: str, path: str, snapshot_id: str, body: str, live: bool = False, paused: bool = False
+) -> str:
     links = "".join(
         f'<a href="{href}"{" aria-current=page" if href == path else ""}>{name}</a>'
         for href, name in PAGES
     )
+    if paused:
+        control = (
+            '<form method=post action="/resume" class=pause-all>'
+            "<button class=primary>Resume</button></form>"
+        )
+        body = (
+            "<p class=paused-all role=status><strong>Paused.</strong> The manager polls and "
+            "shows, but nothing is claimed, labelled or started until you resume it.</p>" + body
+        )
+    else:
+        control = (
+            '<form method=post action="/pause" class=pause-all>'
+            '<button title="Claim, label and start nothing until resumed">Pause all</button>'
+            "</form>"
+        )
     return (
         "<!doctype html><html lang=en><head><meta charset=utf-8>"
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{e(title)}: GitHubIssueWorker</title><style>{STYLE}</style></head>"
         + "<body class='deck boot'><div class=frame>"
         f"<nav><div class=who>GitHubIssueWorker</div>"
-        f"<div class=id>manager {e(snapshot_id)}</div>{links}</nav>"
+        f"<div class=id>manager {e(snapshot_id)}</div>{control}{links}</nav>"
         f"<main>{body}</main></div>{LIVE if live else ''}{TIPS}</body></html>"
     )
 
@@ -1598,7 +1618,7 @@ def cockpit_page(
         f"{_notice(notice)}"
         f"<div id=live>{cockpit_fragment(snapshot, history, view, model_colors)}</div>"
     )
-    return page("Cockpit", "/workers", snapshot.manager_id, body, live=True)
+    return page("Cockpit", "/workers", snapshot.manager_id, body, live=True, paused=snapshot.paused)
 
 
 # --- repositories --------------------------------------------------------------------------------
@@ -1673,7 +1693,7 @@ def repositories_page(
         "is only added when your account can push to it.</p>"
         f"{_notice(notice)}{_problems(problems)}{readouts}<div class=deck-grid>{add}{listed}</div>"
     )
-    return page("Repositories", "/repositories", snapshot.manager_id, body)
+    return page("Repositories", "/repositories", snapshot.manager_id, body, paused=snapshot.paused)
 
 
 def _override_form(repository: RepositorySettings, defaults: DefaultsSettings) -> str:
@@ -1787,7 +1807,7 @@ def fleet_page(snapshot: Snapshot, notice: str = "", problems: Iterable[str] = (
         "other. A claim nobody renews for its validity plus grace is free for others.</p>"
         f"{_notice(notice)}{_problems(problems)}<div id=live>{fleet_fragment(snapshot)}</div>"
     )
-    return page("Fleet", "/fleet", snapshot.manager_id, body, live=True)
+    return page("Fleet", "/fleet", snapshot.manager_id, body, live=True, paused=snapshot.paused)
 
 
 # --- settings and worker forms -------------------------------------------------------------------
@@ -1896,6 +1916,7 @@ def settings_page(
     problems: Iterable[str] = (),
     error_paths: frozenset[str] = frozenset(),
     submitted: Mapping[str, str] | None = None,
+    paused: bool = False,
 ) -> str:
     fields = fields_of(Configuration, skip=frozenset({"workers", "repositories", "accounts"}))
     defaults = Configuration()
@@ -1955,7 +1976,7 @@ def settings_page(
         f'<form class=deck-grid method=post action="/settings" data-unsaved>{body}{accounts}'
         f"<p><button class=primary>Save settings</button></p></form>{UNSAVED}"
     )
-    return page("Settings", "/settings", snapshot_id, page_body)
+    return page("Settings", "/settings", snapshot_id, page_body, paused=paused)
 
 
 def _accounts(config: Configuration) -> str:
@@ -1993,6 +2014,7 @@ def worker_page(
     worker: WorkerSettings | None,
     detected: list[dict[str, Any]] | None = None,
     problems: Iterable[str] = (),
+    paused: bool = False,
 ) -> str:
     title = f"Worker {worker.name}" if worker else "Add a worker"
     current: dict[str, str] = {}
@@ -2076,7 +2098,7 @@ def worker_page(
         f'<fieldset class="panel wide"><legend>Installation</legend>{"".join(install)}</fieldset>'
         f"<p><button class=primary>Save worker</button></p></form>{remove}</div>"
     )
-    return page(title, "/", snapshot_id, body)
+    return page(title, "/", snapshot_id, body, paused=paused)
 
 
 def _notice(text: str) -> str:
@@ -2191,7 +2213,7 @@ def issues_page(snapshot: Snapshot, notice: str = "", problems: Iterable[str] = 
         "and who works it. Workers on this machine can be paused, stopped or watched.</p>"
         f"{_notice(notice)}{_problems(problems)}<div id=live>{issues_fragment(snapshot)}</div>"
     )
-    return page("Issues", "/", snapshot.manager_id, body, live=True)
+    return page("Issues", "/", snapshot.manager_id, body, live=True, paused=snapshot.paused)
 
 
 # --- the agent's log -----------------------------------------------------------------------------
@@ -2226,7 +2248,14 @@ def log_page(snapshot: Snapshot, worker: WorkerView, text: str | None) -> str:
         f'<div class=actions style="justify-content:flex-start;margin-bottom:1rem">{_worker_actions(worker, with_log=False)}</div>'
         f"<div id=live>{log_fragment(text)}</div>"
     )
-    return page(f"Log of {worker.name}", "/workers", snapshot.manager_id, body, live=True)
+    return page(
+        f"Log of {worker.name}",
+        "/workers",
+        snapshot.manager_id,
+        body,
+        live=True,
+        paused=snapshot.paused,
+    )
 
 
 # --- one issue -----------------------------------------------------------------------------------
@@ -2467,6 +2496,7 @@ def issue_page(
     pull_request: str | None = None,
     notice: str = "",
     problems: Iterable[str] = (),
+    paused: bool = False,
 ) -> str:
     issue = detail.issue
     title = _out(
@@ -2480,4 +2510,4 @@ def issue_page(
         f"{_notice(notice)}{_problems(problems)}{_issue_actions(detail, pull_request)}"
         f"<div id=live>{issue_fragment(detail, now)}</div>"
     )
-    return page(f"#{issue.number} {issue.title}", "/", manager_id, body, live=True)
+    return page(f"#{issue.number} {issue.title}", "/", manager_id, body, live=True, paused=paused)

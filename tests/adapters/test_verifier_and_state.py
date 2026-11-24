@@ -87,3 +87,12 @@ def test_the_last_model_each_worker_ran_on_is_remembered(tmp_path: Path) -> None
     assert store.model("codex") is None
     store.set_model("codex", "gpt-6.1-sol")
     assert JsonStateStore(tmp_path / "state.json").model("codex") == "gpt-6.1-sol"
+
+
+def test_given_a_pause_when_the_state_is_reloaded_then_it_is_still_paused(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    assert JsonStateStore(path).paused() is False
+    JsonStateStore(path).set_paused(True)
+    assert JsonStateStore(path).paused() is True
+    JsonStateStore(path).set_paused(False)
+    assert JsonStateStore(path).paused() is False
