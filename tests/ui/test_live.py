@@ -436,3 +436,19 @@ def test_given_the_live_backend_when_a_worker_is_paused_then_the_configuration_k
 
     backend.set_worker_enabled("claude.2", True)  # an instance names its worker
     assert load(path).workers[0].enabled is True
+
+
+def test_given_the_live_backend_when_paused_then_the_runtime_state_holds_it() -> None:
+    held = {"paused": False}
+    state = SimpleNamespace(
+        paused=lambda: held["paused"], set_paused=lambda value: held.update(paused=value)
+    )
+    backend = RuntimeBackend(
+        SimpleNamespace(state=state),  # type: ignore[arg-type]
+        SimpleNamespace(),  # type: ignore[arg-type]
+        Path("config.json"),
+        lambda *_: [],
+    )
+    assert backend.paused() is False
+    backend.set_paused(True)
+    assert held["paused"] is True and backend.paused() is True

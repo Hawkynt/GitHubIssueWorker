@@ -114,6 +114,15 @@ class JsonStateStore:
             self._data.setdefault("accounts", {})[account] = _stamp(until)
             self._save()
 
+    def paused(self) -> bool:
+        """Whether the manager is paused: kept across restarts until resumed (F10.10)."""
+        return bool(self._data.get("paused", False))
+
+    def set_paused(self, paused: bool) -> None:
+        with self._lock:
+            self._data["paused"] = paused
+            self._save()
+
     def model(self, worker: str) -> str | None:
         """The model the worker's last run reported."""
         value = self._data.get("models", {}).get(worker)

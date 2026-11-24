@@ -242,6 +242,9 @@ def _watch(
         save(config, path)
 
     runtime = runtime_factory(config, home, *_dirs(args))
+    if first_run or getattr(args, "paused", False):
+        # A first start waits for its configuration; a paused one stays paused until resumed.
+        runtime.state.set_paused(True)
     # The login is proven by the adapter the manager polls through, not by a second `gh` (F0.5).
     try:
         runtime.api.request("GET", "user")
@@ -286,6 +289,8 @@ def _watch(
             print(f"{NAME} {version()} as {runtime.manager_id}, watching {count} repositories")
             for row in manager.snapshot():
                 print(f"  worker {row['worker']}: {'ok' if row['available'] else row['reason']}")
+            if runtime.state.paused():
+                print("  paused: nothing is claimed, labelled or started until you resume it")
             server = None
             if path is not None and not once and not no_ui:
                 server = _start_ui(runtime, manager, path, open_browser=first_run)
@@ -564,6 +569,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     watch.add_argument("--once", action="store_true", help="one poll-and-work pass, then exit")
     watch.add_argument("--no-ui", action="store_true", help="do not serve the local UI")
+    watch.add_argument(
+        "--paused",
+        action="store_true",
+        help="start paused: poll and show, but claim, label and start nothing until resumed",
+    )
     watch.add_argument("--config", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     watch.add_argument(
         "-v", "--verbose", action="store_true", default=argparse.SUPPRESS, help=argparse.SUPPRESS

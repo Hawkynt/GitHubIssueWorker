@@ -174,6 +174,7 @@ class RuntimeBackend:
             self._claims,
             self._issues(now),
             self._accounts(now),
+            self._runtime.state.paused(),
         )
 
     def _accounts(self, now: datetime) -> tuple[AccountUsage, ...]:
@@ -391,6 +392,12 @@ class RuntimeBackend:
 
     def detect_workers(self) -> list[dict[str, object]]:
         return self._detect(self._runtime.home, self._runtime.config.manager.portable_roots)
+
+    def paused(self) -> bool:
+        return self._runtime.state.paused()
+
+    def set_paused(self, paused: bool) -> None:
+        self._runtime.state.set_paused(paused)
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None:
         """Pause or resume a worker by switching its ``enabled`` setting, so it lasts."""

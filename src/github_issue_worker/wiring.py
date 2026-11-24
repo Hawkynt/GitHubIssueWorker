@@ -665,6 +665,7 @@ class Runtime:
             max_runs=self.max_runs,
             sweep=self._sweep,
             refresh_workers=self.refresh_auth,
+            paused=self.state.paused,
         )
 
 

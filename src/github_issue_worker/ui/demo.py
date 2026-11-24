@@ -674,6 +674,7 @@ class DemoBackend:
     def __init__(self) -> None:
         self._config = validate(json.loads(json.dumps(CONFIG)))
         self._workers = list(WORKERS)
+        self._paused = False
         self.stopped: list[str] = []
         self.opened: list[str] = []
         self.approved: list[str] = []
@@ -709,6 +710,7 @@ class DemoBackend:
                 ),
                 NOW,
             ),
+            paused=self._paused,
         )
 
     def config(self) -> Configuration:
@@ -743,6 +745,12 @@ class DemoBackend:
                 "installation": {"type": "claudelocal"},
             },
         ]
+
+    def paused(self) -> bool:
+        return self._paused
+
+    def set_paused(self, paused: bool) -> None:
+        self._paused = paused
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None:
         group = next((w.worker for w in self._workers if name in (w.name, w.worker)), name)

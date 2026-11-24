@@ -181,8 +181,11 @@ When no configuration file exists yet, `watch` detects the local agents (`claude
 `antigravity` / `agy`, `opencode`, plus local portable and ClaudeLocal installations), writes the
 initial configuration with one concurrent run per account (`maxConcurrentRuns` of `1`) and every
 found worker switched off until you switch it on, serves the web UI with the default settings and
-opens it in your browser so you can add a repository and use
-it right away.
+opens it in your browser so you can add a repository and use it right away. That first start is
+**paused**: it polls and shows everything, but claims, labels and starts nothing until you press
+**Resume** in the UI, so nothing is worked while you are still configuring. **Pause all** in the UI
+(or `watch --paused`) pauses again at any time; the pause survives restarts until it is resumed,
+and a run already going finishes.
 
 From the command line:
 
@@ -190,6 +193,7 @@ From the command line:
 github-issue-worker add https://github.com/Hawkynt/ShiftDiff  # verifies push access, creates worker:* labels
 github-issue-worker workers --detect                          # finds installed agents and proposes one worker each
 github-issue-worker watch                                     # runs until stopped; the UI is at http://127.0.0.1:8765
+github-issue-worker watch --paused                            # the same, but paused until resumed in the UI
 github-issue-worker once                                      # one poll-and-work pass, for cron or a scheduler
 ```
 
@@ -1207,6 +1211,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
   tested on both.
 - [ ] 🟦 **F10.8** Per-day and per-repository cost ceilings across runs.
 - [ ] 🟦 **F10.9** Container image and recipe for running a manager in the cloud.
+- [x] 🟥 **F10.10** Pause: `watch --paused`, **Pause all** / **Resume** on every UI page, and every
+  first start without a configuration file start the manager paused. Paused, it checks access and
+  polls, but creates no label, sets no issue label, adopts or claims nothing and starts no run;
+  what it saw is worked once resumed. A run already going finishes. The pause is kept in the state
+  file across restarts until resumed.
 
 ### F11 — Fleet coordination
 

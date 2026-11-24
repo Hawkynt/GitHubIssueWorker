@@ -115,6 +115,8 @@ class Snapshot:
     issues: tuple[IssueView, ...] = ()
     accounts: tuple[AccountUsage, ...] = ()
     """Each account's usage state, its reset and the issues waiting on it (F13.7)."""
+    paused: bool = False
+    """The whole manager is paused (F10.10)."""
 
 
 LOG_TAIL = 200
@@ -176,6 +178,12 @@ class Backend(Protocol):
     def detect_workers(self) -> list[dict[str, object]]: ...
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None: ...
+
+    def paused(self) -> bool:
+        """Whether the whole manager is paused (F10.10)."""
+        ...
+
+    def set_paused(self, paused: bool) -> None: ...
 
     def approve_ci(self, name: str) -> None:
         """Approve the CI runs the worker's pull request waits for.

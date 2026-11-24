@@ -763,3 +763,29 @@ def test_given_a_worker_when_paused_in_the_ui_then_its_setting_is_switched_off(
     assert next(w for w in backend.config().workers if w.name == name).enabled is False
     client.post(f"/workers/{name}/resume")
     assert next(w for w in backend.config().workers if w.name == name).enabled is True
+
+
+@pytest.mark.parametrize("page", ["/", "/workers", "/repositories", "/fleet", "/settings"])
+def test_given_a_running_manager_when_any_page_is_shown_then_it_offers_pause(
+    client: TestClient, page: str
+) -> None:
+    html = client.get(page).text
+    assert 'action="/pause"' in html and 'action="/resume"' not in html
+
+
+def test_given_pause_when_resumed_then_every_page_says_so_and_offers_resume(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    response = client.post(
+        "/pause", headers={"referer": "http://testserver/settings"}, follow_redirects=False
+    )
+    assert response.status_code == 303 and response.headers["location"].startswith("/settings")
+    assert backend.paused() is True
+    for page in ("/", "/workers", "/repositories", "/fleet", "/settings", "/workers/new"):
+        html = client.get(page).text
+        assert 'action="/resume"' in html, page
+        assert "nothing is claimed, labelled or started" in html, page
+
+    client.post("/resume")
+    assert backend.paused() is False
+    assert 'action="/pause"' in client.get("/").text
