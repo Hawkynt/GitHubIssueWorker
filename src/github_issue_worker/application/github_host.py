@@ -15,6 +15,8 @@ from github_issue_worker.ports.repository import (
     Check,
     PullRequest,
     RepositoryInfo,
+    ReviewState,
+    ReviewThread,
     WaitingRun,
 )
 from github_issue_worker.product import MARKER_PREFIX
@@ -50,7 +52,28 @@ def _pull(data: dict[str, Any]) -> PullRequest:
         merged=bool(data.get("merged")),
         title=str(data.get("title") or ""),
         state=str(data.get("state") or "open"),
+        head_ref=str(data["head"].get("ref") or ""),
+        head_repository=str((data["head"].get("repo") or {}).get("full_name") or ""),
+        base_ref=str((data.get("base") or {}).get("ref") or ""),
+        draft=bool(data.get("draft")),
+        maintainer_can_modify=bool(data.get("maintainer_can_modify")),
+        author=str((data.get("user") or {}).get("login") or ""),
+        body=str(data.get("body") or ""),
     )
+
+
+REVIEW_STATE = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewDecision
+      reviewThreads(first: 100) {
+        nodes { id isResolved path line comments(first: 1) { nodes { author { login } body } } }
+      }
+    }
+  }
+}
+"""
 
 
 class GitHubHost:
@@ -244,6 +267,27 @@ class GitHubHost:
 
     def pull_request(self, number: int) -> PullRequest:
         return _pull(self.api.request("GET", self._path(f"pulls/{number}")).body)
+
+    def review_state(self, number: int) -> ReviewState:
+        """The review decision and the unresolved review threads (F16.2)."""
+        owner, name = self.repository.split("/", 1)
+        data = self._graphql(REVIEW_STATE, {"owner": owner, "name": name, "number": number})
+        pull = ((data.get("repository") or {}).get("pullRequest")) or {}
+        threads = []
+        for node in (pull.get("reviewThreads") or {}).get("nodes") or []:
+            if node.get("isResolved"):
+                continue
+            first: dict[str, Any] = next(iter((node.get("comments") or {}).get("nodes") or []), {})
+            threads.append(
+                ReviewThread(
+                    id=str(node["id"]),
+                    path=str(node.get("path") or ""),
+                    line=node.get("line"),
+                    author=str((first.get("author") or {}).get("login") or ""),
+                    body=str(first.get("body") or ""),
+                )
+            )
+        return ReviewState(str(pull.get("reviewDecision") or ""), tuple(threads))
 
     def checks(self, sha: str) -> list[Check]:
         data = self.api.request(

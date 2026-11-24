@@ -45,6 +45,37 @@ class PullRequest:
     title: str = ""
     state: str = "open"
     """``open`` or ``closed``; a merged pull request is closed."""
+    head_ref: str = ""
+    head_repository: str = ""
+    """``owner/name`` of the branch's repository; empty when its fork was deleted."""
+    base_ref: str = ""
+    draft: bool = False
+    maintainer_can_modify: bool = False
+    author: str = ""
+    body: str = ""
+
+    def same_repository(self, repository: str) -> bool:
+        """Whether its branch lives in ``repository`` itself rather than in a fork."""
+        return self.head_repository.casefold() == repository.casefold()
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewThread:
+    """An unresolved review thread: where it is and what its first comment asks."""
+
+    id: str
+    path: str
+    line: int | None
+    author: str
+    body: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewState:
+    decision: str
+    """``APPROVED``, ``CHANGES_REQUESTED``, ``REVIEW_REQUIRED``, or empty when none is required."""
+    threads: tuple[ReviewThread, ...] = ()
+    """Only the unresolved ones."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +128,7 @@ class RepositoryHost(Protocol):
     def find_pull_request(self, branch: str) -> PullRequest | None: ...
     def create_pull_request(self, branch: str, base: str, title: str, body: str) -> PullRequest: ...
     def pull_request(self, number: int) -> PullRequest: ...
+    def review_state(self, number: int) -> ReviewState: ...
     def checks(self, sha: str) -> list[Check]: ...
     def merge(self, number: int, method: str, sha: str, title: str = "", message: str = "") -> str:
         """Merge at the expected head; ``title`` and ``message`` become the squash commit's."""
