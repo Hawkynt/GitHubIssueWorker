@@ -76,7 +76,7 @@ def test_the_live_backend_reads_the_pushable_repositories_in_the_background() ->
             )
 
     runtime = SimpleNamespace(api=SlowApi())
-    backend = RuntimeBackend(runtime, SimpleNamespace(), Path("config.json"), lambda _: [])  # type: ignore[arg-type]
+    backend = RuntimeBackend(runtime, SimpleNamespace(), Path("config.json"), lambda *_: [])  # type: ignore[arg-type]
     assert backend.pushable_repositories() == ()
     release.set()
     deadline = time.monotonic() + 2
@@ -354,3 +354,19 @@ def test_the_pull_request_is_found_by_the_claims_branch(tmp_path: Path) -> None:
     host.head_of["issue/42-x"] = "sha"
     assert backend.pull_request("o/r", 42) == "https://github.com/o/r/pull/7"
     assert backend.pull_request("o/r", 9) is None
+
+
+def test_given_portable_roots_in_the_config_when_the_ui_detects_then_they_are_passed_on() -> None:
+    from github_issue_worker.configuration import Configuration, ManagerSettings
+
+    seen: list[tuple[Path, list[str]]] = []
+    config = Configuration(manager=ManagerSettings(portable_roots=["D:/Agents/ClaudePortable"]))
+    runtime = SimpleNamespace(home=Path("home"), config=config)
+
+    def detect(home: Path, roots: list[str]) -> list[dict[str, object]]:
+        seen.append((home, list(roots)))
+        return []
+
+    backend = RuntimeBackend(runtime, SimpleNamespace(), Path("config.json"), detect)  # type: ignore[arg-type]
+    assert backend.detect_workers() == []
+    assert seen == [(Path("home"), ["D:/Agents/ClaudePortable"])]

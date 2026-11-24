@@ -513,12 +513,15 @@ and the presets exist for setups that keep agents out of the system:
 | --- | --- | --- |
 | `path` (default) | The executable of the agent kind on `PATH` (`claude`, `codex`, `agy`, `opencode`). | The agent's standard config and login locations. This is every normal installation: npm, the vendors' installers, package managers. |
 | `executable` | An explicit `path`. | Plus any `env` entries you give. |
-| `claudecodeportable` | A `root` (default `~/ClaudeCodePortable`) and a `profile`. Resolves the profile's own CLI directly: `npm-global/bin/claude` or `npm-global/bin/codex`, or `.local/bin/agy`, with the portable node first on `PATH`. The interactive launchers are not used, because their menus, first-run installers and banners would land in the agent's output. | The profile's `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or the profile as `HOME` for Antigravity, as the launchers set them. On Windows, Antigravity's per-profile login swap is the launcher's and is not reproduced. |
+| `claudecodeportable` | A `root` (default `~/ClaudeCodePortable`) and a `profile`. Resolves the profile's own CLI directly: `npm-global/bin/claude` or `npm-global/bin/codex` (on Windows `npm-global\claude.cmd` or `npm-global\codex.cmd`), or `.local/bin/agy` (on Windows `AppData\Local\agy\bin\agy.exe`), with the portable node first on `PATH`. The interactive launchers are not used, because their menus, first-run installers and banners would land in the agent's output. | The profile's `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, or the profile as `HOME` for Antigravity, as the launchers set them. On Windows, Antigravity's per-profile login swap is the launcher's and is not reproduced. |
 | `claudelocal` | A `root` (default `~/ClaudeLocal`), for a `claude` worker. Runs ClaudeLocal's separate Claude Code: `claude.sh --dir <worktree> --prompt - --output-format json` (or `Claude.bat`) with an optional `--model`. | ClaudeLocal's own Claude Code against its local gateway, with its own config and sessions, independent of any other Claude installation. Availability is `claude.sh --status`. Never `--stop` or `--tune`. |
 
 `github-issue-worker workers --detect` looks in all of these places and proposes one worker per agent
-it finds, with the installation that found it. A worker whose installation is missing or not logged
-in is shown as *unavailable* with the reason, and claims nothing.
+it finds, with the installation that found it. ClaudeCodePortable profiles are searched under
+`~/ClaudeCodePortable`, under every folder in `manager.portableRoots`, and under the root of the
+portable session the manager runs in (from its `CLAUDE_CONFIG_DIR` or `CODEX_HOME`). A worker
+whose installation is missing or not logged in is shown as *unavailable* with the reason, and claims
+nothing.
 
 ### Accounts
 
@@ -853,6 +856,7 @@ first, and a moved UI listener reopens on its new address.
 | `manager.name` | host name | Human-readable name in presence, the UI and logs. A random suffix makes the manager id unique. |
 | `manager.tags` | `[]` | Capabilities of this machine, matched against `needs:<tag>` routing labels, inherited by every worker. |
 | `manager.home` | account home | Home directory `gh` and networked `git` run with. The default comes from the OS user database, so a relocated `HOME` does not hide `gh`'s login. |
+| `manager.portableRoots` | `[]` | ClaudeCodePortable folders worker detection searches besides `~/ClaudeCodePortable` and the root of the portable session the manager runs in. `~` means the account home. |
 | `pollInterval` | 1 min | Time between polls of one repository, with a random jitter of ±10 %. |
 | `trustedUsers` | `[]` | Logins trusted in addition to everyone with write access. |
 | `ui.port`, `ui.bind`, `ui.token` | 8765, loopback, none | The local UI. A non-loopback `bind` requires a `token`. |
@@ -1424,8 +1428,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F15.2** `executable` installation with explicit path and environment.
 - [x] 🟥 **F15.3** `claudecodeportable` installation: resolves the profile's CLI and environment
   directly (`npm-global/bin/{claude,codex}` with `CLAUDE_CONFIG_DIR`/`CODEX_HOME`, `.local/bin/agy`
-  with the profile as `HOME`, the portable node first on `PATH`), without the interactive launchers.
-  `~` in the root means the account home, not a relocated one.
+  with the profile as `HOME`, the portable node first on `PATH`; on Windows
+  `npm-global\{claude,codex}.cmd` and `AppData\Local\agy\bin\agy.exe`), without the interactive
+  launchers. `~` in the root means the account home, not a relocated one. Detection searches
+  `~/ClaudeCodePortable`, every `manager.portableRoots` folder and the current portable session's
+  root.
 - [ ] 🟥 **F15.4** `claudelocal` installation: `claude.sh --dir <worktree> --prompt - --output-format
   json` with optional `--model`; availability from `--status`; never `--stop` or `--tune`.
 - [ ] 🟥 **F15.5** Reference setup on the maintainer's hardware: one manager with four workers (Claude
