@@ -7,9 +7,7 @@ import argparse
 import contextlib
 import json
 import logging
-import os
 import re
-import shutil
 import signal
 import sys
 import threading
@@ -19,9 +17,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from github_issue_worker.adapters.control import ControlError, ControlLease, ControlServer
+from github_issue_worker.adapters.detection import (
+    detect_workers,
+    proposal,
+)
 from github_issue_worker.adapters.home import account_home
-from github_issue_worker.adapters.installations import EXECUTABLES, portable_tool
-from github_issue_worker.adapters.installations import portable_roots as find_portable_roots
 from github_issue_worker.adapters.manager_lock import (
     ManagerLockError,
     configuration_identity,
@@ -50,7 +50,6 @@ _REPOSITORY = re.compile(
     r"^(?:https?://github\.com/|git@github\.com:)?(?P<owner>[A-Za-z0-9-]+)/(?P<name>[A-Za-z0-9._-]+?)"
     r"(?:\.git)?(?:/issues/(?P<issue>\d+))?/?$"
 )
-_PRIORITY = {"claude": 1, "codex": 2, "antigravity": 3, "opencode": 5}
 _DRAIN_WAIT_SECONDS = 5.0
 
 
@@ -83,91 +82,6 @@ def normalize_issue(text: str) -> tuple[str, int]:
 
 
 # --- worker detection ----------------------------------------------------------------------------
-
-
-def probe_version(proposal: dict[str, Any], home: Path) -> str:
-    """The version the proposed worker's installation answers with; `Unavailable` says why not."""
-    from github_issue_worker.adapters.agent_version import version_of
-    from github_issue_worker.adapters.installations import resolve
-
-    return version_of(resolve(WorkerSettings.model_validate(proposal), home))
-
-
-def detect_workers(
-    home: Path,
-    portable_roots: Sequence[str] = (),
-    probe: Callable[[dict[str, Any], Path], str] = probe_version,
-) -> list[dict[str, Any]]:
-    """One proposed worker per agent installation found: ClaudeCodePortable profiles under the
-    default, the configured and the current session's root, ClaudeLocal, and the agents on PATH.
-
-    Each carries the ``version`` its installation answered with, or the ``problem`` why it did
-    not; only a proven one may be added (F15.9).
-    """
-    found: list[dict[str, Any]] = []
-    tools = ("claude", "codex", "antigravity")
-    for portable in find_portable_roots(home, portable_roots, os.environ):
-        for profile in sorted((portable / "profiles").glob("*")):
-            if not profile.is_dir():
-                continue
-            marker = profile / ".tool"
-            kind = marker.read_text(encoding="utf-8").strip() if marker.exists() else "claude"
-            if kind in tools and portable_tool(profile, kind).exists():
-                found.append(
-                    {
-                        "name": kind,
-                        "agent": kind,
-                        "account": f"{kind}-{profile.name}",
-                        "priority": _PRIORITY[kind],
-                        "installation": {
-                            "type": "claudecodeportable",
-                            "root": str(portable),
-                            "profile": profile.name,
-                        },
-                    }
-                )
-
-    local = home / "ClaudeLocal"
-    if (local / "claude.sh").exists() or (local / "Claude.bat").exists():
-        found.append(
-            {
-                "name": "local",
-                "agent": "claude",
-                "account": "claudelocal",
-                "priority": 9,
-                "installation": {"type": "claudelocal", "root": str(local)},
-            }
-        )
-
-    for kind, executable in EXECUTABLES.items():
-        if shutil.which(executable) or shutil.which(kind):
-            found.append(
-                {"name": kind, "agent": kind, "account": kind, "priority": _PRIORITY[kind]}
-            )
-            found[-1]["installation"] = {"type": "path"}
-
-    names: dict[str, int] = {}
-    for worker in found:
-        names[worker["name"]] = names.get(worker["name"], 0) + 1
-        if names[worker["name"]] > 1:
-            worker["name"] = f"{worker['name']}-{names[worker['name']]}"
-    from github_issue_worker.adapters.installations import Unavailable
-
-    for worker in found:
-        try:
-            worker["version"] = probe(proposal(worker), home)
-        except Unavailable as problem:
-            worker["problem"] = str(problem)
-    return found
-
-
-FOUND_ONLY = ("version", "problem")
-"""What detection reports about a found installation that is not part of a worker's settings."""
-
-
-def proposal(found: dict[str, Any]) -> dict[str, Any]:
-    """The worker settings of a found installation, without what detection reports about it."""
-    return {key: value for key, value in found.items() if key not in FOUND_ONLY}
 
 
 def _add_detected_workers(

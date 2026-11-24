@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from collections.abc import Mapping
+from dataclasses import asdict
 from typing import Annotated, Any
 from urllib.parse import parse_qsl, quote
 
@@ -69,7 +71,8 @@ def create_app(backend: Backend) -> FastAPI:
         return dict(parse_qsl(raw, keep_blank_values=True))
 
     def back(path: str, notice: str = "") -> RedirectResponse:
-        target = f"{path}?notice={quote(notice)}" if notice else path
+        joint = "&" if "?" in path else "?"
+        target = f"{path}{joint}notice={quote(notice)}" if notice else path
         return RedirectResponse(target, status_code=303)
 
     def referred(request: Request) -> str:
@@ -278,7 +281,7 @@ def create_app(backend: Backend) -> FastAPI:
         return data
 
     @app.get("/workers/new", response_class=HTMLResponse)
-    def new_worker() -> str:
+    def new_worker(root: str = "", notice: str = "") -> str:
         config = backend.config()
         return pages.worker_page(
             backend.snapshot().manager_id,
@@ -286,7 +289,56 @@ def create_app(backend: Backend) -> FastAPI:
             None,
             backend.detect_workers(),
             paused=backend.paused(),
+            root=root.strip(),
+            profiles=backend.portable_profiles(root.strip()) if root.strip() else None,
+            notice=notice,
         )
+
+    def add_found(found: Mapping[str, Any]) -> str:
+        """Add one more worker of a found installation; refused unless it was proven (F15.9)."""
+        if "problem" in found:
+            raise ActionError(f"Not added: {found['problem']}")
+        worker = {k: v for k, v in found.items() if k not in ("version", "problem")}
+        data = _dump(backend.config())
+        names = {w["name"] for w in data.get("workers", [])}
+        base, suffix = str(worker["name"]), 2
+        while worker["name"] in names:
+            worker["name"] = f"{base}-{suffix}"
+            suffix += 1
+        data.setdefault("accounts", {}).setdefault(worker["account"], {})
+        data["workers"] = [*data.get("workers", []), worker]
+        save(data)
+        return str(worker["name"])
+
+    @app.post("/workers/add-portable")
+    async def add_portable(request: Request) -> RedirectResponse:
+        submitted = await form(request)
+        root, profile = submitted.get("root", "").strip(), submitted.get("profile", "")
+        found = next(
+            (p for p in backend.portable_profiles(root) if _profile_of(p) == profile), None
+        )
+        if found is None:
+            raise ActionError(f"Not added: {root} has no profile {profile}")
+        name = add_found(found)
+        return back(
+            f"/workers/new?root={quote(root)}",
+            f"Worker {name} added; it runs one issue at a time. Add again for one more.",
+        )
+
+    @app.post("/workers/remember-root")
+    async def remember_root(request: Request) -> RedirectResponse:
+        root = (await form(request)).get("root", "").strip()
+        data = _dump(backend.config())
+        roots = data.setdefault("manager", {}).setdefault("portableRoots", [])
+        if root and root not in roots:
+            roots.append(root)
+            save(data)
+        return back(f"/workers/new?root={quote(root)}", f"Agents in {root} are found from now on.")
+
+    @app.get("/browse")
+    def browse(path: str = "", drives: bool = False) -> JSONResponse:
+        """The folders below ``path``, for the add page's folder browser (F14.4)."""
+        return JSONResponse(asdict(backend.browse(path, drives)))
 
     @app.post("/workers/add-detected")
     async def add_detected(request: Request) -> RedirectResponse:
@@ -294,20 +346,8 @@ def create_app(backend: Backend) -> FastAPI:
         detected = backend.detect_workers()
         if not 0 <= index < len(detected):
             return back("/workers/new")
-        if "problem" in detected[index]:
-            raise ActionError(f"Not added: {detected[index]['problem']}")
-        found = {k: v for k, v in detected[index].items() if k not in ("version", "problem")}
-        data = _dump(backend.config())
-        names = {w["name"] for w in data.get("workers", [])}
-        base, suffix = str(found["name"]), 2
-        while found["name"] in names:
-            found["name"] = f"{base}-{suffix}"
-            suffix += 1
-        accounts = data.setdefault("accounts", {})
-        accounts.setdefault(found["account"], {})
-        data["workers"] = [*data.get("workers", []), found]
-        save(data)
-        return back("/", f"Worker {found['name']} added.")
+        name = add_found(detected[index])
+        return back("/", f"Worker {name} added.")
 
     @app.post("/workers/new", response_class=HTMLResponse, response_model=None)
     async def create_worker(request: Request) -> Any:
@@ -555,6 +595,12 @@ def create_app(backend: Backend) -> FastAPI:
         return back("/fleet", f"Released {repository}#{issue}.")
 
     return app
+
+
+def _profile_of(found: Mapping[str, object]) -> object:
+    """The profile a found portable installation names, or None."""
+    installation = found.get("installation")
+    return installation.get("profile") if isinstance(installation, dict) else None
 
 
 def _blank_worker() -> WorkerSettings:

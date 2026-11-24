@@ -863,3 +863,84 @@ def test_given_a_worker_described_by_hand_when_it_answers_then_it_is_added(
     mine = next(w for w in backend.config().workers if w.name == "mine")
     assert mine.installation.type == "executable"
     assert mine.installation.env == {"CLAUDE_CONFIG_DIR": "/opt/claude/config"}  # type: ignore[union-attr]
+
+
+DEMO_PORTABLE = "~/ClaudeCodePortable"
+
+
+def test_given_a_portable_folder_when_previewed_then_each_profile_shows_tool_version_and_use(
+    client: TestClient,
+) -> None:
+    html = client.get("/workers/new", params={"root": DEMO_PORTABLE}).text
+    panel = html.split('aria-label="ClaudeCodePortable folder"', 1)[1].split("</section>", 1)[0]
+    rows = {row.split("<td>", 2)[1].split("</td>", 1)[0]: row for row in panel.split("<tr>")[2:]}
+    assert "2.1.331 (Claude Code)" in rows["default"]
+    assert "used by claude, claude-2, claude-3" in rows["default"]
+    assert "codex-cli 0.169.0" in rows["ChatGPTCodex"]
+    assert "not signed in" in rows["GoogleGemini"]
+    assert "<button disabled" in rows["GoogleGemini"]
+    assert "copilot is not a supported agent" in rows["copilot"]
+
+
+def test_given_a_portable_profile_when_added_twice_then_two_workers_use_it(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    form = {"root": DEMO_PORTABLE, "profile": "ChatGPTCodex"}
+    client.post("/workers/add-portable", data=form)
+    client.post("/workers/add-portable", data=form)
+    added = [
+        w
+        for w in backend.config().workers
+        if w.installation.type == "claudecodeportable" and w.installation.profile == "ChatGPTCodex"  # type: ignore[union-attr]
+    ]
+    assert len(added) == 4  # codex and codex-2 were there; each click adds one
+    assert {w.installation.root for w in added[2:]} == {DEMO_PORTABLE}  # type: ignore[union-attr]
+    assert not backend.config().manager.portable_roots
+
+
+def test_given_remember_when_a_portable_folder_is_shown_then_detection_searches_it_later(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    html = client.get("/workers/new", params={"root": DEMO_PORTABLE}).text
+    assert 'action="/workers/remember-root"' in html
+    client.post("/workers/remember-root", data={"root": DEMO_PORTABLE})
+    client.post("/workers/remember-root", data={"root": DEMO_PORTABLE})
+    assert backend.config().manager.portable_roots == [DEMO_PORTABLE]
+    remembered = client.get("/workers/new", params={"root": DEMO_PORTABLE}).text
+    assert 'action="/workers/remember-root"' not in remembered
+
+
+def test_given_a_folder_without_profiles_when_previewed_then_it_says_so(client: TestClient) -> None:
+    html = client.get("/workers/new", params={"root": "/home/me/Projects"}).text
+    assert "no ClaudeCodePortable installation" in html
+
+
+@pytest.mark.parametrize("profile", ["GoogleGemini", "copilot", "nobody"])
+def test_given_a_profile_that_cannot_run_when_added_then_it_is_refused(
+    client: TestClient, backend: DemoBackend, profile: str
+) -> None:
+    before = len(backend.config().workers)
+    response = client.post(
+        "/workers/add-portable",
+        data={"root": DEMO_PORTABLE, "profile": profile},
+        headers={"referer": "http://testserver/workers/new"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303 and "notice=Not%20added" in response.headers["location"]
+    assert len(backend.config().workers) == before
+
+
+def test_given_the_folder_browser_when_it_asks_then_folders_come_as_json(
+    client: TestClient,
+) -> None:
+    listing = client.get("/browse", params={"path": "/home/me"}).json()
+    assert listing["path"] == "/home/me"
+    assert "/home/me/Agents" in listing["folders"]
+    assert listing["portable"] is False
+    portable = client.get("/browse", params={"path": "/home/me/Agents/ClaudePortable"}).json()
+    assert portable["portable"] is True
+
+
+def test_given_the_add_page_when_shown_then_it_offers_a_folder_browser(client: TestClient) -> None:
+    html = client.get("/workers/new").text
+    assert 'name="root"' in html and "data-browse" in html and "/browse" in html

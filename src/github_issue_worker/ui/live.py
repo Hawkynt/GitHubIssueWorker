@@ -11,6 +11,8 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 
+from github_issue_worker.adapters.detection import preview_portable
+from github_issue_worker.adapters.folders import FolderListing, list_folders
 from github_issue_worker.adapters.installations import Unavailable
 from github_issue_worker.adapters.process import terminate
 from github_issue_worker.adapters.workspace import WorkspaceError
@@ -405,6 +407,12 @@ class RuntimeBackend:
 
     def set_paused(self, paused: bool) -> None:
         self._runtime.state.set_paused(paused)
+
+    def portable_profiles(self, root: str) -> list[dict[str, object]]:
+        return list(preview_portable(root, self._runtime.home))
+
+    def browse(self, path: str, drives: bool = False) -> FolderListing:
+        return list_folders(path, self._runtime.home, drives)
 
     def check_worker(self, worker: WorkerSettings) -> str:
         try:
