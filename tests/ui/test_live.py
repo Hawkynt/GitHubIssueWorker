@@ -406,3 +406,33 @@ def test_given_applying_fails_when_saving_then_it_is_an_action_error_and_nothing
     with pytest.raises(ActionError, match=str(raised).split(":")[0]):
         backend.save_config(Configuration())
     assert not path.exists()
+
+
+def test_given_the_live_backend_when_a_worker_is_paused_then_the_configuration_keeps_it(
+    tmp_path: Path,
+) -> None:
+    from github_issue_worker.configuration import (
+        AccountSettings,
+        Configuration,
+        WorkerSettings,
+        load,
+    )
+
+    config = Configuration(
+        accounts={"a": AccountSettings()},
+        workers=[WorkerSettings(name="claude", agent="claude", account="a")],
+    )
+    applied: list[Configuration] = []
+    runtime = SimpleNamespace(
+        config=config,
+        apply=lambda new, manager: (applied.append(new), setattr(runtime, "config", new)),
+    )
+    path = tmp_path / "config.json"
+    backend = RuntimeBackend(runtime, SimpleNamespace(workers=[]), path, lambda *_: [])  # type: ignore[arg-type]
+
+    backend.set_worker_enabled("claude", False)
+    assert load(path).workers[0].enabled is False
+    assert applied[-1].workers[0].enabled is False
+
+    backend.set_worker_enabled("claude.2", True)  # an instance names its worker
+    assert load(path).workers[0].enabled is True

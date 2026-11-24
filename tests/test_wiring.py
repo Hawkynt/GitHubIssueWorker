@@ -886,3 +886,26 @@ def test_given_no_local_clone_when_a_repository_is_removed_then_nothing_is_relea
 
     assert [r.repository for r in load(path).repositories] == ["o/k"]
     assert "o/r" not in runtime.watches
+
+
+def test_given_a_disabled_worker_when_slots_sync_then_it_takes_nothing_until_enabled(
+    tmp_path: Path,
+) -> None:
+    claude = executable(tmp_path / "bin" / "claude")
+    config = _instances_config(claude, 2)
+    config.workers[0].enabled = False
+    runtime = Runtime(
+        config=config,
+        home=tmp_path,
+        api=None,  # type: ignore[arg-type]
+        state=JsonStateStore(tmp_path / "state.json"),
+        manager_id="m",
+        workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+    )
+    runtime.sync_slots()
+    assert [s.enabled for s in runtime.slots] == [False, False]
+
+    enabled = _instances_config(claude, 2)
+    runtime.config = enabled
+    runtime.sync_slots()
+    assert [s.enabled for s in runtime.slots] == [True, True]

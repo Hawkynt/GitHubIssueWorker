@@ -416,6 +416,7 @@ def test_workers_detect_save_writes_workers_and_accounts(
     saved = load(config)
     assert [w.name for w in saved.workers] == ["local"]
     assert saved.accounts["claudelocal"].max_concurrent_runs == 1
+    assert saved.workers[0].enabled is True  # added on purpose
 
 
 class Clock:
@@ -543,6 +544,8 @@ def test_given_no_config_when_watch_starts_then_it_detects_workers_of_one_and_sa
     }
     assert len(observed) == 1
     assert len(observed[0].workers) == 3  # type: ignore[attr-defined]
+    # Found, not chosen: nothing runs until the user switches a worker on.
+    assert {w.enabled for w in saved.workers} == {False}
 
 
 def test_given_no_config_when_watch_starts_with_ui_then_it_opens_web_interface(
