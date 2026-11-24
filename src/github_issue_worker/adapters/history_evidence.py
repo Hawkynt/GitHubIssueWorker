@@ -104,15 +104,15 @@ class HistoryEvidence:
                     agent in ("claude", "local")
                     and last.get("type") == "result"
                     and last.get("is_error")
-                ):
-                    if any(
+                    and any(
                         e.get("api_error") == "usage_limit_reached"
                         or (
                             e.get("type") == "rate_limit_event"
                             and (e.get("rate_limit_info") or {}).get("status") == "rejected"
                         )
                         for e in events
-                    ):
-                        active = False
+                    )
+                ):
+                    active = False
         self._cache[path] = (stat.st_mtime_ns, stat.st_size, active)
         return active
