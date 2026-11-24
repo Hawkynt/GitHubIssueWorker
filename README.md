@@ -101,6 +101,10 @@ on a repository that account cannot push to.
   with a log entry; other repositories keep running.
 - **New issues, new comments, reopened issues** — detected by polling with conditional requests, so
   an idle repository costs no rate limit.
+- **Open pull requests, too** — with `pullRequests` on, open pull requests the manager did not open
+  are worked like issues: red CI repaired, review threads answered and resolved, the change finished
+  and merged. `issues` and `pullRequests` switch each kind on or off per repository. See
+  [Pull requests](#pull-requests).
 - **Automatic triage** — an unlabelled issue gets labels chosen from the repository's existing label
   set; a label it lacks is only created with `createMissingLabels` on.
 - **Spec → scenarios → domain → tests → code** — every issue is worked SDD, BDD, DDD and TDD, in that
@@ -440,6 +444,33 @@ Commenting continues the work from the journal; raise the limit first if it was 
 
 The question comment names the options, the trade-off of each, and the one the worker recommends, so
 that "go with your recommendation" is a complete answer.
+
+### Pull requests
+
+With `pullRequests: true` (off by default) a repository's open pull requests are work items next to
+its issues, and `issues: false` turns issues off, so a repository is watched for either or both.
+A pull request is taken on when it is open and not a draft, its author is trusted, the manager did not
+open it (its own pull requests belong to their issue and are worked there), it carries no
+`worker:skip` (and, with `mode: labeled`, carries `worker`), and its branch can be pushed to: the
+branch lives in the repository itself, or it comes from a fork whose author allows edits by
+maintainers. One whose branch cannot be pushed to is labelled `worker:unserved` with one comment
+saying why.
+
+It is worked when something asks for work: it was opened or reopened, its checks turned red, a review
+requested changes or left an unresolved thread, or a trusted comment asks for more. The worker checks
+out the pull request's own branch, never a new one, and gets its title and description, the change
+against its base, the failing jobs' logs, every unresolved review thread and the trusted comments.
+It works in the same order as an issue (spec, scenarios, domain, tests, code) towards three goals:
+the checks are green, every review thread is answered and, where the change addresses it, resolved,
+and the change does what its description says. Its commits pass the same commit gate and are pushed
+on top of the branch, never forced over the author's commits; a moved base is merged in rather than
+rebased onto, so the author's history stays.
+
+When the checks are green, no review requests changes and the repository's rules allow it, the pull
+request is merged with `mergeMethod`, and the issues it closes are closed by its own closing
+keywords. Otherwise it ends as an issue would: a question on the pull request (`worker:needs-input`),
+or `worker:awaiting-review` when only a review is missing. Pull requests and issues share one number
+space, so claims, labels and the queue treat both alike.
 
 ## 🤹 Workers
 
@@ -889,6 +920,8 @@ first, and a moved UI listener reopens on its new address.
 | `fleet.localHandOff` | `true` | On a usage limit, pass the issue to an idle local worker on another account. |
 | `fleet.handOffWhenPausedLongerThan` | off | Release a paused issue to the fleet when its reset is further away than this. |
 | `mode` | `all` | `all`: every trusted issue. `labeled`: only issues carrying the `worker` label. |
+| `issues` | `true` | Work the repository's issues. `false` ignores them entirely: no label, no claim. |
+| `pullRequests` | `false` | Also work open pull requests the manager did not open: repair red CI, answer and resolve review threads, finish and merge them. See [Pull requests](#pull-requests). |
 | `baseBranch` | repo default | Branch that work starts from and merges into. |
 | `mergeMethod` | `squash` | Used when the repository allows it, else the first allowed method. |
 | `ciRepairAttempts` | 3 | Red-CI repair rounds before asking. |
@@ -1462,6 +1495,36 @@ operational items, demonstrated on a real repository. Commits that implement an 
   (shortened in the test configuration).
 - [ ] 🟦 **F15.8** An OpenCode worker from a normal OpenCode installation works an issue to a merged
   PR, and its captured output replaces the fixtures of F12.6.
+
+### F16 — Pull requests
+
+- [ ] 🟥 **F16.1** `issues` (default `true`) and `pullRequests` (default `false`), under `defaults`
+  and per repository, editable in the file, the CLI and the UI. `issues: false` ignores issues
+  entirely; `pullRequests: false` ignores every pull request the manager did not open.
+- [ ] 🟥 **F16.2** Polls open pull requests (`state=open`, `sort=updated`) with `If-None-Match`,
+  plus the check runs of each candidate's head, its reviews and review threads, and classifies
+  *opened*, *reopened*, *synchronized*, *checks-failed*, *changes-requested*, *review-commented* and
+  *commented*.
+- [ ] 🟥 **F16.3** Eligibility: open, not a draft, trusted author, not opened by the manager, no
+  `worker:skip`, `worker` when `mode: labeled`, and pushable (same repository, or
+  `maintainer_can_modify`). Anything else that would be worked is labelled `worker:unserved` with
+  one comment naming the reason.
+- [ ] 🟥 **F16.4** Claims, labels, queue order, takeovers and usage limits work for pull requests
+  exactly as for issues, keyed by the pull request number.
+- [ ] 🟥 **F16.5** The worktree is the pull request's head branch (a fork's through
+  `refs/pull/<n>/head`, pushed back to the fork's branch). The run gets the title, the description,
+  the change against the base, the failing jobs' logs, the unresolved review threads and the trusted
+  comments.
+- [ ] 🟥 **F16.6** Commits pass the commit gate (F7.1) and are pushed fast-forward on top of the
+  author's commits, never with force; a moved base is merged in, not rebased onto.
+- [ ] 🟥 **F16.7** Red checks are repaired up to `ciRepairAttempts` rounds, then the worker asks.
+- [ ] 🟥 **F16.8** Every unresolved review thread is answered; one the change addresses is resolved;
+  a review that requested changes is re-requested once they are made.
+- [ ] 🟥 **F16.9** Merged with `mergeMethod` and the expected head `sha` when the checks are green,
+  no review requests changes and the branch rules allow it; `worker:awaiting-review` when only a
+  review is missing. A draft is never merged.
+- [ ] 🟧 **F16.10** The Issues page lists worked pull requests beside issues, marked as pull
+  requests, and the Repositories page edits both switches.
 
 ## 🏗️ Architecture
 
