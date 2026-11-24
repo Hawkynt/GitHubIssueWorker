@@ -102,6 +102,10 @@ class RepositoryWatch:
     store: ClaimStore
     mode: Literal["all", "labeled"] = "all"
     process_backlog: bool = False
+    issues: bool = True
+    """False: issue events are ignored, nothing is labelled or claimed; held work finishes."""
+    pull_requests: bool = False
+    """Work open pull requests the manager did not open (F16)."""
     stopping: threading.Event = field(default_factory=threading.Event)
     settings: object = None
     """Whatever the run factory needs for this repository (merge method, commands, ...)."""
@@ -260,6 +264,9 @@ class Manager:
 
         touched = {issue.number for issue in result.issues} | {c.issue for c in result.comments}
         pending = self._pending.setdefault(watch.name, set())
+        if not watch.issues:
+            touched = set()  # F16.1: only the work this manager already holds goes on
+            pending.clear()
         if self.paused():
             pending |= touched
             return

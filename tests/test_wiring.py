@@ -965,3 +965,35 @@ def test_given_an_agent_that_updated_itself_when_workers_refresh_then_its_new_ve
     answer[0] = "2.1.332 (Claude Code)"
     runtime.refresh_auth()
     assert runtime.slots[0].version == "2.1.332 (Claude Code)"
+
+
+@pytest.mark.parametrize(
+    ("defaults", "override", "expected"),
+    [({}, None, True), ({"issues": False}, None, False), ({"issues": False}, True, True)],
+)
+def test_given_the_issues_switch_when_watching_then_the_override_wins(
+    tmp_path: Path, defaults: dict[str, bool], override: bool | None, expected: bool
+) -> None:
+    from tests.application.test_manager import Fixture
+
+    repository: dict[str, object] = {"repository": "o/r"}
+    if override is not None:
+        repository["issues"] = override
+    config = parse(json.dumps({"defaults": defaults, "repositories": [repository]}))
+    runtime = Runtime(
+        config=config,
+        home=tmp_path,
+        api=SimpleNamespace(clock=FakeClock(datetime(2026, 10, 30, tzinfo=UTC))),  # type: ignore[arg-type]
+        state=JsonStateStore(tmp_path / "state.json"),
+        manager_id="m",
+        workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+    )
+    assert runtime.watch(config.repositories[0]).issues is expected
+
+    flipped = parse(
+        json.dumps({"defaults": {"issues": not expected}, "repositories": [{"repository": "o/r"}]})
+    )
+    f = Fixture([])
+    f.manager.repositories = [runtime.watches["o/r"]]
+    runtime.apply(flipped, f.manager)
+    assert runtime.watches["o/r"].issues is (not expected)

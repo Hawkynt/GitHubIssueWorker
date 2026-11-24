@@ -379,3 +379,15 @@ def test_given_an_invalid_old_run_count_when_migrating_then_it_counts_as_one(val
 
 def test_given_no_accounts_when_migrating_then_nothing_changes() -> None:
     assert validate({}).workers == []
+
+
+def test_given_no_switches_when_parsed_then_issues_are_worked_and_pull_requests_not() -> None:
+    config = parse('{"repositories": [{"repository": "o/a"}]}')
+    assert config.defaults.issues is True and config.defaults.pull_requests is False
+    assert config.repositories[0].issues is None and config.repositories[0].pull_requests is None
+    switched = parse(
+        '{"defaults": {"pullRequests": true},'
+        ' "repositories": [{"repository": "o/a", "issues": false}]}'
+    )
+    assert switched.defaults.pull_requests is True
+    assert switched.repositories[0].issues is False
