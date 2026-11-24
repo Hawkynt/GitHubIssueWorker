@@ -150,7 +150,7 @@ def _add_detected_workers(
         if raw["name"] in existing:
             continue
         if raw["account"] not in accounts:
-            accounts[raw["account"]] = AccountSettings(max_concurrent_runs=1)
+            accounts[raw["account"]] = AccountSettings()
         workers.append(WorkerSettings.model_validate({**raw, "enabled": enabled}))
     config.workers, config.accounts = workers, accounts
 

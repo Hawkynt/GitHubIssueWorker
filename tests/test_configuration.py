@@ -6,10 +6,8 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from github_issue_worker.configuration import (
-    AccountSettings,
     Configuration,
     ConfigurationError,
     default_path,
@@ -56,7 +54,6 @@ def test_the_readme_example_is_valid() -> None:
     config = parse(readme_example())
     assert [worker.name for worker in config.workers] == ["claude", "codex", "antigravity", "local"]
     assert config.workers[3].installation.type == "claudelocal"
-    assert config.accounts["local-gpu"].max_concurrent_runs == 1
     assert config.repositories[1].mode == "labeled"
 
 
@@ -317,13 +314,6 @@ def test_the_readme_configuration_table_documents_forbidden_words() -> None:
     assert "| `forbiddenWords` |" in section
 
 
-def test_concurrent_runs_default_to_one_and_stop_at_twenty() -> None:
-    assert AccountSettings().max_concurrent_runs == 1
-    for wrong in (0, 21, None):
-        with pytest.raises(ValidationError):
-            AccountSettings(max_concurrent_runs=wrong)  # type: ignore[arg-type]
-
-
 def test_a_worker_name_cannot_look_like_an_instance() -> None:
     data = {
         "accounts": {"a": {}},
@@ -346,3 +336,46 @@ def test_given_a_worker_when_parsed_then_it_is_enabled_unless_switched_off() -> 
     off = parse(json.dumps({"accounts": {"a": {}}, "workers": [{**base, "enabled": False}]}))
     assert on.workers[0].enabled is True
     assert off.workers[0].enabled is False
+
+
+def _worker(name: str, account: str) -> dict[str, str]:
+    return {"name": name, "agent": "claude", "account": account}
+
+
+def test_given_an_old_run_count_when_loaded_then_it_becomes_that_many_workers() -> None:
+    config = validate(
+        {
+            "accounts": {"a": {"maxConcurrentRuns": 3}, "b": {"maxConcurrentRuns": 1}, "c": {}},
+            "workers": [_worker("claude", "a"), _worker("codex", "b"), _worker("agy", "c")],
+        }
+    )
+    assert [(w.name, w.account) for w in config.workers] == [
+        ("claude", "a"),
+        ("claude-2", "a"),
+        ("claude-3", "a"),
+        ("codex", "b"),
+        ("agy", "c"),
+    ]
+    assert set(config.accounts) == {"a", "b", "c"}
+
+
+def test_given_a_copy_name_is_taken_when_migrating_then_the_next_free_one_is_used() -> None:
+    config = validate(
+        {
+            "accounts": {"a": {"maxConcurrentRuns": 2}, "b": {}},
+            "workers": [_worker("claude", "a"), _worker("claude-2", "b")],
+        }
+    )
+    assert [w.name for w in config.workers] == ["claude", "claude-3", "claude-2"]
+
+
+@pytest.mark.parametrize("value", [0, -1, "two", None])
+def test_given_an_invalid_old_run_count_when_migrating_then_it_counts_as_one(value: object) -> None:
+    config = validate(
+        {"accounts": {"a": {"maxConcurrentRuns": value}}, "workers": [_worker("claude", "a")]}
+    )
+    assert [w.name for w in config.workers] == ["claude"]
+
+
+def test_given_no_accounts_when_migrating_then_nothing_changes() -> None:
+    assert validate({}).workers == []

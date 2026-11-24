@@ -151,9 +151,8 @@ def create_app(backend: Backend) -> FastAPI:
         index = 0
         while f"accounts[{index}].name" in submitted:
             name = submitted[f"accounts[{index}].name"].strip()
-            runs = submitted.get(f"accounts[{index}].maxConcurrentRuns", "").strip()
             if name and submitted.get(f"accounts[{index}].remove") != "true":
-                accounts[name] = {"maxConcurrentRuns": runs} if runs else {}
+                accounts[name] = {}
             index += 1
         if accounts or config.accounts:
             data["accounts"] = accounts
@@ -295,9 +294,7 @@ def create_app(backend: Backend) -> FastAPI:
             found["name"] = f"{base}-{suffix}"
             suffix += 1
         accounts = data.setdefault("accounts", {})
-        if found["account"] not in accounts:
-            local = found["installation"]["type"] == "claudelocal"  # type: ignore[index]
-            accounts[found["account"]] = {"maxConcurrentRuns": 1} if local else {}
+        accounts.setdefault(found["account"], {})
         data["workers"] = [*data.get("workers", []), found]
         save(data)
         return back("/", f"Worker {found['name']} added.")

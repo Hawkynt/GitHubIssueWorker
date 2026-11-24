@@ -343,11 +343,7 @@ def test_given_no_config_when_once_starts_then_it_detects_workers_of_one_and_sav
         ("codex", "codex", "path"),
         ("antigravity", "antigravity", "path"),
     }
-    assert {name: acc.max_concurrent_runs for name, acc in saved.accounts.items()} == {
-        "claude": 1,
-        "codex": 1,
-        "antigravity": 1,
-    }
+    assert set(saved.accounts) == {"claude", "codex", "antigravity"}
 
 
 def tool(path: Path) -> None:
@@ -427,7 +423,7 @@ def test_workers_detect_save_writes_workers_and_accounts(
     assert main(["--config", str(config), "workers", "--detect", "--save"], home=tmp_path) == 0
     saved = load(config)
     assert [w.name for w in saved.workers] == ["local"]
-    assert saved.accounts["claudelocal"].max_concurrent_runs == 1
+    assert set(saved.accounts) == {"claudelocal"}
     assert saved.workers[0].enabled is True  # added on purpose
 
 
@@ -549,11 +545,7 @@ def test_given_no_config_when_watch_starts_then_it_detects_workers_of_one_and_sa
         ("codex", "codex", "path"),
         ("antigravity", "antigravity", "path"),
     }
-    assert {name: acc.max_concurrent_runs for name, acc in saved.accounts.items()} == {
-        "claude": 1,
-        "codex": 1,
-        "antigravity": 1,
-    }
+    assert set(saved.accounts) == {"claude", "codex", "antigravity"}
     assert len(observed) == 1
     assert len(observed[0].workers) == 3  # type: ignore[attr-defined]
     # Found, not chosen: nothing runs until the user switches a worker on.

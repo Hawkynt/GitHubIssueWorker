@@ -35,7 +35,6 @@ from github_issue_worker.application.manager import (
     Manager,
     RepositoryWatch,
     WorkerSlot,
-    instance_name,
 )
 from github_issue_worker.application.poller import Poller, PollState
 from github_issue_worker.application.repository_removal import release_repository
@@ -524,23 +523,13 @@ class Runtime:
 
         self.sync_slots()
         manager.workers = self.slots
-        manager.max_runs = self.max_runs
-
-    def max_runs(self, account: str) -> int:
-        settings = self.config.accounts.get(account)
-        return settings.max_concurrent_runs if settings else 1
 
     def sync_slots(self) -> None:
-        """One slot per instance: as many per worker as its account runs at once (F12.11).
+        """One slot per configured worker, each running one issue at a time (F12.11).
 
-        Instances no longer wanted are dropped, or, while busy, finish their run and take
-        nothing new.
+        Slots no longer wanted are dropped, or, while busy, finish their run and take nothing new.
         """
-        wanted = {
-            instance_name(worker.name, number): worker
-            for worker in self.config.workers
-            for number in range(1, self.max_runs(worker.account) + 1)
-        }
+        wanted = {worker.name: worker for worker in self.config.workers}
         for slot in list(self.slots):
             if slot.name not in wanted:
                 if slot.busy:
@@ -662,7 +651,6 @@ class Runtime:
             run_issue=self.run_issue,
             spawn=lambda job: threading.Thread(target=job, daemon=True).start(),
             on_finished=self.record,
-            max_runs=self.max_runs,
             sweep=self._sweep,
             refresh_workers=self.refresh_auth,
             paused=self.state.paused,

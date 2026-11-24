@@ -90,7 +90,8 @@ def test_every_configuration_key_has_a_field_on_some_page(client: TestClient) ->
         "installation.profile",
     } <= worker
     assert schema_paths(RepositorySettings) - repository == set()
-    assert {"accounts[0].name", "accounts[0].maxConcurrentRuns"} <= settings
+    assert "accounts[0].name" in settings
+    assert not any("maxConcurrentRuns" in name for name in settings)
 
 
 def test_saving_settings_writes_only_what_changed(client: TestClient, backend: DemoBackend) -> None:
@@ -101,7 +102,7 @@ def test_saving_settings_writes_only_what_changed(client: TestClient, backend: D
     config = backend.config()
     assert config.poll_interval.total_seconds() == 150
     assert not config.fleet.is_set("claim_grace")
-    assert config.accounts["local-gpu"].max_concurrent_runs == 1
+    assert "local-gpu" in config.accounts
 
 
 def test_an_invalid_setting_is_refused_with_its_path(
@@ -391,7 +392,7 @@ def test_a_freshly_loaded_settings_page_marks_nothing_as_changed(client: TestCli
     assert _marked(client.get("/settings").text) == set()
     assert {name for name, tag in controls.items() if "data-saved=" not in tag} == set()
     assert 'data-saved="00:01:00"' in controls["pollInterval"]
-    assert 'data-saved="1"' in controls["accounts[3].maxConcurrentRuns"]
+    assert 'data-saved="local-gpu"' in controls["accounts[3].name"]
 
 
 def test_the_settings_page_carries_the_script_that_marks_edited_values(
@@ -613,25 +614,14 @@ def test_opening_a_worktree_hands_it_to_the_file_manager(
     assert "is not working on an issue" in client.post("/workers/local/open").text
 
 
-def test_a_worker_row_has_a_sub_row_per_instance_its_account_allows(client: TestClient) -> None:
+def test_an_agent_added_twice_is_two_rows_each_running_one_issue(client: TestClient) -> None:
+    # F12.11: no instances; each worker is one row that runs one issue at a time.
     crew = client.get("/workers").text.split('aria-label="Crew"', 1)[1].split("</section>", 1)[0]
-    claude = re.split(
-        r'<div class=(?:"lane[^\"]*"|lane)', crew.split('aria-label="claude"', 1)[1], maxsplit=1
-    )[0]
-    assert (
-        len(re.findall(r'<div class=(?:"run(?: waiting)?"|run)>', claude)) == 3
-    )  # anthropic-max runs three at once
-    assert "2 of 3 running" in claude
-    assert "#214 Retry uploads" in claude and "#57 Export tokens" in claude
-    assert 'action="/workers/claude.2/stop"' in claude  # each instance stops on its own
-    assert claude.count('action="/workers/claude/pause"') == 1  # the worker pauses as a whole
-    codex = re.split(
-        r'<div class=(?:"lane[^\"]*"|lane)', crew.split('aria-label="codex"', 1)[1], maxsplit=1
-    )[0]
-    assert (
-        len(re.findall(r'<div class=(?:"run(?: waiting)?"|run)>', codex)) == 2
-        and "1 of 2 running" in codex
-    )
+    for name in ("claude", "claude-2", "claude-3"):
+        assert crew.count(f'aria-label="{name}"') == 1, name
+    assert "#214 Retry uploads" in crew and "#57 Export tokens" in crew
+    assert 'action="/workers/claude-2/stop"' in crew
+    assert crew.count('action="/workers/claude/pause"') == 1
     assert crew.count('aria-label="local"') == 1
 
 

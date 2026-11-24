@@ -23,8 +23,6 @@ from github_issue_worker.application.history import (
     weekly_mix,
 )
 from github_issue_worker.configuration import (
-    MAX_CONCURRENT_RUNS,
-    AccountSettings,
     Configuration,
     DefaultsSettings,
     ModelColorsSettings,
@@ -1981,13 +1979,10 @@ def settings_page(
 
 def _accounts(config: Configuration) -> str:
     rows = []
-    for index, (name, account) in enumerate([*config.accounts.items(), ("", AccountSettings())]):
-        runs = str(account.max_concurrent_runs) if name else ""
+    for index, name in enumerate([*config.accounts, ""]):
         rows.append(
             f'<tr><td><input name="accounts[{index}].name" value="{e(name)}" '
             f'placeholder="{"new account" if not name else ""}" aria-label="Account name"{_saved(name, name)}></td>'
-            f'<td><input type=number min=1 max={MAX_CONCURRENT_RUNS} name="accounts[{index}].maxConcurrentRuns" '
-            f'value="{e(runs)}" placeholder="1" aria-label="Runs at once"{_saved(runs, runs)}></td>'
             + (
                 f'<td><label><input type=checkbox name="accounts[{index}].remove" value=true{_saved("false", "false")}> remove</label></td>'
                 if name
@@ -1997,9 +1992,10 @@ def _accounts(config: Configuration) -> str:
         )
     return (
         '<fieldset class="panel wide"><legend>Accounts</legend>'
-        "<p class=quiet>What workers bill against. Usage limits are tracked per account; a local "
-        "model that serves one request at a time gets 1 run at once.</p>"
-        "<div class=scroll><table><thead><tr><th>Name</th><th>Runs at once</th><th></th></tr>"
+        "<p class=quiet>What workers bill against. Usage limits are tracked per account, so "
+        "every worker on one account pauses together. Each worker runs one issue at a time: "
+        "add an agent again on the Workers page to run more at once.</p>"
+        "<div class=scroll><table><thead><tr><th>Name</th><th></th></tr>"
         f"</thead><tbody>{''.join(rows)}</tbody></table></div></fieldset>"
     )
 

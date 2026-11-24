@@ -42,10 +42,10 @@ CONFIG = {
     "pollInterval": "00:01:00",
     "trustedUsers": ["release-bot-owner"],
     "accounts": {
-        "anthropic-max": {"maxConcurrentRuns": 3},
-        "openai-plus": {"maxConcurrentRuns": 2},
-        "google-pro": {"maxConcurrentRuns": 2},
-        "local-gpu": {"maxConcurrentRuns": 1},
+        "anthropic-max": {},
+        "openai-plus": {},
+        "google-pro": {},
+        "local-gpu": {},
     },
     "workers": [
         {
@@ -66,6 +66,31 @@ CONFIG = {
         },
         {
             "name": "antigravity",
+            "agent": "antigravity",
+            "account": "google-pro",
+            "priority": 3,
+            "installation": {"type": "claudecodeportable", "profile": "GoogleGemini"},
+        },
+        *(
+            {
+                "name": f"claude-{n}",
+                "agent": "claude",
+                "account": "anthropic-max",
+                "priority": 1,
+                "model": "opus",
+                "installation": {"type": "claudecodeportable", "profile": "default"},
+            }
+            for n in (2, 3)
+        ),
+        {
+            "name": "codex-2",
+            "agent": "codex",
+            "account": "openai-plus",
+            "priority": 2,
+            "installation": {"type": "claudecodeportable", "profile": "ChatGPTCodex"},
+        },
+        {
+            "name": "antigravity-2",
             "agent": "antigravity",
             "account": "google-pro",
             "priority": 3,
@@ -110,7 +135,7 @@ WORKERS = (
         agent_kind="claude",
     ),
     WorkerView(
-        "claude.2",
+        "claude-2",
         "Claude Code",
         "anthropic-max",
         "Claude Opus 5.5",
@@ -122,16 +147,16 @@ WORKERS = (
         branch="issue/57-export-tokens-as-css-custom-properties",
         worktree="~/.cache/GitHubIssueWorker/acme/design-tokens/issues/57",
         since=NOW - timedelta(minutes=9),
-        group="claude",
+        group="claude-2",
         agent_kind="claude",
     ),
     WorkerView(
-        "claude.3",
+        "claude-3",
         "Claude Code",
         "anthropic-max",
         "Claude Opus 5.5",
         "idle",
-        group="claude",
+        group="claude-3",
         agent_kind="claude",
     ),
     WorkerView(
@@ -154,7 +179,13 @@ WORKERS = (
         agent_kind="codex",
     ),
     WorkerView(
-        "codex.2", "Codex", "openai-plus", "GPT 6.1 Sol", "idle", group="codex", agent_kind="codex"
+        "codex-2",
+        "Codex",
+        "openai-plus",
+        "GPT 6.1 Sol",
+        "idle",
+        group="codex-2",
+        agent_kind="codex",
     ),
     WorkerView(
         "antigravity",
@@ -174,13 +205,13 @@ WORKERS = (
         agent_kind="antigravity",
     ),
     WorkerView(
-        "antigravity.2",
+        "antigravity-2",
         "Antigravity",
         "google-pro",
         "Gemini 4 Argon (Medium)",
         "limited",
         limited_until=GOOGLE_RESET,
-        group="antigravity",
+        group="antigravity-2",
         reason="Token allowance reached",
         agent_kind="antigravity",
     ),
@@ -232,7 +263,7 @@ CLAIMS = (
     ClaimView(
         "acme/design-tokens",
         57,
-        f"{MANAGER}/claude.2",
+        f"{MANAGER}/claude-2",
         True,
         "working",
         "implement",
@@ -379,7 +410,7 @@ ISSUES += (
         57,
         "Export tokens as CSS custom properties",
         "worked here",
-        "claude.2",
+        "claude-2",
         MANAGER,
         True,
         "Claude Opus 5.5",

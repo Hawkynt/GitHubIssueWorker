@@ -53,15 +53,10 @@ class Limits(Protocol):
     def set_limited(self, account: str, until: datetime | None) -> None: ...
 
 
-def instance_name(worker: str, instance: int) -> str:
-    """The first instance carries the worker's own name, so its claims survive a resize."""
-    return worker if instance == 1 else f"{worker}.{instance}"
-
-
 @dataclass
 class WorkerSlot:
     name: str
-    """The instance's name: the worker's name, then ``<worker>.2``, ``<worker>.3``, ..."""
+    """The worker's name; each configured worker is one slot that runs one issue at a time."""
     agent: str
     account: str
     priority: int = 100
@@ -83,7 +78,7 @@ class WorkerSlot:
     log_path: Path | None = None
     """Where the current (or last) agent run of this worker writes its output."""
     worker: str = ""
-    """The configured worker this slot is an instance of; empty means the slot's own name."""
+    """The configured worker this slot runs; empty means the slot's own name."""
     blocker: Blocker | None = None
     """What the current run waits on that only a person can do, such as approving CI."""
     worked: bool | None = None
@@ -153,8 +148,6 @@ class Manager:
     sweep: Callable[[RepositoryWatch, set[int], set[int]], None] | None = None
     """Removes finished branches and worktrees, given the issues held here and held anywhere."""
     sweep_every: timedelta = timedelta(hours=1)
-    max_runs: Callable[[str], int] | None = None
-    """An account's ``maxConcurrentRuns`` on this manager (F12.11); None leaves it uncapped."""
     stopping: Callable[[], bool] = lambda: False
     paused: Callable[[], bool] = lambda: False
     """While paused the manager polls and shows, but claims, labels and starts nothing; what it
@@ -413,7 +406,6 @@ class Manager:
                 and not slot.auth_error
                 and self._idle(slot)
                 and not self._limited(slot, now)
-                and self._has_room(slot)
             ]
             if (
                 not free
@@ -514,18 +506,6 @@ class Manager:
 
     def _idle(self, slot: WorkerSlot) -> bool:
         return not slot.busy and slot.name not in self._own.values()
-
-    def _has_room(self, slot: WorkerSlot) -> bool:
-        """Below the account's cap, counting every slot on it that runs or holds a claim."""
-        if self.max_runs is None:
-            return True
-        holding = set(self._own.values())
-        used = sum(
-            1
-            for other in self.workers
-            if other.account == slot.account and (other.busy or other.name in holding)
-        )
-        return used < self.max_runs(slot.account)
 
     def _limited(self, slot: WorkerSlot, now: datetime) -> bool:
         until = self.limits.limited_until(slot.account)
