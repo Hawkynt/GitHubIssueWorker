@@ -13,7 +13,7 @@ import logging
 import re
 import threading
 from collections.abc import Callable, MutableMapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal, Protocol
@@ -25,6 +25,12 @@ from github_issue_worker.application.poller import PollResult, PollState
 from github_issue_worker.domain.claim import ClaimState, Holder, RunEntry, takeover_evidence
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.domain.model_name import display_model
+from github_issue_worker.domain.pull_request import (
+    PullRequestFacts,
+    ReviewFacts,
+    eligibility,
+    wanted_work,
+)
 from github_issue_worker.domain.queue import queue_key, queue_rank
 from github_issue_worker.domain.split import (
     SPLIT_LABEL,
@@ -51,6 +57,11 @@ log = logging.getLogger(__name__)
 class Limits(Protocol):
     def limited_until(self, account: str) -> datetime | None: ...
     def set_limited(self, account: str, until: datetime | None) -> None: ...
+
+
+MANAGER_BRANCH_PREFIX = "issue/"
+"""The manager's own branches; their pull requests are worked through their issue."""
+UNSERVED_LABEL = "worker:unserved"
 
 
 @dataclass
@@ -384,7 +395,14 @@ class Manager:
             self._continue_own(watch, issue, ClaimHandle(stored.version, claim), context)
             return
 
-        kind = pending_run(context)
+        head_branch: str | None = None
+        if issue.is_pull_request:
+            head_branch = self._pull_request_branch(watch, issue, context, trusted)
+            if head_branch is None:
+                return
+            kind: RunKind | None = RunKind.PULL_REQUEST
+        else:
+            kind = pending_run(context)
         if kind is RunKind.CONTINUATION and claim and watch.coordinator.policy.stalled(claim, now):
             self._give_up(watch, number)
             return
@@ -432,7 +450,7 @@ class Manager:
             slot = min(free, key=lambda candidate: candidate.priority)
             if self.stopping():
                 return
-            branch = claim.branch if claim else branch_name(issue)
+            branch = head_branch or (claim.branch if claim else branch_name(issue))
             handle = watch.coordinator.claim(
                 number, Holder(self.manager_id, slot.name), branch, model=_model_of(slot)
             )
@@ -440,6 +458,56 @@ class Manager:
             if handle is None:
                 return
             self._start(watch, slot, handle, issue, new_input(context), kind)
+
+    def _pull_request_branch(
+        self,
+        watch: RepositoryWatch,
+        issue: Issue,
+        context: WorkContext,
+        trusted: Callable[[Actor], bool],
+    ) -> str | None:
+        """The branch of an open pull request that asks for work now (F16.3, F16.4), or None."""
+        number = issue.number
+        pending = self._pending.setdefault(watch.name, set())
+        if not watch.pull_requests:
+            pending.discard(number)
+            return None
+        pull = watch.host.pull_request(number)
+        same = pull.same_repository(watch.name)
+        facts = PullRequestFacts(
+            number=number,
+            state=pull.state,
+            draft=pull.draft,
+            labels=issue.labels,
+            same_repository=same,
+            maintainer_can_modify=pull.maintainer_can_modify,
+            opened_by_manager=same and pull.head_ref.startswith(MANAGER_BRANCH_PREFIX),
+        )
+        verdict, reason = eligibility(facts, watch.mode, trusted(issue.author))
+        if verdict != "work":
+            pending.discard(number)
+            if verdict == "unserved":
+                if UNSERVED_LABEL not in issue.labels and (
+                    self._labelled.get((watch.name, number)) != UNSERVED_LABEL
+                ):
+                    watch.host.comment(number, f"No worker can work this pull request: {reason}.")
+                self._label(watch, number, UNSERVED_LABEL)
+            return None
+        # Claims, takeovers, waiting and new input work as for an issue (F16.4).
+        if pending_run(replace(context, issue=replace(issue, is_pull_request=False))) is None:
+            pending.discard(number)
+            return None
+        checks = watch.host.checks(pull.head_sha)
+        review = watch.host.review_state(number)
+        wanted = wanted_work(
+            tuple(c.conclusion if c.status == "completed" else None for c in checks),
+            ReviewFacts(review.decision, len(review.threads)),
+            new_input=bool(new_input(context)),
+        )
+        if not wanted:
+            pending.add(number)  # its checks still run: look again next poll
+            return None
+        return pull.head_ref
 
     def _give_up(self, watch: RepositoryWatch, number: int) -> None:
         """Mark an issue failed that crashed every holder it met (F11.12)."""
@@ -476,7 +544,8 @@ class Manager:
                 if claim.paused_until and claim.paused_until > self.clock.now():
                     return
                 handle = watch.coordinator.resume(handle)
-            self._start(watch, slot, handle, issue, new_input(context), RunKind.CONTINUATION)
+            kind = RunKind.PULL_REQUEST if issue.is_pull_request else RunKind.CONTINUATION
+            self._start(watch, slot, handle, issue, new_input(context), kind)
 
     def _finish_split(self, watch: RepositoryWatch, number: int) -> None:
         """Close a split parent once every sub-issue is completed (F4.6)."""

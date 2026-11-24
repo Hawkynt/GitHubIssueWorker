@@ -321,3 +321,55 @@ def test_a_repository_has_a_clone_only_once_it_was_cloned(workspace: Workspace) 
     workspace.clone(REPO)
     assert workspace.has_clone(REPO)
     assert not workspace.has_clone("Hawkynt/Other")
+
+
+def test_a_moved_base_is_merged_in_keeping_the_branch_history(
+    workspace: Workspace, remote: Path, tmp_path: Path
+) -> None:
+    tree = workspace.worktree(REPO, issue=7, branch="feature", base="main")
+    mine = commit(tree, "+ mine", name="mine.txt")
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(remote), str(other)], check=True)
+    commit(other, "+ base moved", name="base.txt")
+    git("push", "-q", "origin", "HEAD:main", cwd=other)
+
+    assert workspace.merge_in(tree, "main", "* main merged into the branch\n\n* takes it up")
+    assert (tree / "base.txt").exists()
+    assert git("rev-parse", "HEAD^1", cwd=tree) == mine  # nothing of the branch was rewritten
+    added = workspace.commits_since(tree, mine)
+    assert added[-1].message.startswith("* main merged into the branch")
+    assert mine not in {c.sha for c in added}
+
+
+def test_a_conflicting_merge_is_abandoned_cleanly(
+    workspace: Workspace, remote: Path, tmp_path: Path
+) -> None:
+    tree = workspace.worktree(REPO, issue=8, branch="clash", base="main")
+    commit(tree, "+ mine", name="file.txt")
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(remote), str(other)], check=True)
+    commit(other, "+ theirs", name="file.txt")
+    git("push", "-q", "origin", "HEAD:main", cwd=other)
+
+    assert not workspace.merge_in(tree, "main", "* main merged")
+    assert git("status", "--porcelain", cwd=tree) == ""
+
+
+def test_a_fast_forward_push_never_overwrites_commits_it_does_not_have(
+    workspace: Workspace, remote: Path, tmp_path: Path
+) -> None:
+    tree = workspace.worktree(REPO, issue=9, branch="theirs", base="main")
+    commit(tree, "+ first", name="a.txt")
+    first = workspace.push_fast_forward(REPO, tree, "theirs")
+    assert git("rev-parse", "refs/heads/theirs", cwd=remote) == first
+
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", "-b", "theirs", str(remote), str(other)], check=True)
+    commit(other, "+ the author pushed meanwhile", name="b.txt")
+    git("push", "-q", "origin", "HEAD:theirs", cwd=other)
+    author = git("rev-parse", "HEAD", cwd=other)
+
+    commit(tree, "+ second", name="c.txt")
+    with pytest.raises(PushRejected):
+        workspace.push_fast_forward(REPO, tree, "theirs")
+    assert git("rev-parse", "refs/heads/theirs", cwd=remote) == author

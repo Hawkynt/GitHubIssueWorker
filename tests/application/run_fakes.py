@@ -11,7 +11,13 @@ from pathlib import Path
 from github_issue_worker.adapters.workspace import CommitInfo, PushRejected
 from github_issue_worker.domain.issue import Actor, Comment, Issue
 from github_issue_worker.ports.agents import JOURNAL_FILE, AgentRun, RunReport
-from github_issue_worker.ports.repository import Check, PullRequest, RepositoryInfo, WaitingRun
+from github_issue_worker.ports.repository import (
+    Check,
+    PullRequest,
+    RepositoryInfo,
+    ReviewState,
+    WaitingRun,
+)
 
 NOW = datetime(2026, 10, 30, 12, 0, tzinfo=UTC)
 
@@ -27,6 +33,7 @@ class FakeHost:
     created_labels: list[str] = field(default_factory=list)
     posted: list[tuple[int, str]] = field(default_factory=list)
     pulls: dict[int, PullRequest] = field(default_factory=dict)
+    reviews: dict[int, ReviewState] = field(default_factory=dict)
     pull_bodies: dict[int, tuple[str, str]] = field(default_factory=dict)
     states: list[str] = field(default_factory=lambda: ["clean"])
     """mergeable_state returned by successive pull_request() calls; the last one repeats."""
@@ -107,6 +114,9 @@ class FakeHost:
         branch = self.pull_bodies[number][0]
         return replace(self.pulls[number], mergeable_state=state, head_sha=self.head_of[branch])
 
+    def review_state(self, number: int) -> ReviewState:
+        return self.reviews.get(number, ReviewState(""))
+
     def checks(self, sha: str) -> list[Check]:
         return self.check_results.pop(0) if len(self.check_results) > 1 else self.check_results[0]
 
@@ -171,6 +181,8 @@ class FakeWorkspace:
     local: dict[int, str] = field(default_factory=dict)
     """Worktrees on this machine: issue to branch."""
     rebase_ok: bool = True
+    merged_in: list[str] = field(default_factory=list)
+    ff_pushes: list[str] = field(default_factory=list)
     shas: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
     head_listener: Callable[[str, str], None] | None = None
     cloned: set[str] | None = None
@@ -205,6 +217,25 @@ class FakeWorkspace:
 
     def rebase(self, worktree: Path, base: str) -> bool:
         return self.rebase_ok
+
+    def merge_in(self, worktree: Path, base: str, message: str) -> bool:
+        if self.rebase_ok:
+            self.merged_in.append(base)
+            self.add_commit(int(worktree.name), message)
+        return self.rebase_ok
+
+    def commits_since(self, worktree: Path, revision: str) -> list[CommitInfo]:
+        tree = self.trees[int(worktree.name)]
+        shas = [commit.sha for commit in tree]
+        return tree[shas.index(revision) + 1 :] if revision in shas else list(tree)
+
+    def push_fast_forward(self, repository: str, worktree: Path, branch: str) -> str:
+        head = self.head(worktree)
+        self.ff_pushes.append(branch)
+        self.remote[branch] = head
+        if self.head_listener:
+            self.head_listener(branch, head)
+        return head
 
     def push(self, repository: str, worktree: Path, branch: str, expected: str | None) -> str:
         if self.remote.get(branch) != expected:

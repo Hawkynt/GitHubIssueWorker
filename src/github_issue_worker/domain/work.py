@@ -22,6 +22,8 @@ class RunKind(StrEnum):
     REWORK = "rework"
     REOPEN = "reopen"
     CONTINUATION = "continuation"
+    PULL_REQUEST = "pull-request"
+    """An open pull request the manager did not open: its own branch, its author's history (F16)."""
 
 
 @dataclass(frozen=True, slots=True)

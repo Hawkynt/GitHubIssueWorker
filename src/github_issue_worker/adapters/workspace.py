@@ -39,6 +39,10 @@ class WorkspaceError(Exception):
     pass
 
 
+SEPARATOR, NEWLINE, NUL = chr(0x1E), chr(10), chr(0)
+"""What ``git log --format=%H%x00%B%x1e`` puts between and inside records."""
+
+
 class PushRejected(WorkspaceError):
     """The remote branch is not where this worker last left it."""
 
@@ -197,14 +201,19 @@ class Workspace:
 
     def commits(self, worktree: Path, base: str) -> list[CommitInfo]:
         """The commits the branch adds on top of ``base``, oldest first."""
-        out = self._git(
-            worktree, "log", "--reverse", "--format=%H%x00%B%x1e", f"origin/{base}..HEAD"
-        )
+        return self._log(worktree, f"origin/{base}..HEAD")
+
+    def commits_since(self, worktree: Path, revision: str) -> list[CommitInfo]:
+        """The commits after ``revision`` up to HEAD, oldest first."""
+        return self._log(worktree, f"{revision}..HEAD")
+
+    def _log(self, worktree: Path, span: str) -> list[CommitInfo]:
+        out = self._git(worktree, "log", "--reverse", "--format=%H%x00%B%x1e", span)
         commits = []
-        for record in out.split("\x1e"):
-            record = record.strip("\n")
+        for record in out.split(SEPARATOR):
+            record = record.strip(NEWLINE)
             if record:
-                sha, _, message = record.partition("\x00")
+                sha, _, message = record.partition(NUL)
                 commits.append(CommitInfo(sha=sha.strip(), message=message.strip()))
         return commits
 
@@ -221,6 +230,32 @@ class Workspace:
     def fork_point(self, worktree: Path, base: str) -> str:
         """The last commit the branch shares with the fetched ``base``: one GitHub already has."""
         return self._git(worktree, "merge-base", "HEAD", f"origin/{base}").strip()
+
+    def merge_in(self, worktree: Path, base: str, message: str) -> bool:
+        """Merge the freshly fetched ``base`` into the branch, keeping its history (F16.6). A
+        conflict is aborted and reported as False."""
+        self._git(worktree, "fetch", "--quiet", "origin")
+        merged = self._try(worktree, "merge", "--quiet", "--no-ff", "-m", message, f"origin/{base}")
+        if merged.returncode != 0:
+            self._try(worktree, "merge", "--abort")
+            return False
+        return True
+
+    def push_fast_forward(self, repository: str, worktree: Path, branch: str) -> str:
+        pushed = self._try(
+            worktree,
+            "push",
+            "--quiet",
+            "--porcelain",
+            self._remote_url(repository),
+            f"HEAD:refs/heads/{branch}",
+        )
+        if pushed.returncode != 0:
+            output = pushed.stdout + pushed.stderr
+            if "[rejected]" in output or "non-fast-forward" in output or "fetch first" in output:
+                raise PushRejected(f"{branch} moved on GitHub; it is never overwritten")
+            raise WorkspaceError(f"git push failed: {output.strip()}")
+        return self.head(worktree)
 
     def rebase(self, worktree: Path, base: str) -> bool:
         """Rebase onto the freshly fetched ``base``. A conflict is aborted and reported as False."""

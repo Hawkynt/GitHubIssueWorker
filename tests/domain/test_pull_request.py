@@ -28,9 +28,13 @@ def test_given_an_open_pull_request_in_the_repository_when_judged_then_it_is_wor
     assert eligibility(READY, mode="all", trusted=True) == ("work", "")
 
 
-def test_given_a_fork_that_allows_maintainer_edits_when_judged_then_it_is_worked() -> None:
+def test_given_a_fork_that_allows_maintainer_edits_when_judged_then_it_waits_for_fork_pushes() -> (
+    None
+):
+    # F16.5: pushing to a fork is not built yet, so such a pull request says so instead.
     fork = replace(READY, same_repository=False, maintainer_can_modify=True)
-    assert eligibility(fork, mode="all", trusted=True) == ("work", "")
+    kind, reason = eligibility(fork, mode="all", trusted=True)
+    assert kind == "unserved" and "push the branch here" in reason
 
 
 @pytest.mark.parametrize(

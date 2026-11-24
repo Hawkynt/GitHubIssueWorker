@@ -68,6 +68,12 @@ def eligibility(
             "its branch is in a fork that does not allow edits by maintainers, so no worker can "
             "push to it; allow edits by maintainers on the pull request to have it worked",
         )
+    if not facts.same_repository:
+        return (
+            "unserved",
+            "its branch is in a fork, and workers push only to branches of this repository so "
+            "far; push the branch here to have it worked",
+        )
     return "work", ""
 
 
