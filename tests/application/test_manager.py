@@ -939,3 +939,47 @@ def test_given_issues_switched_off_when_one_is_held_then_its_work_still_finishes
     f.watch.issues = False
     f.manager.tick()
     assert len(f.runs) == 2  # the paused claim continues to its end
+
+
+def _old_issue(f: Fixture, number: int = 5) -> Issue:
+    """Open since before the watch began, untouched since: only the backlog finds it."""
+    old = issue(number, minutes=-180)
+    f.host.issues[number] = old
+    return old
+
+
+def test_given_backlog_on_when_an_old_issue_is_open_then_a_worker_claims_it() -> None:
+    f = Fixture([slot("claude")])
+    f.watch.process_backlog = True
+    _old_issue(f)
+    f.manager.tick()
+    assert f.runs == [Recorded("claude", 5, RunKind.FIRST)]
+
+
+def test_given_backlog_off_when_an_old_issue_is_open_then_it_is_left_alone() -> None:
+    f = Fixture([slot("claude")])
+    _old_issue(f)
+    f.manager.tick()
+    assert not f.runs
+
+
+def test_given_backlog_on_when_ticking_again_then_open_issues_are_listed_once() -> None:
+    f = Fixture([slot("claude")], verdicts=[Verdict("needs-input")])
+    f.watch.process_backlog = True
+    _old_issue(f)
+    listed: list[int] = []
+    original = f.host.open_issues
+    f.host.open_issues = lambda: (listed.append(1), original())[1]  # type: ignore[method-assign]
+    f.manager.tick()
+    f.manager.tick()
+    assert listed == [1]
+
+
+def test_given_backlog_switched_on_later_when_ticking_then_the_backlog_is_taken_up() -> None:
+    f = Fixture([slot("claude")])
+    _old_issue(f)
+    f.manager.tick()
+    assert not f.runs
+    f.watch.process_backlog = True
+    f.manager.tick()
+    assert f.runs == [Recorded("claude", 5, RunKind.FIRST)]

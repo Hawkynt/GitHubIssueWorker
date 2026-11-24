@@ -939,7 +939,7 @@ first, and a moved UI listener reopens on its new address.
 | `baseBranch` | repo default | Branch that work starts from and merges into. |
 | `mergeMethod` | `squash` | Used when the repository allows it, else the first allowed method. |
 | `ciRepairAttempts` | 3 | Red-CI repair rounds before asking. |
-| `processBacklog` | `false` | On first watch, also queue issues that were already open. Off, so adding a repository never starts a flood. |
+| `processBacklog` | `false` | Also queue issues that were already open before the repository was watched, including when switched on later: they are listed once per start and whenever it is switched on. Off, so adding a repository never starts a flood. |
 | `createMissingLabels` | `false` | Let triage create a label that does not exist yet. The `worker:*` labels are always created. |
 | `maxActiveIssuesPerRepository` | 4 | Fleet-wide soft limit of live working and paused claims in one repository, including takeover grace. Defaults to 4; a repository override takes precedence. |
 | `runTimeout` | 2 h | Wall-clock limit of one agent run. A run that reaches it is stopped and the issue parked with what was finished and what was not (F6.7). |
@@ -1079,7 +1079,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
   manager wrote it, so output under your account never triggers any worker.
 - [x] 🟥 **F2.4** Ignores input from untrusted authors (see Security above) and logs it.
 - [x] 🟥 **F2.5** First watch of a repository records the current position and queues nothing unless
-  `processBacklog` is on.
+  `processBacklog` is on. With `processBacklog` on, its open issues are listed once per start and
+  once whenever the setting is switched on, live or in the file, and are worked like new ones,
+  however long before the watch they were opened.
 - [x] 🟥 **F2.6** Honours `X-RateLimit-Remaining`/`Reset` and secondary-limit `Retry-After`, and
   backs off instead of failing.
 - [x] 🟧 **F2.7** `mode: labeled` acts only on issues carrying `worker`. `worker:skip` is honoured in

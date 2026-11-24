@@ -14,7 +14,7 @@ import re
 import threading
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -62,6 +62,9 @@ class Limits(Protocol):
 MANAGER_BRANCH_PREFIX = "issue/"
 """The manager's own branches; their pull requests are worked through their issue."""
 UNSERVED_LABEL = "worker:unserved"
+
+BACKLOG_SINCE = datetime.min.replace(tzinfo=UTC)
+"""With processBacklog on, every open issue counts as new, however old it is (F2.5)."""
 
 
 @dataclass
@@ -184,6 +187,9 @@ class Manager:
         default_factory=dict, init=False
     )
     _initialized: set[str] = field(default_factory=set, init=False)
+    _backlog_listed: set[str] = field(default_factory=set, init=False)
+    """Repositories whose open issues were listed since the start or since backlog was switched
+    on; listed once, so a watched repository costs no more than its conditional polls."""
 
     _jobs: dict[tuple[str, int], tuple[str, threading.Event]] = field(default_factory=dict)
 
@@ -281,10 +287,18 @@ class Manager:
         if self.paused():
             pending |= touched
             return
+        if watch.issues and watch.process_backlog and watch.name not in self._backlog_listed:
+            # F2.5: backlog switched on, at any time, takes up the open issues it found.
+            for item in watch.host.open_issues():
+                self._known[(watch.name, item.number)] = item
+                pending.add(item.number)
+            self._backlog_listed.add(watch.name)
+        elif not watch.process_backlog:
+            self._backlog_listed.discard(watch.name)
         with self._lock:
             own = {number for (repo, number) in self._own if repo == watch.name}
         candidates = touched | pending | own
-        since = state.watched_since or self.clock.now()
+        since = BACKLOG_SINCE if watch.process_backlog else state.watched_since or self.clock.now()
         for number in sorted(candidates, key=lambda n: self._queue_key(watch, n)):
             if self.stopping():
                 return

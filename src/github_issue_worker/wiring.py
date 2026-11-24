@@ -549,6 +549,9 @@ class Runtime:
                 watch.settings = repository_run(config, settings)
                 watch.mode = settings.mode or config.defaults.mode
                 watch.issues = _switch(settings.issues, config.defaults.issues)
+                watch.process_backlog = _switch(
+                    settings.process_backlog, config.defaults.process_backlog
+                )
                 watch.pull_requests = _switch(settings.pull_requests, config.defaults.pull_requests)
                 policy = replace(watch.coordinator.policy, max_takeovers=config.fleet.max_takeovers)
                 watch.coordinator = replace(watch.coordinator, policy=policy)
