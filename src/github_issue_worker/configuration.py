@@ -204,6 +204,10 @@ class FleetSettings(_Settings):
 
 
 class DefaultsSettings(_Settings):
+    issues: bool = True
+    """Work the repository's issues (F16.1)."""
+    pull_requests: bool = False
+    """Also work open pull requests the manager did not open (F16.1)."""
     mode: Literal["all", "labeled"] = "all"
     base_branch: str | None = None
     merge_method: Literal["squash", "merge", "rebase"] = "squash"
@@ -224,6 +228,8 @@ class RepositorySettings(_Settings):
     """A watched repository. Every key but ``repository`` overrides the same key of ``defaults``."""
 
     repository: RepositoryName
+    issues: bool | None = None
+    pull_requests: bool | None = None
     mode: Literal["all", "labeled"] | None = None
     base_branch: str | None = None
     merge_method: Literal["squash", "merge", "rebase"] | None = None

@@ -919,3 +919,23 @@ def test_given_a_paused_manager_when_it_holds_a_claim_then_the_work_does_not_con
     paused = False
     f.manager.tick()
     assert len(f.runs) == 2
+
+
+def test_given_issues_switched_off_when_an_issue_arrives_then_it_is_neither_labelled_nor_run() -> (
+    None
+):
+    f = Fixture([slot("claude")])
+    f.watch.issues = False
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert not f.runs and f.store.current(1) is None and f.host.worker_label == {}
+
+
+def test_given_issues_switched_off_when_one_is_held_then_its_work_still_finishes() -> None:
+    f = Fixture([slot("claude")], verdicts=[Verdict("paused")])
+    f.new_issues(issue(1))
+    f.manager.tick()
+    assert len(f.runs) == 1 and f.store.current(1).state.holds
+    f.watch.issues = False
+    f.manager.tick()
+    assert len(f.runs) == 2  # the paused claim continues to its end

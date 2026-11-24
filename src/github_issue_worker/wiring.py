@@ -273,6 +273,11 @@ def worker_version(worker: WorkerSettings, home: Path) -> str:
     return version_of(resolve(worker, home))
 
 
+def _switch(override: bool | None, default: bool) -> bool:
+    """A repository's own setting, else the default's (F16.1)."""
+    return default if override is None else override
+
+
 @dataclass
 class Runtime:
     config: Configuration
@@ -311,6 +316,8 @@ class Runtime:
                 coordinator=coordinator,
                 store=store,
                 mode=settings.mode or self.config.defaults.mode,
+                issues=_switch(settings.issues, self.config.defaults.issues),
+                pull_requests=_switch(settings.pull_requests, self.config.defaults.pull_requests),
                 process_backlog=bool(
                     settings.process_backlog
                     if settings.process_backlog is not None
@@ -541,6 +548,8 @@ class Runtime:
                 watch = self.watches[name]
                 watch.settings = repository_run(config, settings)
                 watch.mode = settings.mode or config.defaults.mode
+                watch.issues = _switch(settings.issues, config.defaults.issues)
+                watch.pull_requests = _switch(settings.pull_requests, config.defaults.pull_requests)
                 policy = replace(watch.coordinator.policy, max_takeovers=config.fleet.max_takeovers)
                 watch.coordinator = replace(watch.coordinator, policy=policy)
                 watch.max_active_issues_per_repository = (

@@ -1515,7 +1515,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 
 ### F16 — Pull requests
 
-- [ ] 🟥 **F16.1** `issues` (default `true`) and `pullRequests` (default `false`), under `defaults`
+- [x] 🟥 **F16.1** `issues` (default `true`) and `pullRequests` (default `false`), under `defaults`
   and per repository, editable in the file, the CLI and the UI. `issues: false` ignores issues
   entirely; `pullRequests: false` ignores every pull request the manager did not open.
 - [ ] 🟥 **F16.2** Polls open pull requests (`state=open`, `sort=updated`) with `If-None-Match`,
