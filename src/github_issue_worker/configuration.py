@@ -184,6 +184,8 @@ class WorkerSettings(_Settings):
     agent: AgentKind
     account: str
     installation: Installation = Field(default_factory=PathInstallation)
+    enabled: bool = True
+    """False: configured but switched off. It claims and starts nothing, across restarts."""
     priority: int = 100
     tags: list[str] = Field(default_factory=list)
     model: str | None = None

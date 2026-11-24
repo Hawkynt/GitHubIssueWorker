@@ -585,6 +585,7 @@ class Runtime:
                     worker.name,
                 )
                 instance.available, instance.reason = available, reason
+                instance.enabled = worker.enabled
         configured = {worker.name for worker in self.config.workers}
         for name in list(self.adapters):
             if name not in configured and not any(s.group == name for s in self.slots):

@@ -140,7 +140,10 @@ def detect_workers(home: Path, portable_roots: Sequence[str] = ()) -> list[dict[
     return found
 
 
-def _add_detected_workers(config: Configuration, proposed: Sequence[dict[str, Any]]) -> None:
+def _add_detected_workers(
+    config: Configuration, proposed: Sequence[dict[str, Any]], enabled: bool = True
+) -> None:
+    """Adds what was found and is not configured yet; found on its own, it starts switched off."""
     existing = {worker.name for worker in config.workers}
     workers, accounts = list(config.workers), dict(config.accounts)
     for raw in proposed:
@@ -148,7 +151,7 @@ def _add_detected_workers(config: Configuration, proposed: Sequence[dict[str, An
             continue
         if raw["account"] not in accounts:
             accounts[raw["account"]] = AccountSettings(max_concurrent_runs=1)
-        workers.append(WorkerSettings.model_validate(raw))
+        workers.append(WorkerSettings.model_validate({**raw, "enabled": enabled}))
     config.workers, config.accounts = workers, accounts
 
 
@@ -232,7 +235,10 @@ def _watch(
 
     first_run = path is not None and not path.exists()
     if first_run and path is not None:
-        _add_detected_workers(config, detect_workers(home, config.manager.portable_roots))
+        # Found on the first start, not chosen: nothing runs until the user switches it on.
+        _add_detected_workers(
+            config, detect_workers(home, config.manager.portable_roots), enabled=False
+        )
         save(config, path)
 
     runtime = runtime_factory(config, home, *_dirs(args))

@@ -338,3 +338,11 @@ def test_given_portable_roots_when_parsed_then_they_round_trip_as_manager_portab
     config = parse('{"manager": {"portableRoots": ["D:/Agents/ClaudePortable", "~/Portable"]}}')
     assert config.manager.portable_roots == ["D:/Agents/ClaudePortable", "~/Portable"]
     assert Configuration().manager.portable_roots == []
+
+
+def test_given_a_worker_when_parsed_then_it_is_enabled_unless_switched_off() -> None:
+    base = {"name": "w", "agent": "claude", "account": "a"}
+    on = parse(json.dumps({"accounts": {"a": {}}, "workers": [base]}))
+    off = parse(json.dumps({"accounts": {"a": {}}, "workers": [{**base, "enabled": False}]}))
+    assert on.workers[0].enabled is True
+    assert off.workers[0].enabled is False

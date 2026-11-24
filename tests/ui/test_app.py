@@ -753,3 +753,13 @@ def test_given_the_backend_refuses_when_saving_anywhere_then_no_server_error(pat
     )
     assert response.status_code == 303
     assert "Permission%20denied" in response.headers["location"]
+
+
+def test_given_a_worker_when_paused_in_the_ui_then_its_setting_is_switched_off(
+    client: TestClient, backend: DemoBackend
+) -> None:
+    name = backend.config().workers[0].name
+    client.post(f"/workers/{name}/pause")
+    assert next(w for w in backend.config().workers if w.name == name).enabled is False
+    client.post(f"/workers/{name}/resume")
+    assert next(w for w in backend.config().workers if w.name == name).enabled is True

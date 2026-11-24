@@ -745,6 +745,12 @@ class DemoBackend:
         ]
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None:
+        group = next((w.worker for w in self._workers if name in (w.name, w.worker)), name)
+        config = self._config.model_copy(deep=True)
+        for settings in config.workers:
+            if settings.name == group:
+                settings.enabled = enabled
+        self._config = config
         self._workers = [
             replace(w, state="paused" if not enabled else "idle")
             if name in (w.name, w.worker)

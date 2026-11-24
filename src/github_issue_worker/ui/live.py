@@ -393,9 +393,26 @@ class RuntimeBackend:
         return self._detect(self._runtime.home, self._runtime.config.manager.portable_roots)
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None:
-        for slot in self._manager.workers:
-            if name in (slot.name, slot.group):
-                slot.enabled = enabled
+        """Pause or resume a worker by switching its ``enabled`` setting, so it lasts."""
+        config = self._runtime.config
+        worker = self._worker_of(name, {w.name for w in config.workers})
+        if worker is None:
+            raise ActionError(f"{name} is not a configured worker")
+        changed = config.model_copy(deep=True)
+        for settings in changed.workers:
+            if settings.name == worker:
+                settings.enabled = enabled
+        self.save_config(changed)
+
+    def _worker_of(self, name: str, configured: set[str]) -> str | None:
+        """The configured worker an instance name such as ``claude.2`` belongs to."""
+        slot = next((s for s in self._manager.workers if s.name == name), None)
+        if slot is not None:
+            return slot.group
+        if name in configured:
+            return name
+        base, _, number = name.rpartition(".")
+        return base if number.isdigit() and base in configured else None
 
     def approve_ci(self, name: str) -> None:
         slot = next((s for s in self._manager.workers if s.name == name), None)
@@ -412,6 +429,7 @@ class RuntimeBackend:
         slot = next((s for s in self._manager.workers if s.name == name), None)
         if slot is None or not slot.busy:
             raise ActionError(f"{name} is not working on an issue, so there is nothing to stop")
+        self.set_worker_enabled(name, False)
         slot.enabled = False
         if not terminate(name):
             raise ActionError(

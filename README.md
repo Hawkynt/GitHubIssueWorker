@@ -179,8 +179,9 @@ double-clicked window stays open on the error.
 
 When no configuration file exists yet, `watch` detects the local agents (`claude`, `codex`,
 `antigravity` / `agy`, `opencode`, plus local portable and ClaudeLocal installations), writes the
-initial configuration with one concurrent run per account (`maxConcurrentRuns` of `1`), serves the
-web UI with the default settings and opens it in your browser so you can add a repository and use
+initial configuration with one concurrent run per account (`maxConcurrentRuns` of `1`) and every
+found worker switched off until you switch it on, serves the web UI with the default settings and
+opens it in your browser so you can add a repository and use
 it right away.
 
 From the command line:
@@ -868,6 +869,7 @@ first, and a moved UI listener reopens on its new address.
 | `workers[].agent` | — | `claude`, `codex`, `antigravity`, `opencode`, `command` or `remote`. |
 | `workers[].account` | — | Key into `accounts`. Limits are tracked per account. |
 | `workers[].installation` | `{ "type": "path" }` | `path`, `executable`, `claudecodeportable` or `claudelocal`; see [Installations](#installations). |
+| `workers[].enabled` | `true` | `false` keeps the worker configured but switched off: it claims and starts nothing, across restarts. **Pause** and **Resume** in the UI switch it. Workers detected on the first start are added switched off. |
 | `workers[].priority` | 100 | Lower is preferred when several idle workers are eligible. |
 | `workers[].tags` | `[]` | Extra capabilities of this worker. |
 | `workers[].model`, `maxBudgetUsdPerRun` | agent default | Passed to agents that support them. The budget in US dollars is enforced by agents that have one (`claude`); a run that uses it up parks the issue (F6.7). |
