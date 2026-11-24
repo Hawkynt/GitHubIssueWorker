@@ -169,6 +169,12 @@ failing somewhere inside the first poll.
 ./run.sh                                                      # or run.bat on Windows: sets up .venv and starts watch
 ```
 
+The launcher prints every step and the exact command it runs. It builds `.venv` with the first
+Python 3.13 or newer among `$PYTHON`, `py -3` (Windows), `python3.14`/`python3.13` (POSIX),
+`python3`, `python` and `uv python find --system`, listing each candidate with its version, and
+rebuilds a `.venv` that an older Python made. When a step fails, `run.bat` waits for a key so a
+double-clicked window stays open on the error.
+
 When no configuration file exists yet, `watch` detects the local agents (`claude`, `codex`,
 `antigravity` / `agy`, `opencode`, plus local portable and ClaudeLocal installations), writes the
 initial configuration with one concurrent run per account (`maxConcurrentRuns` of `1`), serves the
