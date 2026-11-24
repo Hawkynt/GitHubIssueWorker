@@ -11,6 +11,7 @@ import random
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
+from github_issue_worker.adapters.folders import FolderListing
 from github_issue_worker.application.accounts import account_usage
 from github_issue_worker.application.history import RunRecord
 from github_issue_worker.configuration import (
@@ -816,6 +817,45 @@ class DemoBackend:
 
     def set_paused(self, paused: bool) -> None:
         self._paused = paused
+
+    def portable_profiles(self, root: str) -> list[dict[str, object]]:
+        if root.rstrip("/\\") not in ("~/ClaudeCodePortable", "/home/me/Agents/ClaudePortable"):
+            return []
+
+        def profile(name: str, kind: str, **found: str) -> dict[str, object]:
+            return {
+                "name": kind,
+                "agent": kind,
+                "account": f"{kind}-{name}",
+                "priority": 1,
+                "installation": {"type": "claudecodeportable", "root": root, "profile": name},
+                **found,
+            }
+
+        return [
+            profile("ChatGPTCodex", "codex", version=VERSIONS["codex"]),
+            profile("copilot", "copilot", problem="copilot is not a supported agent"),
+            profile("default", "claude", version=VERSIONS["claude"]),
+            profile("GoogleGemini", "antigravity", problem="agy --version failed: not signed in"),
+        ]
+
+    def browse(self, path: str, drives: bool = False) -> FolderListing:
+        tree = {
+            "/home/me": ("/home/me/Agents", "/home/me/Projects"),
+            "/home/me/Agents": ("/home/me/Agents/ClaudePortable",),
+            "/home/me/Agents/ClaudePortable": (
+                "/home/me/Agents/ClaudePortable/app",
+                "/home/me/Agents/ClaudePortable/profiles",
+            ),
+        }
+        folder = path.rstrip("/") or "/home/me"
+        parent = folder.rsplit("/", 1)[0] or None
+        return FolderListing(
+            folder,
+            tree.get(folder, ()),
+            parent,
+            portable=folder.endswith("ClaudePortable"),
+        )
 
     def check_worker(self, worker: WorkerSettings) -> str:
         installation = worker.installation

@@ -23,6 +23,7 @@ from github_issue_worker.application.history import (
     weekly_mix,
 )
 from github_issue_worker.configuration import (
+    ClaudeCodePortableInstallation,
     Configuration,
     DefaultsSettings,
     ModelColorsSettings,
@@ -185,7 +186,12 @@ legend { font-weight: 650; font-size: 1.05rem; padding: 0 .5rem 0 0; }
 input.changed, select.changed, textarea.changed { background: var(--changed);
   border-color: var(--changed-rule); }
 input[type=checkbox].changed { outline: 2px solid var(--changed-rule); outline-offset: 1px; }
-td.problem { color: var(--brick); }
+td.problem, p.problem { color: var(--brick); }
+form.pick { display: flex; gap: .5rem; flex-wrap: wrap; margin: 0 0 .75rem; }
+form.pick input { flex: 1 1 22rem; min-width: 0; }
+.browser { border: 1px solid var(--rule); border-radius: 4px; padding: .5rem .75rem;
+  margin: 0 0 .75rem; display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.browser p { flex-basis: 100%; margin: 0 0 .25rem; overflow-wrap: anywhere; }
 .problems { background: var(--brick-soft); color: var(--brick); padding: .75rem 1rem;
   border-radius: 4px; margin: 0 0 1rem; }
 .notice { background: var(--steel-soft); color: var(--steel); padding: .6rem 1rem;
@@ -2024,6 +2030,121 @@ def _installation_text(installation: Mapping[str, Any]) -> str:
     return "on PATH"
 
 
+def _same_folder(a: str, b: str) -> bool:
+    """Whether two folder paths as typed name the same folder, separators and case aside."""
+
+    def norm(path: str) -> str:
+        return path.replace("\\", "/").rstrip("/").casefold()
+
+    return norm(a) == norm(b)
+
+
+def _users(config: Configuration, root: str, profile: str) -> list[str]:
+    """The workers that already run this portable profile."""
+    return [
+        w.name
+        for w in config.workers
+        if isinstance(w.installation, ClaudeCodePortableInstallation)
+        and w.installation.profile == profile
+        and _same_folder(w.installation.root, root)
+    ]
+
+
+def _portable_panel(config: Configuration, root: str, profiles: list[dict[str, Any]] | None) -> str:
+    """Pick a ClaudeCodePortable folder and see what its profiles offer (F14.4)."""
+    picker = (
+        '<form method=get action="/workers/new" class=pick>'
+        f'<input name="root" value="{e(root)}" data-browse aria-label="ClaudeCodePortable folder" '
+        'placeholder="D:\\Agents\\ClaudePortable or ~/ClaudeCodePortable">'
+        "<button type=button data-browse-open>Browse…</button>"
+        "<button class=primary>Show profiles</button></form>"
+        "<div class=browser hidden></div>"
+    )
+    listed = ""
+    if profiles is not None and not profiles:
+        listed = f"<p class=quiet>{e(root)} has no ClaudeCodePortable installation: no profiles folder.</p>"
+    elif profiles:
+        rows = []
+        for item in profiles:
+            name = str(item["installation"]["profile"])
+            users = _users(config, root, name)
+            problem = item.get("problem")
+            add = (
+                '<form method=post action="/workers/add-portable">'
+                f'<input type=hidden name="root" value="{e(root)}">'
+                f'<input type=hidden name="profile" value="{e(name)}">'
+                + (
+                    '<button disabled title="Only a profile whose agent answers --version can '
+                    'be added">Add</button>'
+                    if problem
+                    else '<button title="Each click adds one more worker of this profile">'
+                    "Add</button>"
+                )
+                + "</form>"
+            )
+            rows.append(
+                f"<tr><td>{e(name)}</td><td>{e(str(item['agent']))}</td>"
+                + (
+                    f"<td class=problem>{e(str(problem))}</td>"
+                    if problem
+                    else f"<td>{e(str(item.get('version', '')))}</td>"
+                )
+                + f"<td>{e('used by ' + ', '.join(users)) if users else ''}</td>"
+                + f"<td>{add}</td></tr>"
+            )
+        remembered = any(_same_folder(r, root) for r in config.manager.portable_roots)
+        remember = (
+            ""
+            if remembered
+            else '<form method=post action="/workers/remember-root">'
+            f'<input type=hidden name="root" value="{e(root)}">'
+            "<button>Remember this folder</button> <span class=quiet>so agents in it are found "
+            "automatically from now on.</span></form>"
+        )
+        listed = (
+            "<div class=scroll><table><thead><tr><th>Profile</th><th>Tool</th><th>Version</th>"
+            f"<th>Workers</th><th></th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+            + remember
+        )
+    return _panel(
+        "ClaudeCodePortable folder",
+        "Pick the folder of a portable installation to see its profiles, the tool in each and the "
+        "version it answers with. Each click on Add adds one more worker of that profile; each "
+        "runs one issue at a time.",
+        picker + listed + BROWSE_SCRIPT,
+        "ClaudeCodePortable folder",
+    )
+
+
+BROWSE_SCRIPT = """<script>
+document.querySelectorAll("[data-browse-open]").forEach((open) => open.addEventListener("click", () => {
+  const input = open.form.querySelector("[data-browse]");
+  const box = open.form.nextElementSibling;
+  const button = (text, act) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = text; b.addEventListener("click", act); return b;
+  };
+  const show = (path, drives) => {
+    fetch("/browse?" + new URLSearchParams(drives ? {drives: "1"} : {path}))
+      .then((answer) => answer.json()).then((list) => {
+        box.hidden = false;
+        const head = document.createElement("p");
+        head.textContent = (list.path || "Drives") + (list.portable ? ": a ClaudeCodePortable folder" : "");
+        box.replaceChildren(head);
+        if (list.problem) { const p = document.createElement("p"); p.className = "problem"; p.textContent = list.problem; box.append(p); }
+        if (list.parent !== null) box.append(button("..", () => list.parent === "" ? show("", true) : show(list.parent, false)));
+        list.folders.forEach((folder) => box.append(button(folder.split(/[\\\\/]/).filter(Boolean).pop() || folder, () => show(folder, false))));
+        if (list.path) {
+          const use = button("Use this folder", () => { input.value = list.path; open.form.submit(); });
+          use.className = "primary"; box.append(use);
+        }
+      });
+  };
+  show(input.value, false);
+}));
+</script>"""
+
+
 def worker_page(
     snapshot_id: str,
     config: Configuration,
@@ -2031,6 +2152,9 @@ def worker_page(
     detected: list[dict[str, Any]] | None = None,
     problems: Iterable[str] = (),
     paused: bool = False,
+    root: str = "",
+    profiles: list[dict[str, Any]] | None = None,
+    notice: str = "",
 ) -> str:
     title = f"Worker {worker.name}" if worker else "Add a worker"
     current: dict[str, str] = {}
@@ -2120,9 +2244,10 @@ def worker_page(
         if worker
         else ""
     )
+    portable = "" if worker else _portable_panel(config, root, profiles)
     body = (
-        f"<h1>{e(title)}</h1>{_problems(problems)}"
-        f'<div class=deck-grid>{found}<form class=deck-grid method=post action="{action}">'
+        f"<h1>{e(title)}</h1>{_notice(notice)}{_problems(problems)}"
+        f'<div class=deck-grid>{portable}{found}<form class=deck-grid method=post action="{action}">'
         f'<fieldset class="panel wide"><legend>Agent</legend>{"".join(inputs)}</fieldset>'
         f'<fieldset class="panel wide"><legend>Installation</legend>{"".join(install)}</fieldset>'
         f"<p><button class=primary>Save worker</button></p></form>{remove}</div>"

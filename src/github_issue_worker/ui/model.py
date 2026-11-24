@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal, Protocol
 
+from github_issue_worker.adapters.folders import FolderListing
 from github_issue_worker.application.accounts import AccountUsage
 from github_issue_worker.application.history import RunRecord
 from github_issue_worker.configuration import Configuration, WorkerSettings
@@ -186,6 +187,15 @@ class Backend(Protocol):
         ...
 
     def set_paused(self, paused: bool) -> None: ...
+
+    def portable_profiles(self, root: str) -> list[dict[str, object]]:
+        """Every profile of the ClaudeCodePortable folder ``root``, each a proposed worker with
+        its ``version`` or the ``problem`` why it cannot be one (F14.4)."""
+        ...
+
+    def browse(self, path: str, drives: bool = False) -> FolderListing:
+        """The folders below ``path`` for the add page's folder browser (F14.4)."""
+        ...
 
     def check_worker(self, worker: WorkerSettings) -> str:
         """The version the worker's installation answers with (F15.9).

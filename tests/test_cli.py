@@ -748,3 +748,44 @@ def test_given_watch_once_when_starting_then_check_access_before_creating_labels
     f.host.ensure_worker_labels = lambda: calls.append("labels")  # type: ignore[method-assign]
     assert run_watch(watched_config(tmp_path), Api(), f.manager) == 0  # type: ignore[arg-type]
     assert calls == (["access", "labels"] if allowed else ["access"])
+
+
+def test_given_a_portable_folder_when_previewed_then_every_profile_says_what_it_offers(
+    tmp_path: Path,
+) -> None:
+    from github_issue_worker.adapters.detection import preview_portable
+    from github_issue_worker.adapters.installations import Unavailable
+
+    root = tmp_path / "Agents" / "ClaudePortable"
+    tool(portable_tool(root / "profiles" / "me", "claude"))
+    tool(portable_tool(root / "profiles" / "codex", "codex"))
+    (root / "profiles" / "codex" / ".tool").write_text("codex", encoding="utf-8")
+    (root / "profiles" / "copilot").mkdir()
+    (root / "profiles" / "copilot" / ".tool").write_text("copilot", encoding="utf-8")
+    (root / "profiles" / "fresh").mkdir()
+    (root / "profiles" / "fresh" / ".tool").write_text("antigravity", encoding="utf-8")
+
+    def probe(proposal: dict[str, object], home: Path) -> str:
+        if proposal["agent"] == "codex":
+            raise Unavailable("codex --version failed: not signed in")
+        return "2.1.331 (Claude Code)"
+
+    found = {p["installation"]["profile"]: p for p in preview_portable(str(root), tmp_path, probe)}
+
+    assert found["me"]["version"] == "2.1.331 (Claude Code)"
+    assert found["me"]["installation"]["root"] == str(root)
+    assert found["codex"]["problem"] == "codex --version failed: not signed in"
+    assert found["copilot"]["problem"] == "copilot is not a supported agent"
+    assert found["fresh"]["problem"] == "antigravity is not installed in profile fresh"
+
+
+@pytest.mark.parametrize("make", [False, True])
+def test_given_a_folder_that_is_no_portable_installation_when_previewed_then_it_is_empty(
+    tmp_path: Path, make: bool
+) -> None:
+    from github_issue_worker.adapters.detection import preview_portable
+
+    folder = tmp_path / "plain"
+    if make:
+        folder.mkdir()
+    assert preview_portable(str(folder), tmp_path, lambda *a: "1") == []

@@ -780,7 +780,7 @@ not a second program: what the UI changes, the manager does, with the same check
 
 | Page | Shows | Lets you |
 | --- | --- | --- |
-| **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. Every account: available or limited, the reset time counting down, and each issue paused on it as a link. | Add a worker (from detected installations or by hand), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
+| **Cockpit** (`/workers`) | Readouts and charts from the run history (see F14.13). Every worker: agent kind, installation and version, account and its usage state (with the reset time when limited), current issue as a link, step, **local branch and worktree path**, time on the issue, last checkpoint, cost of the run. Every account: available or limited, the reset time counting down, and each issue paused on it as a link. | Add a worker (from detected installations, from a ClaudeCodePortable folder picked with a folder browser, or by hand; one more worker per click), edit every setting of one, remove one (releases its claim), pause or resume it, release its claim. |
 | **Repositories** | The watch list with last poll, push-access check, and issue counts per state. | Add a repository by URL (push access is verified before it is saved), with the box completing the owner and then, after the `/`, that owner's repositories your account can push to and does not watch yet; the list is read in the background and kept in memory for 10 minutes. Edit its per-repository overrides, remove one. |
 | **Settings** | Every other key of the configuration (see Configuration below): manager, polling, trusted users, UI, accounts, model colours, fleet behaviour, defaults. Each field shows its default and whether the current value comes from the file or the default. | Edit with inline validation; every value that differs from what the page loaded, so is not yet saved, has its own background until *Save*. *Save* writes the file atomically and applies the change live. Invalid values are refused with the same message the file would get, and what was typed stays marked as not yet saved. The model colours are edited on a colour wheel as well (F14.20). |
 | **Fleet** | Per repository: every claim with holder (manager and worker), state, step, renewal and expiry, paused issues with their reset, unserved issues. Other managers from presence, online or offline. | Release a claim of a worker you know is gone, after a typed confirmation. |
@@ -1374,7 +1374,11 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F14.4** Worker actions: add from detected installations or by hand, edit every worker
   setting (agent, installation, account, priority, tags, model, budget, command, limit patterns and
   limit exit codes),
-  remove (releases the claim), pause, resume, release claim.
+  remove (releases the claim), pause, resume, release claim. The add page picks a
+  ClaudeCodePortable folder by typing it or with a folder browser the manager serves (drives,
+  then folders; a browser cannot hand a page a full path), lists every profile in it with its tool,
+  the version it answers with or why it cannot run, and the workers already using it, adds one
+  more worker per click on **Add**, and remembers the folder in `manager.portableRoots` on request.
 - [x] 🟥 **F14.8** Settings page: every remaining configuration key, with its default and its source
   (file or default), inline validation through the F0.3 validator, atomic save and live apply (F0.7).
   Tested: for every key in the schema there is a UI field, so a new key cannot ship without one.
