@@ -4,10 +4,13 @@
 directly instead of through their interactive launchers, whose menus, first-run installers and
 banners would end up in the agent's output:
 
-- ClaudeCodePortable keeps each tool in a profile: ``npm-global/bin/{claude,codex}`` with
-  ``CLAUDE_CONFIG_DIR``/``CODEX_HOME`` pointing into the profile, and ``.local/bin/agy`` with the
-  profile as ``HOME``. The npm-installed CLIs are node scripts, so the portable node goes first on
-  ``PATH``.
+- ClaudeCodePortable keeps each tool in a profile: the npm-installed ``claude``/``codex`` in the
+  profile's npm prefix (``npm-global/bin/<tool>``, or ``npm-global/<tool>.cmd`` on Windows, where
+  npm puts its shims into the prefix itself) with ``CLAUDE_CONFIG_DIR``/``CODEX_HOME`` pointing into
+  the profile, and ``agy`` where it installs relative to the profile as ``HOME``
+  (``.local/bin/agy``, or ``AppData/Local/agy/bin/agy.exe`` on Windows). The npm-installed CLIs are
+  node scripts, so the portable node goes first on ``PATH``. Layout as in the launcher's own
+  ``launcher/tool-launcher-core.mjs`` (``npmBinProbe``) and ``antigravity-launcher.mjs``.
 - ClaudeLocal's ``claude.sh`` is already non-interactive with ``--prompt``.
 """
 
@@ -16,6 +19,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -82,13 +86,43 @@ def resolve(worker: WorkerSettings, home: Path | None = None) -> Resolved:
 
 
 def portable_tool(profile: Path, agent: str, windows: bool | None = None) -> Path:
-    """Where a ClaudeCodePortable profile keeps the agent's CLI; Windows adds .cmd or .exe."""
+    """Where a ClaudeCodePortable profile keeps the agent's CLI on this (or the given) platform."""
     windows = _windows() if windows is None else windows
     if agent in ("claude", "codex"):
-        return profile / "npm-global" / "bin" / (f"{agent}.cmd" if windows else agent)
+        npm = profile / "npm-global"
+        return npm / f"{agent}.cmd" if windows else npm / "bin" / agent
     if agent == "antigravity":
-        return profile / ".local" / "bin" / ("agy.exe" if windows else "agy")
+        if windows:
+            return profile / "AppData" / "Local" / "agy" / "bin" / "agy.exe"
+        return profile / ".local" / "bin" / "agy"
     return profile / "missing" / agent
+
+
+DEFAULT_PORTABLE_ROOT = "~/ClaudeCodePortable"
+PORTABLE_SESSION_VARIABLES = ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
+"""Set by the portable launchers to ``<root>/profiles/<profile>/<config dir>``."""
+
+
+def portable_roots(home: Path, configured: Sequence[str], environ: Mapping[str, str]) -> list[Path]:
+    """The ClaudeCodePortable roots to search for profiles, each once and only if it has any:
+    the default under the account home, the configured ones, and the one a portable session
+    this process runs in points into."""
+    candidates = [_expand(DEFAULT_PORTABLE_ROOT, home)]
+    candidates += [_expand(root, home) for root in configured if root.strip()]
+    for variable in PORTABLE_SESSION_VARIABLES:
+        value = environ.get(variable, "")
+        config_dir = Path(value)
+        if value and config_dir.is_absolute() and config_dir.parent.parent.name == "profiles":
+            candidates.append(config_dir.parent.parent.parent)
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for root in candidates:
+        key = os.path.normcase(os.path.abspath(root))
+        if key not in seen and (root / "profiles").is_dir():
+            seen.add(key)
+            roots.append(root)
+    return roots
 
 
 def _portable(

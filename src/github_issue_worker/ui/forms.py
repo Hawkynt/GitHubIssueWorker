@@ -27,6 +27,9 @@ HELP: dict[str, str] = {
     "manager.name": "Shown in logs, in the fleet view and in claims. Default: the host name.",
     "manager.tags": "Capabilities of this machine, matched against needs:<tag> issue labels.",
     "manager.home": "Home directory gh and git run with. Default: your account's home.",
+    "manager.portableRoots": (
+        "ClaudeCodePortable folders searched for agents besides ~/ClaudeCodePortable."
+    ),
     "pollInterval": "Time between polls of one repository.",
     "trustedUsers": "Logins trusted in addition to everyone with write access.",
     "ui.port": "Port of this page.",

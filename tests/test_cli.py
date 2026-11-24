@@ -367,6 +367,45 @@ def test_detection_finds_portable_profiles_claudelocal_and_path(
     }
 
 
+def test_given_a_configured_portable_root_when_detecting_then_its_profiles_are_proposed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    root = tmp_path / "Agents" / "ClaudePortable"
+    tool(portable_tool(root / "profiles" / "me", "claude"))
+    (root / "profiles" / "me" / ".tool").write_text("claude", encoding="utf-8")
+    tool(portable_tool(root / "profiles" / "codex", "codex"))
+    (root / "profiles" / "codex" / ".tool").write_text("codex", encoding="utf-8")
+    (root / "profiles" / "copilot").mkdir()
+    (root / "profiles" / "copilot" / ".tool").write_text("copilot", encoding="utf-8")
+
+    found = detect_workers(tmp_path, [str(root)])
+
+    assert {(w["agent"], w["installation"]["profile"]) for w in found} == {
+        ("claude", "me"),
+        ("codex", "codex"),
+    }
+    assert {w["installation"]["root"] for w in found} == {str(root)}
+    assert detect_workers(tmp_path) == []
+
+
+def test_given_portable_roots_in_the_config_when_workers_detect_runs_then_they_are_searched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    root = tmp_path / "Agents" / "ClaudePortable"
+    tool(portable_tool(root / "profiles" / "me", "claude"))
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({"manager": {"portableRoots": [str(root)]}}), encoding="utf-8")
+
+    assert main(["--config", str(config), "workers", "--detect", "--save"], home=tmp_path) == 0
+
+    saved = load(config)
+    assert [(w.name, w.installation.type) for w in saved.workers] == [
+        ("claude", "claudecodeportable")
+    ]
+
+
 def test_workers_detect_save_writes_workers_and_accounts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

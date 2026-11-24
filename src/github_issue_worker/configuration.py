@@ -85,6 +85,9 @@ class ManagerSettings(_Settings):
     home: str | None = None
     """Home directory for gh and networked git. Default: the account's home from the operating
     system, so a HOME relocated by ClaudeCodePortable or ClaudeLocal does not hide gh's login."""
+    portable_roots: list[str] = Field(default_factory=list)
+    """ClaudeCodePortable folders worker detection searches besides ``~/ClaudeCodePortable`` and the
+    portable session this manager may run in."""
 
 
 class UiSettings(_Settings):

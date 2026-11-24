@@ -7,6 +7,7 @@ import argparse
 import contextlib
 import json
 import logging
+import os
 import re
 import shutil
 import signal
@@ -20,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from github_issue_worker.adapters.control import ControlError, ControlLease, ControlServer
 from github_issue_worker.adapters.home import account_home
 from github_issue_worker.adapters.installations import EXECUTABLES, portable_tool
+from github_issue_worker.adapters.installations import portable_roots as find_portable_roots
 from github_issue_worker.adapters.manager_lock import (
     ManagerLockError,
     configuration_identity,
@@ -83,31 +85,32 @@ def normalize_issue(text: str) -> tuple[str, int]:
 # --- worker detection ----------------------------------------------------------------------------
 
 
-def detect_workers(home: Path) -> list[dict[str, Any]]:
-    """One proposed worker per agent installation found: ClaudeCodePortable profiles, ClaudeLocal,
-    and the agents on PATH that no portable profile already provides."""
+def detect_workers(home: Path, portable_roots: Sequence[str] = ()) -> list[dict[str, Any]]:
+    """One proposed worker per agent installation found: ClaudeCodePortable profiles under the
+    default, the configured and the current session's root, ClaudeLocal, and the agents on PATH
+    that no portable profile already provides."""
     found: list[dict[str, Any]] = []
-    portable = home / "ClaudeCodePortable"
     tools = ("claude", "codex", "antigravity")
-    for profile in sorted((portable / "profiles").glob("*")):
-        if not profile.is_dir():
-            continue
-        marker = profile / ".tool"
-        kind = marker.read_text(encoding="utf-8").strip() if marker.exists() else "claude"
-        if kind in tools and portable_tool(profile, kind).exists():
-            found.append(
-                {
-                    "name": kind,
-                    "agent": kind,
-                    "account": f"{kind}-{profile.name}",
-                    "priority": _PRIORITY[kind],
-                    "installation": {
-                        "type": "claudecodeportable",
-                        "root": str(portable),
-                        "profile": profile.name,
-                    },
-                }
-            )
+    for portable in find_portable_roots(home, portable_roots, os.environ):
+        for profile in sorted((portable / "profiles").glob("*")):
+            if not profile.is_dir():
+                continue
+            marker = profile / ".tool"
+            kind = marker.read_text(encoding="utf-8").strip() if marker.exists() else "claude"
+            if kind in tools and portable_tool(profile, kind).exists():
+                found.append(
+                    {
+                        "name": kind,
+                        "agent": kind,
+                        "account": f"{kind}-{profile.name}",
+                        "priority": _PRIORITY[kind],
+                        "installation": {
+                            "type": "claudecodeportable",
+                            "root": str(portable),
+                            "profile": profile.name,
+                        },
+                    }
+                )
 
     local = home / "ClaudeLocal"
     if (local / "claude.sh").exists() or (local / "Claude.bat").exists():
@@ -196,7 +199,7 @@ def _remove(
 
 def _workers(config: Configuration, path: Path, args: argparse.Namespace, home: Path) -> int:
     if args.detect:
-        proposed = detect_workers(home)
+        proposed = detect_workers(home, config.manager.portable_roots)
         print(json.dumps(proposed, indent=2))
         if args.save:
             _add_detected_workers(config, proposed)
@@ -229,7 +232,7 @@ def _watch(
 
     first_run = path is not None and not path.exists()
     if first_run and path is not None:
-        _add_detected_workers(config, detect_workers(home))
+        _add_detected_workers(config, detect_workers(home, config.manager.portable_roots))
         save(config, path)
 
     runtime = runtime_factory(config, home, *_dirs(args))

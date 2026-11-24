@@ -332,3 +332,9 @@ def test_a_worker_name_cannot_look_like_an_instance() -> None:
     with pytest.raises(ConfigurationError) as raised:
         validate(data)
     assert "workers[0].name" in str(raised.value)
+
+
+def test_given_portable_roots_when_parsed_then_they_round_trip_as_manager_portable_roots() -> None:
+    config = parse('{"manager": {"portableRoots": ["D:/Agents/ClaudePortable", "~/Portable"]}}')
+    assert config.manager.portable_roots == ["D:/Agents/ClaudePortable", "~/Portable"]
+    assert Configuration().manager.portable_roots == []

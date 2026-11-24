@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -129,7 +129,7 @@ class RuntimeBackend:
         runtime: Runtime,
         manager: Manager,
         config_path: Path,
-        detect: Callable[[Path], list[dict[str, object]]],
+        detect: Callable[[Path, Sequence[str]], list[dict[str, object]]],
     ) -> None:
         self._runtime = runtime
         self._manager = manager
@@ -386,7 +386,7 @@ class RuntimeBackend:
             )
 
     def detect_workers(self) -> list[dict[str, object]]:
-        return self._detect(self._runtime.home)
+        return self._detect(self._runtime.home, self._runtime.config.manager.portable_roots)
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None:
         for slot in self._manager.workers:
