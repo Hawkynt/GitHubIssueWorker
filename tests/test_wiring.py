@@ -997,3 +997,23 @@ def test_given_the_issues_switch_when_watching_then_the_override_wins(
     f.manager.repositories = [runtime.watches["o/r"]]
     runtime.apply(flipped, f.manager)
     assert runtime.watches["o/r"].issues is (not expected)
+
+
+def test_given_process_backlog_changed_when_applied_then_the_watch_follows(tmp_path: Path) -> None:
+    from tests.application.test_manager import Fixture
+
+    config = parse(json.dumps({"repositories": [{"repository": "o/r"}]}))
+    runtime = Runtime(
+        config=config,
+        home=tmp_path,
+        api=SimpleNamespace(clock=FakeClock(datetime(2026, 10, 30, tzinfo=UTC))),  # type: ignore[arg-type]
+        state=JsonStateStore(tmp_path / "state.json"),
+        manager_id="m",
+        workspace=FakeWorkspace(tmp_path),  # type: ignore[arg-type]
+    )
+    assert runtime.watch(config.repositories[0]).process_backlog is False
+    f = Fixture([])
+    f.manager.repositories = [runtime.watches["o/r"]]
+    on = parse(json.dumps({"repositories": [{"repository": "o/r", "processBacklog": True}]}))
+    runtime.apply(on, f.manager)
+    assert runtime.watches["o/r"].process_backlog is True
