@@ -154,7 +154,9 @@ The manager drives tools you already use, and must find each of them working:
 | at least one agent | the workers, run headless | see [Workers](#-workers) |
 
 The manager never handles a token itself: every REST and GraphQL call is a `gh api` call, so `gh`'s
-own login, hosts and environment apply. `gh` and every networked `git` call run with the account's
+own login, hosts and environment apply. Networked `git` goes to `https://github.com/<owner>/<repo>.git`
+with `gh auth git-credential` as its only credential helper, so it needs no SSH key and no second
+login. `gh` and every networked `git` call run with the account's
 real home directory, taken from the operating system's user database rather than from `HOME`:
 launchers such as ClaudeCodePortable and ClaudeLocal relocate `HOME` into a profile, and there `gh`
 reports "not logged into any GitHub hosts". `manager.home` overrides the directory, and an explicit

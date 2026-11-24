@@ -51,3 +51,33 @@ def test_on_windows_the_profile_variables_follow_the_account_home() -> None:
     env = tool_environment(Path(r"C:\Users\me"), base=base, platform="win32")
     assert env["USERPROFILE"] == str(Path(r"C:\Users\me"))
     assert env["HOME"] == str(Path(r"C:\Users\me"))
+
+
+def _git_config(env: dict[str, str]) -> list[tuple[str, str]]:
+    count = int(env["GIT_CONFIG_COUNT"])
+    return [(env[f"GIT_CONFIG_KEY_{i}"], env[f"GIT_CONFIG_VALUE_{i}"]) for i in range(count)]
+
+
+def test_networked_git_authenticates_through_gh_alone() -> None:
+    env = tool_environment(Path("/home/me"), base={}, platform="linux")
+    # The empty value drops every helper configured before (e.g. a system credential manager).
+    assert _git_config(env) == [
+        ("credential.https://github.com.helper", ""),
+        ("credential.https://github.com.helper", "!gh auth git-credential"),
+    ]
+
+
+def test_git_config_entries_already_in_the_environment_are_kept() -> None:
+    base = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.x", "GIT_CONFIG_VALUE_0": "1"}
+    env = tool_environment(Path("/home/me"), base=base, platform="linux")
+    assert _git_config(env) == [
+        ("core.x", "1"),
+        ("credential.https://github.com.helper", ""),
+        ("credential.https://github.com.helper", "!gh auth git-credential"),
+    ]
+
+
+@pytest.mark.parametrize("count", ["", "x", "-1"])
+def test_an_unusable_git_config_count_is_started_over(count: str) -> None:
+    env = tool_environment(Path("/home/me"), base={"GIT_CONFIG_COUNT": count}, platform="linux")
+    assert len(_git_config(env)) == 2

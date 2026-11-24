@@ -5,7 +5,10 @@ Windows) into their own profile directories. ``gh`` then no longer finds its log
 ``gh auth status`` says "not logged into any GitHub hosts" under the relocated home and is logged in
 with the real one. The manager therefore runs ``gh`` and every networked ``git`` call with the
 account's home from the operating system's user database, or the configured ``manager.home``.
-Agents are deliberately not given it: they must not reach GitHub at all.
+Networked ``git`` authenticates through ``gh`` as well: over HTTPS, with ``gh auth git-credential``
+as the only credential helper for github.com, exactly what ``gh auth setup-git`` configures.
+``gh``'s login is required anyway, so no SSH key or second credential store is needed. Agents are
+deliberately given neither: they must not reach GitHub at all.
 """
 
 from __future__ import annotations
@@ -64,4 +67,23 @@ def tool_environment(
     env["HOME"] = str(home)
     if platform == "win32":
         env["USERPROFILE"] = str(home)
+    _add_git_config(env, GH_CREDENTIAL_HELPER)
     return env
+
+
+GH_CREDENTIAL_HELPER = (
+    ("credential.https://github.com.helper", ""),
+    ("credential.https://github.com.helper", "!gh auth git-credential"),
+)
+"""The empty value first drops every helper configured before it, such as a system credential
+manager, so git asks gh and nothing else."""
+
+
+def _add_git_config(env: dict[str, str], entries: tuple[tuple[str, str], ...]) -> None:
+    """Appends command-scope git settings through ``GIT_CONFIG_COUNT``, keeping existing ones."""
+    count = env.get("GIT_CONFIG_COUNT", "")
+    start = int(count) if count.isdigit() else 0
+    for offset, (key, value) in enumerate(entries):
+        env[f"GIT_CONFIG_KEY_{start + offset}"] = key
+        env[f"GIT_CONFIG_VALUE_{start + offset}"] = value
+    env["GIT_CONFIG_COUNT"] = str(start + len(entries))

@@ -79,7 +79,8 @@ def cache_dir(home: Path) -> Path:
 
 
 def remote_url(repository: str) -> str:
-    return f"git@github.com:{repository}.git"
+    """HTTPS, authenticated by gh's own login (see ``adapters.home``), so no SSH key is needed."""
+    return f"https://github.com/{repository}.git"
 
 
 @dataclass(frozen=True, slots=True)
