@@ -5,6 +5,7 @@ import stat
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -847,3 +848,41 @@ def test_the_remote_is_github_over_https() -> None:
     from github_issue_worker.wiring import remote_url
 
     assert remote_url("Hawkynt/ShiftDiff") == "https://github.com/Hawkynt/ShiftDiff.git"
+
+
+def test_given_no_local_clone_when_a_repository_is_removed_then_nothing_is_released(
+    tmp_path: Path,
+) -> None:
+    from github_issue_worker.configuration import load, save
+
+    class Unreachable:
+        def issues(self) -> list[int]:
+            raise AssertionError("the claims of a repository never cloned here are not read")
+
+    config = Configuration(
+        repositories=[RepositorySettings(repository="o/r"), RepositorySettings(repository="o/k")]
+    )
+    path = tmp_path / "config.json"
+    save(config, path)
+    workspace = FakeWorkspace(tmp_path)
+    workspace.cloned = set()
+    watch = SimpleNamespace(
+        name="o/r",
+        store=Unreachable(),
+        settings=RepositorySettings(repository="o/r"),
+        host=SimpleNamespace(info=lambda: SimpleNamespace(default_branch="main")),
+    )
+    runtime = Runtime(
+        config,
+        tmp_path,
+        None,
+        JsonStateStore(tmp_path / "state.json"),
+        "here",
+        workspace,  # type: ignore[arg-type]
+        watches={"o/r": watch},  # type: ignore[dict-item]
+    )
+
+    runtime.remove_repository("o/r", path)
+
+    assert [r.repository for r in load(path).repositories] == ["o/k"]
+    assert "o/r" not in runtime.watches

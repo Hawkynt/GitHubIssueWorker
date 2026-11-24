@@ -314,3 +314,10 @@ def test_a_cached_clone_follows_a_changed_remote_url(tmp_path: Path, remote: Pat
     new = Workspace(tmp_path / "cache", lambda repo: str(moved), Path.home())
     assert new.clone(REPO) == clone
     assert git("config", "remote.origin.url", cwd=clone) == str(moved)
+
+
+def test_a_repository_has_a_clone_only_once_it_was_cloned(workspace: Workspace) -> None:
+    assert not workspace.has_clone(REPO)
+    workspace.clone(REPO)
+    assert workspace.has_clone(REPO)
+    assert not workspace.has_clone("Hawkynt/Other")

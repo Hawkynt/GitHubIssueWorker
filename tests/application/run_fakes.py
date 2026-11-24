@@ -173,6 +173,11 @@ class FakeWorkspace:
     rebase_ok: bool = True
     shas: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
     head_listener: Callable[[str, str], None] | None = None
+    cloned: set[str] | None = None
+    """Repositories with a local clone; ``None`` means every one."""
+
+    def has_clone(self, repository: str) -> bool:
+        return self.cloned is None or repository in self.cloned
 
     def worktree(
         self, repository: str, issue: int, branch: str, base: str, resume: bool = True

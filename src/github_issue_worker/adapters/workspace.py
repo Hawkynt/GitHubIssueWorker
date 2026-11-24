@@ -60,6 +60,10 @@ class Workspace:
 
     # --- clone -----------------------------------------------------------------------------------
 
+    def has_clone(self, repository: str) -> bool:
+        """Whether this machine has cloned the repository, without cloning it."""
+        return (self._root(repository) / "clone" / ".git").exists()
+
     def clone(self, repository: str) -> Path:
         """The repository's cached clone, created on first use and fetched every time."""
         clone = self._root(repository) / "clone"

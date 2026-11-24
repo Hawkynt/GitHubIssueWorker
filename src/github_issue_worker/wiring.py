@@ -456,6 +456,9 @@ class Runtime:
                             f"{watch.name}: runs did not stop; removal can be retried"
                         )
                     finished.wait(0.05)
+        if not self.workspace.has_clone(watch.name):
+            # Claims are made through the local clone: without one this machine holds none here.
+            return
         settings = watch.settings
         base = settings.base_branch if isinstance(settings, RepositoryRun) else None
         base = base or watch.host.info().default_branch

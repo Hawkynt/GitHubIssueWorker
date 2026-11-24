@@ -998,7 +998,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
   (`permissions.push` is false), and says so.
 - [x] 🟥 **F1.3** `add` creates the `worker:*` labels that do not exist yet.
 - [x] 🟥 **F1.4** `remove <repo>` and `list` (last poll, state counts, current issues). Removing a
-  repository releases this manager's claims in it with a checkpoint.
+  repository releases this manager's claims in it with a checkpoint; one never cloned on this
+  machine holds no claims here and is removed at once. A removal that fails keeps the repository
+  watched and shows the reason in the UI.
 - [x] 🟥 **F1.5** Push access is re-checked on every start and every hour. A repository that lost it
   is suspended with a log entry, not skipped silently. Startup checks precede label creation,
   claim adoption and issue processing, including `watch --once`. Hourly checks run on the first
