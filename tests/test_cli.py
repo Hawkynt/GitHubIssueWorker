@@ -346,9 +346,13 @@ def test_given_no_config_when_once_starts_then_it_detects_workers_of_one_and_sav
     assert set(saved.accounts) == {"claude", "codex", "antigravity"}
 
 
-def tool(path: Path) -> None:
+def tool(path: Path, version: str = "1.0.0") -> None:
+    """A fake agent that answers ``--version`` (and ClaudeLocal's ``--status``)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("#!/bin/sh\n", encoding="utf-8")
+    if path.suffix.lower() in (".cmd", ".bat"):
+        path.write_text(f"@echo off\r\necho {version}\r\n", encoding="utf-8", newline="")
+    else:
+        path.write_text(f"#!/bin/sh\necho '{version}'\n", encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
 
 
@@ -414,11 +418,49 @@ def test_given_portable_roots_in_the_config_when_workers_detect_runs_then_they_a
     ]
 
 
+def test_given_an_installation_that_does_not_answer_when_detected_then_it_says_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from github_issue_worker.adapters.installations import Unavailable
+
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    tool(tmp_path / "bin" / ("claude.cmd" if sys.platform == "win32" else "claude"))
+    tool(tmp_path / "bin" / ("codex.cmd" if sys.platform == "win32" else "codex"))
+
+    def probe(proposal: dict[str, object], home: Path) -> str:
+        if proposal["agent"] == "codex":
+            raise Unavailable("codex --version failed: not signed in")
+        return "2.1.331 (Claude Code)"
+
+    found = {w["name"]: w for w in detect_workers(tmp_path, probe=probe)}
+    assert found["claude"]["version"] == "2.1.331 (Claude Code)"
+    assert "problem" not in found["claude"]
+    assert found["codex"]["problem"] == "codex --version failed: not signed in"
+    assert "version" not in found["codex"]
+
+
+def test_given_an_unproven_installation_when_saving_detected_workers_then_it_is_left_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from github_issue_worker.cli import _add_detected_workers
+
+    config = load(tmp_path / "missing.json")
+    _add_detected_workers(
+        config,
+        [
+            {"name": "claude", "agent": "claude", "account": "a", "version": "2.1.331"},
+            {"name": "codex", "agent": "codex", "account": "b", "problem": "does not exist"},
+        ],
+    )
+    assert [w.name for w in config.workers] == ["claude"]
+    assert set(config.accounts) == {"a"}
+
+
 def test_workers_detect_save_writes_workers_and_accounts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("PATH", str(tmp_path / "empty"))
-    tool(tmp_path / "ClaudeLocal" / "claude.sh")
+    tool(tmp_path / "ClaudeLocal" / ("Claude.bat" if sys.platform == "win32" else "claude.sh"))
     config = tmp_path / "config.json"
     assert main(["--config", str(config), "workers", "--detect", "--save"], home=tmp_path) == 0
     saved = load(config)

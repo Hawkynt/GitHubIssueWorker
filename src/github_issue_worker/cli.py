@@ -85,10 +85,25 @@ def normalize_issue(text: str) -> tuple[str, int]:
 # --- worker detection ----------------------------------------------------------------------------
 
 
-def detect_workers(home: Path, portable_roots: Sequence[str] = ()) -> list[dict[str, Any]]:
+def probe_version(proposal: dict[str, Any], home: Path) -> str:
+    """The version the proposed worker's installation answers with; `Unavailable` says why not."""
+    from github_issue_worker.adapters.agent_version import version_of
+    from github_issue_worker.adapters.installations import resolve
+
+    return version_of(resolve(WorkerSettings.model_validate(proposal), home))
+
+
+def detect_workers(
+    home: Path,
+    portable_roots: Sequence[str] = (),
+    probe: Callable[[dict[str, Any], Path], str] = probe_version,
+) -> list[dict[str, Any]]:
     """One proposed worker per agent installation found: ClaudeCodePortable profiles under the
-    default, the configured and the current session's root, ClaudeLocal, and the agents on PATH
-    that no portable profile already provides."""
+    default, the configured and the current session's root, ClaudeLocal, and the agents on PATH.
+
+    Each carries the ``version`` its installation answered with, or the ``problem`` why it did
+    not; only a proven one may be added (F15.9).
+    """
     found: list[dict[str, Any]] = []
     tools = ("claude", "codex", "antigravity")
     for portable in find_portable_roots(home, portable_roots, os.environ):
@@ -124,9 +139,8 @@ def detect_workers(home: Path, portable_roots: Sequence[str] = ()) -> list[dict[
             }
         )
 
-    portable_kinds = {worker["agent"] for worker in found if worker["name"] != "local"}
     for kind, executable in EXECUTABLES.items():
-        if kind not in portable_kinds and (shutil.which(executable) or shutil.which(kind)):
+        if shutil.which(executable) or shutil.which(kind):
             found.append(
                 {"name": kind, "agent": kind, "account": kind, "priority": _PRIORITY[kind]}
             )
@@ -137,7 +151,23 @@ def detect_workers(home: Path, portable_roots: Sequence[str] = ()) -> list[dict[
         names[worker["name"]] = names.get(worker["name"], 0) + 1
         if names[worker["name"]] > 1:
             worker["name"] = f"{worker['name']}-{names[worker['name']]}"
+    from github_issue_worker.adapters.installations import Unavailable
+
+    for worker in found:
+        try:
+            worker["version"] = probe(proposal(worker), home)
+        except Unavailable as problem:
+            worker["problem"] = str(problem)
     return found
+
+
+FOUND_ONLY = ("version", "problem")
+"""What detection reports about a found installation that is not part of a worker's settings."""
+
+
+def proposal(found: dict[str, Any]) -> dict[str, Any]:
+    """The worker settings of a found installation, without what detection reports about it."""
+    return {key: value for key, value in found.items() if key not in FOUND_ONLY}
 
 
 def _add_detected_workers(
@@ -147,11 +177,11 @@ def _add_detected_workers(
     existing = {worker.name for worker in config.workers}
     workers, accounts = list(config.workers), dict(config.accounts)
     for raw in proposed:
-        if raw["name"] in existing:
-            continue
+        if raw["name"] in existing or "problem" in raw:
+            continue  # configured already, or not proven to exist (F15.9)
         if raw["account"] not in accounts:
             accounts[raw["account"]] = AccountSettings()
-        workers.append(WorkerSettings.model_validate({**raw, "enabled": enabled}))
+        workers.append(WorkerSettings.model_validate({**proposal(raw), "enabled": enabled}))
     config.workers, config.accounts = workers, accounts
 
 

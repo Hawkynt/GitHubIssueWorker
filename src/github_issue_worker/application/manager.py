@@ -65,6 +65,8 @@ class WorkerSlot:
     available: bool = True
     observed_model: str | None = None
     """The model the worker's last run reported, which may differ from the configured one."""
+    version: str = ""
+    """What the installation answered ``--version`` with (F15.9); empty when not asked."""
     reason: str = ""
     busy: bool = False
     current: tuple[str, int] | None = None

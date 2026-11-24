@@ -185,6 +185,7 @@ legend { font-weight: 650; font-size: 1.05rem; padding: 0 .5rem 0 0; }
 input.changed, select.changed, textarea.changed { background: var(--changed);
   border-color: var(--changed-rule); }
 input[type=checkbox].changed { outline: 2px solid var(--changed-rule); outline-offset: 1px; }
+td.problem { color: var(--brick); }
 .problems { background: var(--brick-soft); color: var(--brick); padding: .75rem 1rem;
   border-radius: 4px; margin: 0 0 1rem; }
 .notice { background: var(--steel-soft); color: var(--steel); padding: .6rem 1rem;
@@ -1013,10 +1014,16 @@ def _agent_row(
     group = e(first.worker)
     running = sum(1 for instance in instances if instance.state == "working")
     model = next((i.model for i in instances if i.model and i.model != "-"), first.model)
+    version = next((i.version for i in instances if i.version), "")
     who = _who(
         first.worker,
         f"{e(first.agent)} on account <span class=nowrap>{e(first.account)}</span>"
-        f"<br><span class=load>{running} of {len(instances)} running</span>",
+        + (
+            f'<br><span class=load title="What its installation answers --version with">'
+            f"{e(version)}</span>"
+            if version
+            else f"<br><span class=load>{running} of {len(instances)} running</span>"
+        ),
         model,
     )
     paused = all(instance.state == "paused" for instance in instances)
@@ -2004,6 +2011,19 @@ WORKER_FIELDS = [f for f in fields_of(WorkerSettings) if not f.path.startswith("
 INSTALLATION_FIELDS = ("type", "path", "env", "root", "profile")
 
 
+def _installation_text(installation: Mapping[str, Any]) -> str:
+    """How a found installation reads: its kind, and where for a portable profile or a path."""
+    kind = str(installation.get("type", "path"))
+    if kind == "claudecodeportable":
+        root = installation.get("root", "~/ClaudeCodePortable")
+        return f"ClaudeCodePortable {root}, profile {installation.get('profile', 'default')}"
+    if kind == "claudelocal":
+        return f"ClaudeLocal {installation.get('root', '~/ClaudeLocal')}"
+    if kind == "executable":
+        return str(installation.get("path", ""))
+    return "on PATH"
+
+
 def worker_page(
     snapshot_id: str,
     config: Configuration,
@@ -2068,16 +2088,29 @@ def worker_page(
     if detected:
         rows = "".join(
             f"<tr><td>{e(item['name'])}</td><td>{e(item['agent'])}</td>"
-            f"<td>{e(item['installation']['type'])}</td>"
-            f'<td><form method=post action="/workers/add-detected"><input type=hidden name="index" value={index}>'
-            "<button>Add</button></form></td></tr>"
+            f"<td>{e(_installation_text(item['installation']))}</td>"
+            + (
+                f"<td class=problem>{e(item['problem'])}</td>"
+                if "problem" in item
+                else f"<td>{e(item.get('version', ''))}</td>"
+            )
+            + f'<td><form method=post action="/workers/add-detected"><input type=hidden name="index" value={index}>'
+            + (
+                '<button disabled title="Only an installation that answers --version can be added">Add</button>'
+                if "problem" in item
+                else '<button title="Each click adds one more worker, which runs one issue at a time">Add</button>'
+            )
+            + "</form></td></tr>"
             for index, item in enumerate(detected)
         )
         found = _panel(
             "Found on this machine",
-            "Add one as it is, or describe one below.",
+            "Each click on Add adds one more worker of that installation; each runs one issue at a "
+            "time. Only an installation that answered with its version can be added. Or describe "
+            "one below.",
             "<div class=scroll><table><thead><tr><th>Name</th><th>Agent</th>"
-            f"<th>Installation</th><th></th></tr></thead><tbody>{rows}</tbody></table></div>",
+            "<th>Installation</th><th>Version</th><th></th></tr></thead>"
+            f"<tbody>{rows}</tbody></table></div>",
             "Found on this machine",
         )
     remove = (

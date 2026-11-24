@@ -21,6 +21,7 @@ from github_issue_worker.cli import normalize_repository
 from github_issue_worker.configuration import (
     Configuration,
     ConfigurationError,
+    ExecutableInstallation,
     RepositorySettings,
     WorkerSettings,
     validate,
@@ -80,6 +81,12 @@ def create_app(backend: Backend) -> FastAPI:
     async def refused(request: Request, error: ActionError) -> RedirectResponse:
         """A refused action returns to the page it came from with the reason, never a 500."""
         return back(referred(request), str(error))
+
+    def proven(config: Configuration, name: str) -> None:
+        """Only a worker whose installation answers ``--version`` is saved (F15.9)."""
+        worker = next((w for w in config.workers if w.name == name), None)
+        if worker is not None:
+            backend.check_worker(worker)
 
     def save(data: dict[str, Any]) -> Configuration:
         config = validate(data)
@@ -251,12 +258,13 @@ def create_app(backend: Backend) -> FastAPI:
         installation: dict[str, Any] = {"type": kind}
         if kind == "executable":
             installation["path"] = submitted.get("installation.path", "")
+            blank = ExecutableInstallation(type="executable", path="")
             env = apply_form(
                 {},
                 [FormField("env", "", "env")],
                 {"env": submitted.get("installation.env", "")},
-                _blank_worker(),
-                _blank_worker(),
+                blank,
+                blank,
             )
             installation["env"] = env.get("env", {})
         if (
@@ -286,7 +294,9 @@ def create_app(backend: Backend) -> FastAPI:
         detected = backend.detect_workers()
         if not 0 <= index < len(detected):
             return back("/workers/new")
-        found = dict(detected[index])
+        if "problem" in detected[index]:
+            raise ActionError(f"Not added: {detected[index]['problem']}")
+        found = {k: v for k, v in detected[index].items() if k not in ("version", "problem")}
         data = _dump(backend.config())
         names = {w["name"] for w in data.get("workers", [])}
         base, suffix = str(found["name"]), 2
@@ -305,9 +315,12 @@ def create_app(backend: Backend) -> FastAPI:
         data = _dump(backend.config())
         data["workers"] = [*data.get("workers", []), worker_data(submitted)]
         try:
+            proven(validate(data), submitted.get("name", ""))
             save(data)
-        except ConfigurationError as error:
-            problems, _ = _problems(error)
+        except (ConfigurationError, ActionError) as error:
+            problems = (
+                _problems(error)[0] if isinstance(error, ConfigurationError) else [str(error)]
+            )
             return HTMLResponse(
                 pages.worker_page(
                     backend.snapshot().manager_id,
@@ -340,9 +353,12 @@ def create_app(backend: Backend) -> FastAPI:
             worker_data(submitted) if w["name"] == name else w for w in data.get("workers", [])
         ]
         try:
+            proven(validate(data), submitted.get("name", name))
             save(data)
-        except ConfigurationError as error:
-            problems, _ = _problems(error)
+        except (ConfigurationError, ActionError) as error:
+            problems = (
+                _problems(error)[0] if isinstance(error, ConfigurationError) else [str(error)]
+            )
             worker = next(w for w in config.workers if w.name == name)
             return HTMLResponse(
                 pages.worker_page(

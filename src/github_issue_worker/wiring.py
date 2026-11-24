@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+from github_issue_worker.adapters.agent_version import version_of
 from github_issue_worker.adapters.agents.antigravity import AntigravityAdapter
 from github_issue_worker.adapters.agents.claude import ClaudeAdapter, ClaudeLocalAdapter
 from github_issue_worker.adapters.agents.codex import CodexAdapter
@@ -21,7 +22,7 @@ from github_issue_worker.adapters.gh_api import GhApi
 from github_issue_worker.adapters.git_claims import GitClaimStore
 from github_issue_worker.adapters.history_evidence import HistoryEvidence
 from github_issue_worker.adapters.home import account_home
-from github_issue_worker.adapters.installations import Unavailable, resolve
+from github_issue_worker.adapters.installations import EXECUTABLES, Unavailable, resolve
 from github_issue_worker.adapters.process import run_invocation, terminate
 from github_issue_worker.adapters.state_store import JsonStateStore
 from github_issue_worker.adapters.verifier import Verifier
@@ -263,6 +264,15 @@ class _PollStates(MutableMapping[str, PollState]):
         return 0
 
 
+def worker_version(worker: WorkerSettings, home: Path) -> str:
+    """The version a worker's installation answers with (F15.9). A ``command`` or ``remote``
+    worker is no agent CLI and is not asked; `Unavailable` says why an installation did not answer.
+    """
+    if worker.agent not in EXECUTABLES:
+        return ""
+    return version_of(resolve(worker, home))
+
+
 @dataclass
 class Runtime:
     config: Configuration
@@ -278,6 +288,9 @@ class Runtime:
     configuration_lock: threading.RLock = field(default_factory=threading.RLock)
     _history_evidence: HistoryEvidence | None = field(default=None, init=False, repr=False)
     _auth_checked: dict[str, float] = field(default_factory=dict, init=False, repr=False)
+    _version_checked: dict[str, float] = field(default_factory=dict, init=False, repr=False)
+    probe: Callable[[WorkerSettings, Path], str] = worker_version
+    """Proves a worker's installation exists and says its version; replaceable in tests."""
 
     def watch(self, settings: RepositorySettings) -> RepositoryWatch:
         name = settings.repository
@@ -425,6 +438,7 @@ class Runtime:
     def refresh_auth(self) -> None:
         """Probe local sign-in state at most once a minute; never send a model prompt."""
         now = time.monotonic()
+        self._refresh_versions(now)
         for worker, adapter in list(self.adapters.items()):
             if not isinstance(adapter, AuthenticatedAgent):
                 continue
@@ -437,6 +451,24 @@ class Runtime:
                 self._set_auth(worker, status.detail or "Sign-in required")
             elif status.authenticated is True:
                 self._set_auth(worker, None)
+
+    def _refresh_versions(self, now: float) -> None:
+        """At most once a minute per worker, so an agent that updated itself shows its new
+        version; an unchanged executable costs one stat (F15.9)."""
+        for worker in self.config.workers:
+            last = self._version_checked.get(worker.name)
+            if last is not None and now - last < 60:
+                continue
+            self._version_checked[worker.name] = now
+            try:
+                version = self.probe(worker, self.home)
+            except Unavailable:
+                continue  # unavailable is reported by the slot sync, not guessed here
+            for slot in self.slots:
+                if slot.group == worker.name and slot.version != version:
+                    if slot.version:
+                        log.info("worker %s: %s is now %s", slot.name, slot.version, version)
+                    slot.version = version
 
     def _release_repository(self, watch: RepositoryWatch, manager: Manager | None) -> None:
         if manager is not None:
@@ -542,6 +574,7 @@ class Runtime:
                 self.adapters[worker.name] = make_adapter(
                     worker, self.home, now=lambda: self.api.clock.now()
                 )
+                version = self.probe(worker, self.home)
                 available, reason = True, ""
                 if worker.model is None and self.state.model(worker.name) is None:
                     default = getattr(self.adapters[worker.name], "default_model", None)
@@ -550,7 +583,7 @@ class Runtime:
                         self.state.set_model(worker.name, known)
             except Unavailable as unavailable:
                 self.adapters.pop(worker.name, None)
-                available, reason = False, str(unavailable)
+                available, reason, version = False, str(unavailable), ""
                 log.warning("worker %s is unavailable: %s", worker.name, unavailable)
             for name in (n for n, w in wanted.items() if w is worker):
                 instance = next((s for s in self.slots if s.name == name), None)
@@ -575,6 +608,9 @@ class Runtime:
                 )
                 instance.available, instance.reason = available, reason
                 instance.enabled = worker.enabled
+                if version and instance.version and version != instance.version:
+                    log.info("worker %s: %s is now %s", name, instance.version, version)
+                instance.version = version
         configured = {worker.name for worker in self.config.workers}
         for name in list(self.adapters):
             if name not in configured and not any(s.group == name for s in self.slots):

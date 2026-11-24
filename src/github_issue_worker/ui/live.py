@@ -11,6 +11,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 
+from github_issue_worker.adapters.installations import Unavailable
 from github_issue_worker.adapters.process import terminate
 from github_issue_worker.adapters.workspace import WorkspaceError
 from github_issue_worker.application.accounts import AccountUsage, account_usage
@@ -22,7 +23,12 @@ from github_issue_worker.application.repository_suggestions import (
     PushableRepositories,
     pushable_repositories,
 )
-from github_issue_worker.configuration import ClaudeLocalInstallation, Configuration, save
+from github_issue_worker.configuration import (
+    ClaudeLocalInstallation,
+    Configuration,
+    WorkerSettings,
+    save,
+)
 from github_issue_worker.domain.claim import ClaimChange, claim_history
 from github_issue_worker.domain.issue import Issue
 from github_issue_worker.domain.model_name import display_model
@@ -279,6 +285,7 @@ class RuntimeBackend:
             else None
         )
         return WorkerView(
+            version=slot.version,
             active=slot.worked is not False,
             name=slot.name,
             group=slot.group,
@@ -398,6 +405,12 @@ class RuntimeBackend:
 
     def set_paused(self, paused: bool) -> None:
         self._runtime.state.set_paused(paused)
+
+    def check_worker(self, worker: WorkerSettings) -> str:
+        try:
+            return self._runtime.probe(worker, self._runtime.home)
+        except Unavailable as unavailable:
+            raise ActionError(str(unavailable)) from None
 
     def set_worker_enabled(self, name: str, enabled: bool) -> None:
         """Pause or resume a worker by switching its ``enabled`` setting, so it lasts."""
