@@ -17,6 +17,13 @@ _KIND = {
         "The issue was reopened after it had been closed as done: the earlier change did not "
         "fully solve it. Read the comments for why, and work on top of the current base branch."
     ),
+    RunKind.PULL_REQUEST: (
+        "This run works an open pull request that somebody else opened; its branch is checked "
+        "out. The work it asks for is listed below: make its failing checks pass, address every "
+        "review thread and requested change, and finish what its description says. Keep the "
+        "author's commits as they are: add your commits on top, never rebase, amend or squash "
+        "theirs."
+    ),
     RunKind.CONTINUATION: (
         "This run continues interrupted work. Read .ghiw/journal.md first if it exists, check the "
         "branch's commits and any uncommitted changes, and carry on from there."

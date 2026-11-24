@@ -471,6 +471,12 @@ keywords. Otherwise it ends as an issue would: a question on the pull request (`
 or `worker:awaiting-review` when only a review is missing. Pull requests and issues share one number
 space, so claims, labels and the queue treat both alike.
 
+For now a worker pushes only to branches of the watched repository itself: a pull request from a
+fork is labelled `worker:unserved`, with a comment saying so, until pushing to forks (F16.5) is
+built. A waiting pull request (`worker:needs-input`, `worker:awaiting-review`) goes on when a
+trusted comment arrives; answering and resolving review threads (F16.8) is still to come, so the
+threads are given to the worker as work, but not replied to.
+
 ## 🤹 Workers
 
 A worker is one agent, in one installation, billing against one account, working **at most one
@@ -1526,13 +1532,13 @@ operational items, demonstrated on a real repository. Commits that implement an 
   `worker:skip`, `worker` when `mode: labeled`, and pushable (same repository, or
   `maintainer_can_modify`). Anything else that would be worked is labelled `worker:unserved` with
   one comment naming the reason.
-- [ ] 🟥 **F16.4** Claims, labels, queue order, takeovers and usage limits work for pull requests
+- [x] 🟥 **F16.4** Claims, labels, queue order, takeovers and usage limits work for pull requests
   exactly as for issues, keyed by the pull request number.
 - [ ] 🟥 **F16.5** The worktree is the pull request's head branch (a fork's through
   `refs/pull/<n>/head`, pushed back to the fork's branch). The run gets the title, the description,
   the change against the base, the failing jobs' logs, the unresolved review threads and the trusted
   comments.
-- [ ] 🟥 **F16.6** Commits pass the commit gate (F7.1) and are pushed fast-forward on top of the
+- [x] 🟥 **F16.6** Commits pass the commit gate (F7.1) and are pushed fast-forward on top of the
   author's commits, never with force; a moved base is merged in, not rebased onto.
 - [ ] 🟥 **F16.7** Red checks are repaired up to `ciRepairAttempts` rounds, then the worker asks.
 - [ ] 🟥 **F16.8** Every unresolved review thread is answered; one the change addresses is resolved;

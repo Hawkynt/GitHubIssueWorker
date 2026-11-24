@@ -19,6 +19,7 @@ from github_issue_worker.domain.commit_message import CommitGate, change_lines
 from github_issue_worker.domain.issue import Comment, Issue
 from github_issue_worker.domain.model_name import display_model
 from github_issue_worker.domain.outcome import Outcome
+from github_issue_worker.domain.pull_request import FAILED_CONCLUSIONS
 from github_issue_worker.domain.run_limit import park_comment
 from github_issue_worker.domain.split import (
     SPLIT_LABEL,
@@ -155,6 +156,11 @@ class _Stop(Exception):
         self.verdict = verdict
 
 
+def _merge_message(base: str) -> str:
+    """A merge commit that passes the commit gate (F7.1)."""
+    return f"* {base} merged into the branch\n\n* takes up what {base} gained meanwhile"
+
+
 @dataclass
 class IssueRun:
     host: RepositoryHost
@@ -215,12 +221,18 @@ class IssueRun:
         repo = self.host.repository
         branch = self._handle.claim.branch
         self._fenced(lambda: self.host.set_worker_label(issue.number, "worker:working"))
-        base = self.settings.base_branch or self.host.info().default_branch
+        pr_mode = kind is RunKind.PULL_REQUEST
+        opened = self.host.pull_request(issue.number) if pr_mode else None
+        base = (
+            (opened.base_ref if opened else None)
+            or self.settings.base_branch
+            or self.host.info().default_branch
+        )
         tree = self.workspace.worktree(
             repo, issue.number, branch, base, resume=kind not in (RunKind.FIRST, RunKind.REOPEN)
         )
         label_choices = None
-        if not {name for name in issue.labels if not name.startswith("worker")}:
+        if not pr_mode and not {name for name in issue.labels if not name.startswith("worker")}:
             label_choices = self.host.label_names() - {
                 n for n in self.host.label_names() if n.startswith("worker")
             }
@@ -238,10 +250,12 @@ class IssueRun:
             label_choices = None
 
         pushed = self.workspace.remote_head(repo, branch)
-        feedback: str | None = None
+        # A pull request's own commits are its author's: the gate checks only what this run adds.
+        self._gate_from = pushed if pr_mode else None
+        feedback: str | None = self._pull_brief(opened, comments) if opened else None
         corrections = errors = repairs = 0
         outcome: Outcome | None = None
-        pull: PullRequest | None = None
+        pull: PullRequest | None = opened
 
         while True:
             if pull is None or feedback is not None:
@@ -274,9 +288,12 @@ class IssueRun:
                     continue
 
                 self._checkpoint("push")
-                if not self._linked:
-                    pushed = self._link(issue, tree, branch, base, pushed)
-                pushed = self._push(tree, branch, pushed)
+                if pr_mode:
+                    pushed = self._push_on_top(tree, branch)
+                else:
+                    if not self._linked:
+                        pushed = self._link(issue, tree, branch, base, pushed)
+                    pushed = self._push(tree, branch, pushed)
                 if pull is None:
                     pull = self.host.find_pull_request(branch) or self._open(
                         issue, tree, base, branch, outcome
@@ -287,8 +304,24 @@ class IssueRun:
             state, detail = self._await(pull, issue)
             if state == "merge":
                 self._checkpoint("merge")
+                if pr_mode:
+                    return self._merge_pull(issue, pull, branch)
                 return self._merge(issue, pull, branch, tree, base)
-            if state == "rebase":
+            if state == "rebase" and pr_mode:
+                # Never rebase an author's branch: the moved base is merged in (F16.6).
+                if self.workspace.merge_in(tree, base, _merge_message(base)):
+                    problem = self._check(tree, base)
+                    if not problem:
+                        pushed = self._push_on_top(tree, branch)
+                        continue
+                    detail = problem
+                else:
+                    self._conflict(True)
+                    detail = (
+                        f"The branch conflicts with `{base}`: merge origin/{base} into it and "
+                        "resolve the conflicts. Do not rebase."
+                    )
+            elif state == "rebase":
                 if self.workspace.rebase(tree, base):
                     problem = self._check(tree, base)
                     if not problem:
@@ -440,7 +473,12 @@ class IssueRun:
         self._checkpoint()
         if not ok:
             return "The build or tests fail:\n\n" + output[-6000:]
-        commits = self.workspace.commits(tree, base)
+        gate_from = getattr(self, "_gate_from", None)
+        commits = (
+            self.workspace.commits_since(tree, gate_from)
+            if gate_from
+            else self.workspace.commits(tree, base)
+        )
         if not commits:
             return "There is no commit on the branch yet. Commit the work following the rules."
         problems = []
@@ -489,6 +527,57 @@ class IssueRun:
             self._fenced(partial(self.host.comment, issue.number, text))
         self._linked = True
         return pushed
+
+    def _push_on_top(self, tree: Path, branch: str) -> str:
+        """Push a pull request's branch fast-forward only, on top of its author's commits."""
+        self._checkpoint()
+        self._handle = self.coordinator.fence(self._handle)
+        return self.workspace.push_fast_forward(self.host.repository, tree, branch)
+
+    def _pull_brief(self, pull: PullRequest, comments: tuple[Comment, ...]) -> str | None:
+        """What the pull request asks for, as the run's first instructions; None when nothing but
+        merging is left (F16.5)."""
+        review = self.host.review_state(pull.number)
+        failed = [c for c in self.host.checks(pull.head_sha) if c.conclusion in FAILED_CONCLUSIONS]
+        parts = []
+        if failed:
+            parts.append(
+                "These checks fail on the pull request's head; make them pass:\n"
+                + "\n".join(
+                    f"- {check.name}: {check.summary or check.conclusion}"
+                    + "".join(f"\n  {note}" for note in check.annotations)
+                    for check in failed
+                )
+            )
+        if review.decision == "CHANGES_REQUESTED":
+            parts.append("A review requested changes; make them.")
+        if review.threads:
+            parts.append(
+                "Unresolved review threads; address each one:\n"
+                + "\n".join(
+                    f"- {thread.path}:{thread.line} by {thread.author}: {thread.body}"
+                    for thread in review.threads
+                )
+            )
+        if comments:
+            parts.append("Address the new comments on the pull request below.")
+        if not parts:
+            return None
+        head = f"Pull request #{pull.number}: {pull.title} ({pull.head_ref} into {pull.base_ref})"
+        return "\n\n".join([head, pull.body, *parts]).strip()
+
+    def _merge_pull(self, issue: Issue, pull: PullRequest, branch: str) -> Verdict:
+        """Merge a pull request somebody else opened; its own closing keywords close its issues,
+        and its branch is its author's to delete (F16.9)."""
+        current = self.host.pull_request(pull.number)
+        self._check_cancelled()
+        self._handle = self.coordinator.fence(self._handle)
+        if not current.merged:
+            self.host.merge(pull.number, self.settings.merge_method, current.head_sha)
+        self.host.set_worker_label(issue.number, None)
+        self.coordinator.complete(self._handle, consumed=self._consumed)
+        self.workspace.remove(self.host.repository, issue.number, branch)
+        return Verdict("merged", detail=current.url)
 
     def _push(self, tree: Path, branch: str, expected: str | None, force: bool = False) -> str:
         self._checkpoint()

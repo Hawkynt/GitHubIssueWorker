@@ -431,3 +431,107 @@ def test_a_graphql_error_reading_the_links_is_raised_not_read_as_unlinked() -> N
 
     with pytest.raises(GitHubError, match="Bad credentials"):
         gh.linked_branches(42)
+
+
+def test_a_pull_request_carries_what_decides_whether_it_is_worked() -> None:
+    gh, _ = host(
+        {
+            ("GET", f"repos/{REPO}/pulls/7"): {
+                "number": 7,
+                "state": "open",
+                "draft": True,
+                "title": "Retry uploads",
+                "body": "Fixes the gateway timeout.",
+                "user": {"login": "contributor"},
+                "maintainer_can_modify": True,
+                "html_url": "https://github.com/Hawkynt/ShiftDiff/pull/7",
+                "mergeable_state": "unstable",
+                "head": {
+                    "sha": "abc123",
+                    "ref": "retry-uploads",
+                    "repo": {"full_name": "contributor/ShiftDiff"},
+                },
+                "base": {"ref": "main"},
+            }
+        }
+    )
+    pr = gh.pull_request(7)
+    assert (pr.head_ref, pr.head_repository, pr.base_ref) == (
+        "retry-uploads",
+        "contributor/ShiftDiff",
+        "main",
+    )
+    assert pr.draft and pr.maintainer_can_modify and pr.author == "contributor"
+    assert pr.body == "Fixes the gateway timeout." and not pr.same_repository(REPO)
+
+
+def test_a_pull_request_whose_fork_is_gone_is_not_in_the_repository() -> None:
+    gh, _ = host(
+        {
+            ("GET", f"repos/{REPO}/pulls/8"): {
+                "number": 8,
+                "head": {"sha": "abc", "ref": "x", "repo": None},
+                "base": {"ref": "main"},
+            }
+        }
+    )
+    pr = gh.pull_request(8)
+    assert pr.head_repository == "" and not pr.same_repository(REPO)
+
+
+def test_the_review_state_names_the_decision_and_only_unresolved_threads() -> None:
+    gh, api = host(
+        {
+            ("POST", "graphql"): {
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "reviewDecision": "CHANGES_REQUESTED",
+                            "reviewThreads": {
+                                "nodes": [
+                                    {
+                                        "id": "T1",
+                                        "isResolved": False,
+                                        "path": "src/upload.py",
+                                        "line": 42,
+                                        "comments": {
+                                            "nodes": [
+                                                {
+                                                    "author": {"login": "reviewer"},
+                                                    "body": "Retry only on 5xx.",
+                                                }
+                                            ]
+                                        },
+                                    },
+                                    {"id": "T2", "isResolved": True, "path": "a", "line": 1},
+                                ]
+                            },
+                        }
+                    }
+                }
+            }
+        }
+    )
+    review = gh.review_state(7)
+    assert review.decision == "CHANGES_REQUESTED"
+    assert [(t.id, t.path, t.line, t.author, t.body) for t in review.threads] == [
+        ("T1", "src/upload.py", 42, "reviewer", "Retry only on 5xx.")
+    ]
+    variables = api.calls[0][2]["variables"]
+    assert variables == {"owner": "Hawkynt", "name": "ShiftDiff", "number": 7}
+
+
+def test_no_review_decision_reads_as_empty() -> None:
+    gh, _ = host(
+        {
+            ("POST", "graphql"): {
+                "data": {
+                    "repository": {
+                        "pullRequest": {"reviewDecision": None, "reviewThreads": {"nodes": []}}
+                    }
+                }
+            }
+        }
+    )
+    review = gh.review_state(7)
+    assert review.decision == "" and review.threads == ()
