@@ -96,12 +96,9 @@ class UiSettings(_Settings):
     token: str | None = None
 
 
-MAX_CONCURRENT_RUNS = 20
-"""The most issues one account's workers may run at once on one manager; there is no unlimited."""
-
-
 class AccountSettings(_Settings):
-    max_concurrent_runs: int = Field(default=1, ge=1, le=MAX_CONCURRENT_RUNS)
+    """What a worker bills against: usage limits are shared by every worker on one account. Each
+    worker runs one issue at a time; more at once means adding the agent again (F12.11)."""
 
 
 class HueSegment(_Settings):
@@ -350,10 +347,46 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
+OLD_RUN_COUNT = "maxConcurrentRuns"
+"""An account's run count before each worker ran one issue at a time; read once, never written."""
+
+
+def _migrate(data: Any) -> Any:
+    """An account's old run count N becomes N workers of it: ``claude``, ``claude-2``, ..."""
+    if not isinstance(data, dict) or not isinstance(data.get("accounts"), dict):
+        return data
+    counts: dict[str, int] = {}
+    accounts: dict[str, Any] = {}
+    for name, settings in data["accounts"].items():
+        if isinstance(settings, dict) and OLD_RUN_COUNT in settings:
+            settings = {k: v for k, v in settings.items() if k != OLD_RUN_COUNT}
+            value = data["accounts"][name][OLD_RUN_COUNT]
+            if isinstance(value, int) and not isinstance(value, bool) and value > 1:
+                counts[name] = value
+        accounts[name] = settings
+    workers = data.get("workers")
+    if not counts or not isinstance(workers, list):
+        return {**data, "accounts": accounts}
+    taken = {w.get("name") for w in workers if isinstance(w, dict)}
+    migrated: list[Any] = []
+    for worker in workers:
+        migrated.append(worker)
+        if not isinstance(worker, dict) or worker.get("account") not in counts:
+            continue
+        number = 2
+        for _ in range(counts[worker["account"]] - 1):
+            while f"{worker['name']}-{number}" in taken:
+                number += 1
+            copy = {**worker, "name": f"{worker['name']}-{number}"}
+            taken.add(copy["name"])
+            migrated.append(copy)
+    return {**data, "accounts": accounts, "workers": migrated}
+
+
 def validate(data: Any) -> Configuration:
     """Validate already-decoded JSON data, raising `ConfigurationError` with every problem."""
     try:
-        config = Configuration.model_validate(data)
+        config = Configuration.model_validate(_migrate(data))
     except ValidationError as error:
         problems = [
             Problem(path=_json_path(tuple(detail["loc"])), message=detail["msg"])

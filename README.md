@@ -34,8 +34,8 @@ executable scenarios, the code speaks the domain's language, and every behaviour
 test.
 
 A **worker** is one coding agent (a Claude Code, a Codex, an Antigravity, a Claude Code on a local
-model, an OpenCode) that works as many issues at once as its account allows, one per *instance*
-(`claude`, `claude.2`, ...), one by default and never more than twenty. A **manager** is the `github-issue-worker`
+model, an OpenCode) that works one issue at a time; to work more at once, add the same agent again
+(`claude`, `claude-2`, ...). A **manager** is the `github-issue-worker`
 process on a machine. It steers all of that machine's workers at once, does everything outward-facing
 (push, pull request, merge, close, comment) on their behalf, and only after it has checked the
 result: build and tests green, every commit conforming to the house rules, no trace of who or what
@@ -179,13 +179,12 @@ double-clicked window stays open on the error.
 
 When no configuration file exists yet, `watch` detects the local agents (`claude`, `codex`,
 `antigravity` / `agy`, `opencode`, plus local portable and ClaudeLocal installations), writes the
-initial configuration with one concurrent run per account (`maxConcurrentRuns` of `1`) and every
-found worker switched off until you switch it on, serves the web UI with the default settings and
-opens it in your browser so you can add a repository and use it right away. That first start is
-**paused**: it polls and shows everything, but claims, labels and starts nothing until you press
-**Resume** in the UI, so nothing is worked while you are still configuring. **Pause all** in the UI
-(or `watch --paused`) pauses again at any time; the pause survives restarts until it is resumed,
-and a run already going finishes.
+initial configuration with one worker per agent found, each switched off until you switch it on,
+serves the web UI with the default settings and opens it in your browser so you can add a repository
+and use it right away. That first start is **paused**: it polls and shows everything, but claims,
+labels and starts nothing until you press **Resume** in the UI, so nothing is worked while you are
+still configuring. **Pause all** in the UI (or `watch --paused`) pauses again at any time; the pause
+survives restarts until it is resumed, and a run already going finishes.
 
 From the command line:
 
@@ -255,8 +254,8 @@ manager, marked remote.
 
 **Cockpit.** The crew at work and the long view. Readouts on top: merged today, the last seven days
 with a 30-day trace, all time, median time to merge, merge rate. Each worker is a lane, tinted with
-the colour of the model it runs: agent, account and model, with a sub-row per instance its account
-lets run at once: a square per issue, coloured by repository, with the issue (its description as
+the colour of the model it runs: agent, account and model, with a row for the issue it runs: a
+square coloured by repository, with the issue (its description as
 tooltip), a track through the six steps of a run, its branch, which opens the worktree, and its own
 log and stop & release. When other managers hold issues, a remote row follows with a sub-row for
 each, its branch linked on GitHub. Then the accounts: each one available or limited, its reset
@@ -534,13 +533,15 @@ nothing.
 
 Every worker has an **account**: an opaque name for what its agent bills against. Usage limits belong
 to accounts, not to workers or machines. Two workers on one account, on one machine or on two, share
-its limit (see [Usage limits](#-usage-limits)). An account also sets concurrency:
-`maxConcurrentRuns` (1 by default, at most 20, never unlimited) is how many issues its workers run
-at once on this manager. Each worker runs that many instances, `claude`, `claude.2`, `claude.3`,
-each holding one claim of its own; two workers on one account share the number. `1` fits a local
-model that serves one request at a time, as ClaudeLocal's gateway does, so a second issue waits
-instead of queuing inside the engine. A worker's name cannot end like an instance name (`.2`). A local model has
-no vendor usage limit; its worker is *unavailable* instead while the gateway is not running.
+its limit (see [Usage limits](#-usage-limits)). Concurrency is the number of workers: each worker runs
+one issue at a time and holds at most one claim, so an agent added three times (`claude`,
+`claude-2`, `claude-3`, the same installation and account) runs three issues at once and pauses as one
+when their account hits its limit. A local model that serves one request at a time, as ClaudeLocal's
+gateway does, is added once, so a second issue waits instead of queuing inside the engine. A
+worker's name cannot end like the instance names older versions used (`.2`). A configuration
+written by such a version has its `accounts.<name>.maxConcurrentRuns` of N read once as N workers of
+that account. A local model has no vendor usage limit; its worker is *unavailable* instead while the
+gateway is not running.
 
 **Choosing who takes an issue.** When several idle workers of one manager are eligible for an issue,
 the one with the lowest `priority` value takes it, and among equals the one whose account has the
@@ -635,10 +636,9 @@ carry their own guards too: the issue branch is pushed with `--force-with-lease`
 this worker last pushed, and the merge passes the expected head `sha`, so a worker that lost its
 claim cannot overwrite or merge somebody else's work.
 
-**No reservations.** A worker instance claims an issue only when, at that moment, it holds no other claim, it
-is eligible for the issue (routing labels), its installation is available, its account is not limited
-and is below its claim-stop threshold, and the account's `maxConcurrentRuns` allows another run. It
-never queues claims ahead of time.
+**No reservations.** A worker claims an issue only when, at that moment, it holds no other claim, it
+is eligible for the issue (routing labels), its installation is available, and its account is not
+limited and is below its claim-stop threshold. It never queues claims ahead of time.
 
 **No double work.** Pollers on every manager only find *candidates*. Whether an event still needs
 work is decided by the claim's `consumedThrough`: a comment counts as handled only once the holder has
@@ -817,7 +817,7 @@ first, and a moved UI listener reopens on its new address.
     "anthropic-max": {},
     "openai-plus": {},
     "google-pro": {},
-    "local-gpu": { "maxConcurrentRuns": 1 }
+    "local-gpu": {}
   },
   "workers": [
     { "name": "claude", "agent": "claude", "account": "anthropic-max", "priority": 1, "model": "opus",
@@ -867,7 +867,7 @@ first, and a moved UI listener reopens on its new address.
 | `pollInterval` | 1 min | Time between polls of one repository, with a random jitter of ±10 %. |
 | `trustedUsers` | `[]` | Logins trusted in addition to everyone with write access. |
 | `ui.port`, `ui.bind`, `ui.token` | 8765, loopback, none | The local UI. A non-loopback `bind` requires a `token`. |
-| `accounts.<name>.maxConcurrentRuns` | 1 | Issues this account's workers run at once on this manager, 1 to 20; each worker runs that many instances. |
+| `accounts.<name>` | `{}` | An account workers bill against; usage limits are shared by all its workers. Each worker runs one issue at a time; add an agent again to run more at once. An older `maxConcurrentRuns` of N is read once as N workers. |
 | `modelColors.anthropic` `.openai` `.google` `.meta` `.xai` `.deepseek` `.nvidia` `.alibaba` `.mistral` `.moonshot` `.zai` `.other` | `70/50`, `240/30`, `159/30`, `210/20`, `291/20`, `187/20`, `131/20`, `32/20`, `108/20`, `268/20`, `7/20`, `329/50` | A model maker's hue segment: its centre on the OKLCH colour wheel and its width in degrees; the defaults do not overlap. A model's maker is read from its brand or model line (`Llama` Meta, `Grok` xAI, `Nemotron` NVIDIA, `Qwen` Alibaba, `Mistral`/`Codestral` Mistral, `Kimi` Moonshot, `GLM` Z.ai). A model's hue is picked inside its maker's segment by the model's name (`opus`, `sonnet`, `haiku`, `fable`) and does not move when only the version changes. Makers not named share `other`, each keeping a fixed part of it. A segment that sets only `hue` or only `width` keeps its maker's default for the other. |
 | `workers[].name` | — | Unique on this manager. Together with the manager id it is the claim holder. |
 | `workers[].agent` | — | `claude`, `codex`, `antigravity`, `opencode`, `command` or `remote`. |
@@ -913,7 +913,7 @@ configurations the same explicit directory makes them one manager in the claims 
 
 Each invocation keeps its transcript under the state directory's
 `logs/<owner>/<repository>/<issue>/` as a unique `.ndjson` file. A matching `.json` file records
-`transcript` (the filename), `worker` (the executing instance), `cost_usd` (`null` when unknown)
+`transcript` (the filename), `worker` (the executing worker), `cost_usd` (`null` when unknown)
 and `stderr` (diagnostic output). Retries and continuations have separate records, including when
 started by the same worker within one second. Missing monetary costs remain unknown; reported zero
 is preserved. Failed, usage-limited, timed-out and stopped invocations retain their available output
@@ -1238,8 +1238,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F11.7** `consumedThrough` advances only in the compare-and-swap that ends the run which
   used the events. Two workers seeing the same comment produce exactly one rework run.
 - [ ] 🟥 **F11.8** No-reservation rule: a claim is attempted only by a worker that holds none, is
-  eligible and available, whose account is unlimited, below `stopClaimingAt` and within
-  `maxConcurrentRuns`. Waiting states (NeedsInput, AwaitingReview, Failed) hold no claim.
+  eligible and available, and whose account is unlimited and below `stopClaimingAt`. Waiting states (NeedsInput, AwaitingReview, Failed) hold no claim.
 - [ ] 🟥 **F11.9** Immediate release, with a checkpoint, when a worker is removed, when it stays
   unavailable for `releaseBrokenAfter`, when its repository is removed, and on `release`.
 - [ ] 🟥 **F11.10** Presence on `refs/ghiw/managers/<id>`: workers with kind, tags, account, state and
@@ -1287,9 +1286,10 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [ ] 🟥 **F12.10** Continuation across agents: a run started by one agent kind is finished by another
   from the journal and checkpoint, with no repeated commits (tested claude → codex → antigravity →
   local claude with fakes).
-- [x] 🟥 **F12.11** `maxConcurrentRuns` per account (1 by default, 1 to 20) is enforced on the
-  manager: each worker runs that many instances (`<name>`, `<name>.2`, ...), each holding one claim,
-  a resize applies live, and workers sharing an account share the cap.
+- [x] 🟥 **F12.11** Each worker runs one issue at a time and holds at most one claim; more at once
+  means adding the same agent again (`<name>`, `<name>-2`, ...), which shares its account's usage
+  limit. Adding or removing a worker applies live; a removed busy one finishes its run first. An
+  older configuration's `accounts.<name>.maxConcurrentRuns` of N is read once as N workers.
 - [ ] 🟦 **F12.12** `remote` adapter for vendor cloud agents: submit the task with the checkpoint,
   poll, collect the diff into the worktree, then the same verification and commit gate as a local
   run.
@@ -1368,8 +1368,8 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟧 **F14.14** Crew squares: each issue a worker holds is a square coloured by its repository
   (the same colour for every worker, local or remote), with the issue linked and its description as
   tooltip, and its branch: locally a button that opens the worktree in the file manager, remotely a
-  link to the branch on GitHub. Each worker is a row with a sub-row per instance its account
-  allows, with log and stop & release per instance and pause and edit per worker. Issues held by
+  link to the branch on GitHub. Each worker is a row with the issue it runs, its log, stop &
+  release, pause and edit. Issues held by
   other managers form one remote row, shown only when there are any, with a sub-row per issue and no
   controls.
 - [x] 🟥 **F14.15** Blockers: a run that waits on something only a person can do says so. While its
@@ -1541,7 +1541,7 @@ headers the manager needs for conditional polling, server time and rate limits.
   make a change visible, and the *suspected limit* fallback keeps an unrecognised limit from turning
   into a failure loop. It still costs one or two failed runs.
 - **A local model is one resource.** One engine serves one request at a time, so more than one worker
-  on it only queues; `maxConcurrentRuns: 1` on its account says so.
+  on it only queues; add its worker once.
 - **Quality is bounded by the repository's tests.** The manager verifies against what the repository
   can check. A repository with no tests gets only the tests the run wrote itself.
 

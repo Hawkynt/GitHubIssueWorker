@@ -480,25 +480,27 @@ def test_the_prose_limit_reaches_the_commit_gate() -> None:
 
 
 def _instances_config(claude: Path, runs: int) -> Configuration:
+    """``runs`` workers of one claude installation on one account: claude, claude-2, ..."""
     return parse(
         json.dumps(
             {
-                "accounts": {"a": {"maxConcurrentRuns": runs}},
+                "accounts": {"a": {}},
                 "workers": [
                     {
-                        "name": "claude",
+                        "name": "claude" if number == 1 else f"claude-{number}",
                         "agent": "claude",
                         "account": "a",
                         "installation": {"type": "executable", "path": str(claude)},
                     }
+                    for number in range(1, runs + 1)
                 ],
             }
         )
     )
 
 
-def test_a_worker_runs_as_many_instances_as_its_account_allows(tmp_path: Path) -> None:
-    # F12.11: maxConcurrentRuns 3 gives claude, claude.2 and claude.3, one issue each.
+def test_each_worker_is_one_slot_and_a_removed_busy_one_finishes_its_run(tmp_path: Path) -> None:
+    # F12.11: claude added three times gives three slots, one issue each.
     claude = executable(tmp_path / "bin" / "claude")
     runtime = Runtime(
         config=_instances_config(claude, 3),
@@ -511,17 +513,16 @@ def test_a_worker_runs_as_many_instances_as_its_account_allows(tmp_path: Path) -
     runtime.sync_slots()
     assert [(s.name, s.group) for s in runtime.slots] == [
         ("claude", "claude"),
-        ("claude.2", "claude"),
-        ("claude.3", "claude"),
+        ("claude-2", "claude-2"),
+        ("claude-3", "claude-3"),
     ]
-    assert set(runtime.adapters) == {"claude"}  # one adapter serves every instance
 
     runtime.slots[1].busy = True
     runtime.config = _instances_config(claude, 1)
     runtime.sync_slots()
     names = {slot.name: slot for slot in runtime.slots}
-    assert set(names) == {"claude", "claude.2"}  # claude.3 went at once
-    assert not names["claude.2"].enabled  # finishes its run, then takes nothing new
+    assert set(names) == {"claude", "claude-2"}  # claude-3 went at once
+    assert not names["claude-2"].enabled  # finishes its run, then takes nothing new
 
 
 def test_splitting_is_on_by_default_and_can_be_switched_off_per_repository() -> None:
@@ -893,7 +894,8 @@ def test_given_a_disabled_worker_when_slots_sync_then_it_takes_nothing_until_ena
 ) -> None:
     claude = executable(tmp_path / "bin" / "claude")
     config = _instances_config(claude, 2)
-    config.workers[0].enabled = False
+    for worker in config.workers:
+        worker.enabled = False
     runtime = Runtime(
         config=config,
         home=tmp_path,
