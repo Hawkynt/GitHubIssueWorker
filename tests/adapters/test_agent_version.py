@@ -99,7 +99,7 @@ def test_given_an_updated_executable_when_asked_again_then_the_new_version_is_se
 ) -> None:
     agent = fake_agent(tmp_path, "claude", "echo 1.0.0", "echo 1.0.0")
     assert version_of(Resolved(agent)) == "1.0.0"
-    fake_agent(tmp_path, "claude", "echo 1.0.1 (updated)", "echo 1.0.1 (updated)")
+    fake_agent(tmp_path, "claude", 'echo "1.0.1 (updated)"', "echo 1.0.1 (updated)")
     assert version_of(Resolved(agent)) == "1.0.1 (updated)"
 
 
