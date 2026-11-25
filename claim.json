@@ -2,7 +2,7 @@
   "branch": "issue/112-effort-and-model",
   "claimedAt": "2026-11-25T07:20:01Z",
   "consumedThrough": {
-    "comment": null,
+    "comment": 7155536685,
     "review": null
   },
   "expiresAt": "2026-12-02T07:56:41Z",
@@ -14,7 +14,7 @@
   "issue": 112,
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-11-25T07:56:41Z",
+  "renewedAt": "2026-11-25T08:01:28Z",
   "runs": [
     {
       "active": true,
@@ -31,7 +31,7 @@
       "worker": "claude"
     }
   ],
-  "state": "working",
-  "step": "verify",
+  "state": "released",
+  "step": "failed",
   "takeovers": 0
 }
