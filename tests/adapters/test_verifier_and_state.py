@@ -96,3 +96,37 @@ def test_given_a_pause_when_the_state_is_reloaded_then_it_is_still_paused(tmp_pa
     assert JsonStateStore(path).paused() is True
     JsonStateStore(path).set_paused(False)
     assert JsonStateStore(path).paused() is False
+
+
+def _venv(root: Path) -> Path:
+    scripts = root / ("Scripts" if sys.platform == "win32" else "bin")
+    scripts.mkdir(parents=True)
+    (root / "pyvenv.cfg").write_text("home = x\n", encoding="utf-8")
+    return scripts
+
+
+@pytest.mark.parametrize("name", [".venv", "venv"])
+def test_given_a_virtual_environment_in_the_worktree_when_verified_then_it_is_active(
+    tmp_path: Path, name: str
+) -> None:
+    scripts = _venv(tmp_path / name)
+    (tmp_path / "check.py").write_text(
+        "import os\nprint(os.environ['VIRTUAL_ENV'])\n"
+        "print(os.environ['PATH'].split(os.pathsep)[0])\n",
+        encoding="utf-8",
+    )
+    ok, output = Verifier(test=f'"{sys.executable}" check.py').verify(tmp_path)
+    assert ok
+    assert str(tmp_path / name) in output and str(scripts) in output
+
+
+def test_given_a_folder_named_venv_without_pyvenv_cfg_when_verified_then_nothing_is_activated(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".venv").mkdir()
+    (tmp_path / "check.py").write_text(
+        "import os\nprint('active' if os.environ.get('VIRTUAL_ENV') else 'none')\n",
+        encoding="utf-8",
+    )
+    ok, output = Verifier(test=f'"{sys.executable}" check.py').verify(tmp_path)
+    assert ok and "none" in output

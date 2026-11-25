@@ -43,12 +43,16 @@ def run_gh(argv: list[str], stdin: str | None, env: dict[str, str]) -> tuple[int
         input=stdin,
         capture_output=True,
         text=True,
+        # gh writes UTF-8 whatever the console's code page; the locale default (cp1252 on
+        # Windows) failed on bytes like 0x8f, which left stdout None and failed the poll.
+        encoding="utf-8",
+        errors="replace",
         env=env,
         check=False,
         start_new_session=True,
         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
     )
-    return result.returncode, result.stdout, result.stderr
+    return result.returncode, result.stdout or "", result.stderr or ""
 
 
 class GhApi:
@@ -103,7 +107,7 @@ class GhApi:
             _, stdout, stderr = self._run(argv, stdin, env)
             response = self._parse(stdout)
             if response is None:
-                raise GhUnavailable(stderr.strip() or "gh produced no HTTP response")
+                raise GhUnavailable((stderr or "").strip() or "gh produced no HTTP response")
 
             if "date" in response.headers:
                 self.clock.observe(response.headers["date"])
@@ -134,8 +138,8 @@ class GhApi:
         return None
 
     @staticmethod
-    def _parse(stdout: str) -> Response | None:
-        text = stdout.replace("\r\n", "\n")
+    def _parse(stdout: str | None) -> Response | None:
+        text = (stdout or "").replace("\r\n", "\n")
         match = _STATUS.match(text)
         if not match:
             return None

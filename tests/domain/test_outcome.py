@@ -79,3 +79,11 @@ def test_a_sub_issue_without_a_title_is_rejected() -> None:
 def test_the_schema_asks_for_sub_issues() -> None:
     items = OUTCOME_SCHEMA["properties"]["subIssues"]["items"]
     assert set(items["required"]) == {"title", "body", "scenarios"}
+
+
+def test_given_a_blocked_outcome_when_parsed_then_it_needs_no_questions() -> None:
+    text = (
+        '{"outcome": "blocked", "summary": "No pytest on this machine.", "scenarios": [],'
+        ' "questions": [], "labels": [], "restatement": "", "subIssues": []}'
+    )
+    assert Outcome.parse(text).kind == "blocked"
