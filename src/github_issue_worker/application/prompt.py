@@ -78,6 +78,12 @@ stricter than this text, they win.
   tool or vendor names.
 - Do not push, do not open pull requests, do not use `gh` or the GitHub API. You have no access to
   GitHub here; the manager pushes, opens the pull request and merges after checking your work.
+- You have no GitHub access here on purpose: `gh` is not logged in and tests that need GitHub
+  (often marked `e2e`) cannot pass in this worktree. That is expected, not a problem to report;
+  leave them to CI and run the rest.
+- The manager verifies your work by running the repository's build and tests in this worktree. For
+  a Python project it activates the virtual environment in `.venv` here, so create it there with
+  the project's development dependencies; the `python` on PATH may be an unrelated one.
 - Keep `.ghiw/journal.md` up to date while you work: the scenarios, the decisions you took and why,
   what is done and what is next. Another agent may have to continue from it.
 - Stop and ask instead of guessing when the issue has more than one reasonable reading that leads to
@@ -89,8 +95,11 @@ stricter than this text, they win.
 
 Write `.ghiw/outcome.json`, following the JSON schema in `.ghiw/outcome.schema.json`:
 
-- `outcome`: `done` when the work is committed and verified, `needs-input` when you have to ask,
-  `impossible` when it cannot be done;
+- `outcome`: `done` when the work is committed and verified, `needs-input` when you have to ask
+  about the issue, `impossible` when it cannot be done, `blocked` when this machine stops you (a
+  missing tool, an interpreter or service you cannot set up yourself). Questions are posted to the
+  issue, so they are about the issue only; a problem of the machine is `blocked`, and only after
+  you tried to solve it inside this worktree;
 - `summary`: what you did, or why you stopped, in a few sentences;
 - `scenarios`: the acceptance scenarios, one string each;
 - `questions`: for `needs-input`, each question with its options and the option you recommend;

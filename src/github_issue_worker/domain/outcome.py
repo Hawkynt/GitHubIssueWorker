@@ -6,8 +6,10 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
-OutcomeKind = Literal["done", "needs-input", "impossible"]
-_KINDS: tuple[OutcomeKind, ...] = ("done", "needs-input", "impossible")
+OutcomeKind = Literal["done", "needs-input", "impossible", "blocked"]
+_KINDS: tuple[OutcomeKind, ...] = ("done", "needs-input", "impossible", "blocked")
+"""``blocked``: this machine, not the issue, stops the work (a missing tool, a broken PATH). It
+stays with the operator: nothing is posted to the issue."""
 
 OUTCOME_SCHEMA: dict[str, Any] = {
     "type": "object",

@@ -142,6 +142,8 @@ class RunSettings:
     checks_timeout: timedelta = timedelta(hours=2)
     check_interval: timedelta = timedelta(seconds=30)
     limit_probe: timedelta = timedelta(minutes=5)
+    environment_retry: timedelta = timedelta(hours=1)
+    """How long a run the machine blocked waits before it tries again."""
     understand_first: bool = True
     """First and reopen runs start with a run that restates the issue and posts it (F4.5)."""
     split_issues: bool = True
@@ -275,6 +277,8 @@ class IssueRun:
                 if label_choices and outcome.labels:
                     self._apply_labels(issue, outcome.labels, label_choices)
                     label_choices = None
+                if outcome.kind == "blocked":
+                    return self._blocked(issue, outcome)
                 if outcome.kind != "done":
                     return self._ask(issue, outcome)
 
@@ -775,6 +779,15 @@ class IssueRun:
         )
         self.host.set_worker_label(issue.number, "worker:paused")
         return Verdict("paused", until=until, detail=report.limit.message)
+
+    def _blocked(self, issue: Issue, outcome: Outcome) -> Verdict:
+        """The machine stops the work, not the issue: the operator sees it in the log and the UI,
+        the issue only gets the paused label, and the run tries again later."""
+        until = self.clock.now() + self.settings.environment_retry
+        reason = f"blocked on this machine: {outcome.summary}"
+        self._handle = self.coordinator.pause(self._handle, until=until, reason=reason)
+        self.host.set_worker_label(issue.number, "worker:paused")
+        return Verdict("paused", until=until, detail=reason)
 
     def _awaiting(self, issue: Issue, pull: PullRequest, reason: str | None = None) -> Verdict:
         if reason:

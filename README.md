@@ -346,7 +346,7 @@ The next worker resumes from the last checkpoint.
 | Queued | `worker:queued` | no | Waiting for any idle worker that is eligible and available. |
 | Unserved | `worker:unserved` | no | No known worker matches the issue's routing labels. One comment says which capability is missing. |
 | Triage / Working | `worker:working` | yes | Labelling, then implementing in the worker's worktree. |
-| Paused | `worker:paused` | yes | The worker's agent hit its usage limit. It holds the issue and resumes at the reset. |
+| Paused | `worker:paused` | yes | The worker's agent hit its usage limit, or the machine blocked the run (a `blocked` outcome). It holds the issue and resumes at the reset, or an hour later. |
 | Shipping | `worker:working` | yes | Pushed, PR open, waiting for checks or merging. |
 | NeedsInput | `worker:needs-input` | no | A question is in the issue, or a run hit `runTimeout` or its budget and the comment says what was finished and what was not. Work is checkpointed, so whoever claims the answer continues from it. |
 | AwaitingReview | `worker:awaiting-review` | no | PR is green but the ruleset requires an approving review. |
@@ -495,8 +495,11 @@ Every agent is driven through the same contract, so agents are interchangeable m
 
 - **Input:** one prompt file with the issue, the trusted comments, the run kind, the working contract
   and, when continuing, the journal and the checkpoint it resumes from.
-- **Output:** `.ghiw/outcome.json` in the worktree (`outcome`: `done` / `needs-input` / `impossible`,
-  `summary`, `scenarios`, `questions[]` with options and a recommendation). Agents that can enforce a
+- **Output:** `.ghiw/outcome.json` in the worktree (`outcome`: `done` / `needs-input` / `impossible`
+  / `blocked`, `summary`, `scenarios`, `questions[]` with options and a recommendation). Questions
+  go to the issue, so they are about the issue only. A problem of the machine (a missing tool, an
+  interpreter on PATH) is `blocked`: it stays in the manager's log and UI, the issue is only
+  labelled `worker:paused`, and the run tries again an hour later. Agents that can enforce a
   JSON schema natively are given one as well. The outcome file is the contract, so an agent without
   that feature still works.
 - **Signals:** an adapter turns the agent's own output into *progress*, *cost*, *session id*,
@@ -1164,7 +1167,7 @@ operational items, demonstrated on a real repository. Commits that implement an 
   agents are told to create none. (Sweep and local branches tested; checkpoint refs still open.)
 - [ ] 🟥 **F6.1** Runs the worker's agent headless in the worktree through its adapter, with the
   per-issue prompt file, and reads the outcome from `.ghiw/outcome.json` (`outcome` `done` /
-  `needs-input` / `impossible`, `summary`, `scenarios`, `questions[]` with options and a
+  `needs-input` / `impossible` / `blocked`, `summary`, `scenarios`, `questions[]` with options and a
   recommendation). Where the agent supports a native schema, it is passed as well.
 - [ ] 🟥 **F6.2** The prompt carries the issue title and body, every trusted comment in order, the
   labels, the run kind (first / rework / reopen / CI repair / continuation), the target repository's
@@ -1183,7 +1186,9 @@ operational items, demonstrated on a real repository. Commits that implement an 
   whatever an agent adds anyway.
 - [ ] 🟥 **F6.6** Independent verification after `done`: clean working tree, configured or detected
   build and test commands pass, at least one commit on the branch. A failed check returns the output
-  to the same conversation, once, before the issue is parked.
+  to the same conversation, once, before the issue is parked. The commands run in the agent's
+  environment, without GitHub access; a `.venv` (or `venv`) in the worktree is activated for them,
+  since the `python` first on the manager's PATH may belong to anything else.
 - [x] 🟥 **F6.7** `runTimeout` and the budget are enforced. Hitting either parks the issue with a
   comment stating what was finished and what was not.
 - [x] 🟧 **F6.8** Each run's transcript, worker and cost (where the agent reports one) are kept with
@@ -1227,6 +1232,10 @@ operational items, demonstrated on a real repository. Commits that implement an 
 - [x] 🟥 **F8.3** A parked issue is never pinged again by the manager. Silence costs nothing.
 - [ ] 🟧 **F8.4** An answer that does not resolve the question produces a follow-up question rather
   than a guess.
+- [x] 🟥 **F8.5** Issue comments are about the issue. A `blocked` outcome (the machine, not the issue,
+  stops the work) posts nothing, labels `worker:paused`, logs the reason and tries again after an
+  hour. The prompt tells agents that they have no GitHub access by design and which `.venv` the
+  check uses.
 
 ### F9 — Rework
 

@@ -817,3 +817,20 @@ def test_current_claim_step_tracks_implementation_verification_and_shipping_for_
     h.host.create_pull_request = open_pull
     assert h.run().kind == "merged"
     assert observed == ["implement", "verify", "push"]
+
+
+def test_given_a_blocked_outcome_when_the_run_ends_then_nothing_is_posted_and_it_waits(
+    tmp_path: Path,
+) -> None:
+    # Problems of this machine are the operator's, not the issue's: no comment on the issue.
+    blocked = Outcome("blocked", "The python on PATH has no pytest.")
+    h = Harness(tmp_path, lambda h: [step(h.workspace, ok(blocked), commit=None)])
+    verdict = h.run()
+
+    assert verdict.kind == "paused" and verdict.until == T0 + timedelta(hours=1)
+    assert "python on PATH" in verdict.detail
+    assert h.host.posted == []
+    assert h.host.worker_label[42] == "worker:paused"
+    current = h.store.current(42)
+    assert current is not None and current.state is ClaimState.PAUSED
+    assert "python on PATH" in current.wait_reason
