@@ -5,7 +5,7 @@
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-12-02T05:34:50Z",
+  "expiresAt": "2026-12-02T05:34:53Z",
   "generation": 2,
   "holder": {
     "manager": "DE05PCI025-28e1",
@@ -13,8 +13,8 @@
   },
   "issue": 77,
   "model": "Claude Opus 5.5",
-  "pausedUntil": null,
-  "renewedAt": "2026-11-25T05:34:50Z",
+  "pausedUntil": "2026-11-25T06:20:00Z",
+  "renewedAt": "2026-11-25T05:34:53Z",
   "runs": [
     {
       "active": true,
@@ -2358,7 +2358,8 @@
       "worker": "antigravity.2"
     }
   ],
-  "state": "working",
+  "state": "paused",
   "step": "implement",
-  "takeovers": 1
+  "takeovers": 0,
+  "waitReason": "usage limit reached"
 }
