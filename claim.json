@@ -14,7 +14,7 @@
   "issue": 78,
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-11-25T05:29:23Z",
+  "renewedAt": "2026-11-25T05:29:30Z",
   "runs": [
     {
       "active": true,
@@ -2347,7 +2347,7 @@
       "worker": "antigravity"
     }
   ],
-  "state": "working",
-  "step": "implement",
-  "takeovers": 1
+  "state": "released",
+  "step": "needs-input",
+  "takeovers": 0
 }
