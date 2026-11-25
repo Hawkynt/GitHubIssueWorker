@@ -2,7 +2,7 @@
   "branch": "issue/77-f10-4-dry-run-on-every-command",
   "claimedAt": "2026-11-25T07:07:55Z",
   "consumedThrough": {
-    "comment": null,
+    "comment": 7155504385,
     "review": null
   },
   "expiresAt": "2026-12-02T07:18:56Z",
@@ -14,7 +14,7 @@
   "issue": 77,
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-11-25T07:18:56Z",
+  "renewedAt": "2026-11-25T07:19:06Z",
   "runs": [
     {
       "active": true,
@@ -2386,7 +2386,7 @@
       "worker": "claude"
     }
   ],
-  "state": "working",
-  "step": "implement",
+  "state": "released",
+  "step": "needs-input",
   "takeovers": 0
 }
