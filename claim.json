@@ -2,7 +2,7 @@
   "branch": "issue/78-f10-6-status-shows-models-and-fleet-wide",
   "claimedAt": "2026-11-25T07:09:42Z",
   "consumedThrough": {
-    "comment": 7153964658,
+    "comment": 7155517227,
     "review": null
   },
   "expiresAt": "2026-12-02T07:14:26Z",
@@ -14,7 +14,7 @@
   "issue": 78,
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-11-25T07:14:26Z",
+  "renewedAt": "2026-11-25T07:14:34Z",
   "runs": [
     {
       "active": true,
@@ -2375,7 +2375,7 @@
       "worker": "claude-2"
     }
   ],
-  "state": "working",
-  "step": "implement",
+  "state": "released",
+  "step": "needs-input",
   "takeovers": 0
 }
