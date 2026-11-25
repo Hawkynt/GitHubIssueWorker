@@ -1,12 +1,12 @@
 {
   "branch": "issue/137-claude-account-detection",
-  "claimedAt": "2026-11-25T06:55:38Z",
+  "claimedAt": "2026-11-25T11:33:10Z",
   "consumedThrough": {
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-12-02T07:03:32Z",
-  "generation": 1,
+  "expiresAt": "2026-12-02T11:33:10Z",
+  "generation": 2,
   "holder": {
     "manager": "DE05PCI025-28e1",
     "worker": "claude"
@@ -14,7 +14,7 @@
   "issue": 137,
   "model": "Claude Opus 5.5",
   "pausedUntil": null,
-  "renewedAt": "2026-11-25T07:03:41Z",
+  "renewedAt": "2026-11-25T11:33:10Z",
   "runs": [
     {
       "active": true,
@@ -31,7 +31,7 @@
       "worker": "claude"
     }
   ],
-  "state": "released",
+  "state": "working",
   "step": "needs-input",
   "takeovers": 0
 }
