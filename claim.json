@@ -1,20 +1,19 @@
 {
   "branch": "issue/77-f10-4-dry-run-on-every-command",
-  "claimedAt": "2026-10-31T11:02:29Z",
+  "claimedAt": "2026-11-25T05:21:04Z",
   "consumedThrough": {
     "comment": null,
     "review": null
   },
-  "expiresAt": "2026-11-24T01:37:24Z",
-  "generation": 1,
+  "expiresAt": "2026-12-02T05:21:04Z",
+  "generation": 2,
   "holder": {
-    "manager": "hawky-desktop-96a3",
-    "worker": "antigravity.2"
+    "manager": "DE05PCI025-28e1",
+    "worker": "claude"
   },
   "issue": 77,
-  "model": "Gemini 4 Argon (Medium)",
-  "pausedUntil": "2026-11-22T07:18:11Z",
-  "renewedAt": "2026-11-17T01:37:24Z",
+  "pausedUntil": null,
+  "renewedAt": "2026-11-25T05:21:04Z",
   "runs": [
     {
       "active": true,
@@ -2358,8 +2357,7 @@
       "worker": "antigravity.2"
     }
   ],
-  "state": "paused",
+  "state": "working",
   "step": "implement",
-  "takeovers": 0,
-  "waitReason": "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 125h40m50s."
+  "takeovers": 1
 }
