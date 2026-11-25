@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from github_issue_worker.adapters.gh_api import GhApi, next_link
+from github_issue_worker.adapters.gh_api import GhApi, next_link, run_gh
 from github_issue_worker.adapters.server_clock import ServerClock
 from github_issue_worker.ports.github import GhUnavailable, GitHubError, RateLimited
 from tests.fakes import FakeClock
@@ -256,3 +258,16 @@ def test_gh_runs_with_the_account_home_not_a_relocated_one(monkeypatch: pytest.M
     api(gh)[0].request("GET", "user")
     assert gh.environments[0]["HOME"] == str(Path("/home/me"))
     assert gh.environments[0]["LC_ALL"] == "C"
+
+
+def test_given_utf8_output_when_gh_runs_then_it_is_decoded_as_utf8() -> None:
+    # On Windows the default is the ANSI code page: 0x9d in a UTF-8 quote crashed the reader.
+    script = "import sys; sys.stdout.buffer.write(bytes([0xE2, 0x80, 0x9D, 0xE8, 0xBE, 0x8F]))"
+    code, stdout, _ = run_gh([sys.executable, "-c", script], None, dict(os.environ))
+    assert code == 0 and stdout == "\u201d\u8f8f"
+
+
+def test_given_no_stdout_when_parsed_then_gh_is_unavailable() -> None:
+    gh = FakeGh((1, None, "reader died"))  # type: ignore[arg-type]
+    with pytest.raises(GhUnavailable, match="reader died"):
+        api(gh)[0].request("GET", "repos/o/r")
