@@ -2356,6 +2356,20 @@
       "started": "2026-11-17T01:36:40Z",
       "verdict": "paused",
       "worker": "antigravity.2"
+    },
+    {
+      "active": true,
+      "agent": "claude",
+      "finished": "2026-11-25T05:34:58Z",
+      "kind": "continuation",
+      "manager": "DE05PCI025-28e1",
+      "model": "Claude Opus 5.5",
+      "models": [
+        "Claude Opus 5.5"
+      ],
+      "started": "2026-11-25T05:21:07Z",
+      "verdict": "paused",
+      "worker": "claude"
     }
   ],
   "state": "paused",
