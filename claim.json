@@ -43,6 +43,20 @@
       "started": "2026-11-25T06:20:16Z",
       "verdict": "needs-input",
       "worker": "claude-2"
+    },
+    {
+      "active": true,
+      "agent": "claude",
+      "finished": "2026-11-25T07:29:29Z",
+      "kind": "rework",
+      "manager": "DE05PCI025-28e1",
+      "model": "Claude Opus 5.5",
+      "models": [
+        "Claude Opus 5.5"
+      ],
+      "started": "2026-11-25T07:15:39Z",
+      "verdict": "needs-input",
+      "worker": "claude-2"
     }
   ],
   "state": "released",
