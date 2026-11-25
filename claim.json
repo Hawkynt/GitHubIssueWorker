@@ -1,0 +1,21 @@
+{
+  "branch": "issue/111-add-copilot-as-working-agent",
+  "claimedAt": "2026-11-25T05:31:03Z",
+  "consumedThrough": {
+    "comment": null,
+    "review": null
+  },
+  "expiresAt": "2026-12-02T05:31:03Z",
+  "generation": 1,
+  "holder": {
+    "manager": "DE05PCI025-28e1",
+    "worker": "claude-2"
+  },
+  "issue": 111,
+  "model": "Claude Opus 5.5",
+  "pausedUntil": null,
+  "renewedAt": "2026-11-25T05:31:03Z",
+  "state": "working",
+  "step": "triage",
+  "takeovers": 0
+}
