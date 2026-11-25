@@ -29,6 +29,20 @@
       "started": "2026-11-25T06:55:40Z",
       "verdict": "needs-input",
       "worker": "claude"
+    },
+    {
+      "active": true,
+      "agent": "claude",
+      "finished": "2026-11-25T13:11:45Z",
+      "kind": "rework",
+      "manager": "DE05PCI025-28e1",
+      "model": "Claude Opus 5.5",
+      "models": [
+        "Claude Opus 5.5"
+      ],
+      "started": "2026-11-25T11:33:12Z",
+      "verdict": "paused",
+      "worker": "claude"
     }
   ],
   "state": "paused",
