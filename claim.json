@@ -43,6 +43,20 @@
       "started": "2026-11-25T11:33:12Z",
       "verdict": "paused",
       "worker": "claude"
+    },
+    {
+      "active": true,
+      "agent": "claude",
+      "finished": "2026-11-26T05:18:53Z",
+      "kind": "continuation",
+      "manager": "DE05PCI025-28e1",
+      "model": "Claude Opus 5.5",
+      "models": [
+        "Claude Opus 5.5"
+      ],
+      "started": "2026-11-25T16:38:08Z",
+      "verdict": "paused",
+      "worker": "claude"
     }
   ],
   "state": "paused",
